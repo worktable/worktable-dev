@@ -14492,8 +14492,7 @@
           ]
         },
         "path": {
-          "type": "string",
-          "description": "The skill's Doc."
+          "type": "string"
         },
         "content": {
           "type": "string",

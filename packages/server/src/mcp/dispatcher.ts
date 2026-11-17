@@ -1474,7 +1474,6 @@ async function _dispatchOperationInner(
       // all at one revision; anything else is read as before. A file that
       // comes by link alone is hashed for its revision, never held whole.
       const linked = !context.legacyFileRead && Boolean(context.fileLinkOrigin)
-      const preview = context.surface === "preview"
       const file = namesAFile(args["path"] as string)
         ? await readCurrentFileSource({
             spaceId: args["spaceId"] as string,
@@ -1482,11 +1481,9 @@ async function _dispatchOperationInner(
             bytes: (current) =>
               !linked ||
               current.pinned.size <= FILE_INLINE_BINARY_MAX_BYTES ||
-              fileReadsAs(current.path, current.pinned.size, { preview }) !== null ||
-              // An AVIF the preview surface may convert into an image.
-              (preview &&
-                isAvifFile(current.path) &&
-                current.pinned.size <= IMAGE_MAX_BYTES),
+              fileReadsAs(current.path, current.pinned.size) !== null ||
+              // An AVIF that may be converted into an image.
+              (isAvifFile(current.path) && current.pinned.size <= IMAGE_MAX_BYTES),
           })
         : null
       if (file && !file.bytes) {
@@ -1541,11 +1538,11 @@ async function _dispatchOperationInner(
             result.fileRevision
           ),
         }
-        const readable = readableFileSource(result.path, result.bytes, { preview })
-        // On the preview surface an AVIF comes as a PNG the agent can see,
-        // converted in the sandboxed preview browser.
+        const readable = readableFileSource(result.path, result.bytes)
+        // An AVIF comes as a PNG the agent can see, converted in the
+        // sandboxed preview browser.
         const converted =
-          !readable && preview && isAvifFile(result.path)
+          !readable && isAvifFile(result.path)
             ? await avifAsPng(result.bytes)
             : null
         if (converted) {
@@ -2715,12 +2712,9 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string | undefined
       const includeArchived =
         (args["includeArchived"] as boolean | undefined) ?? false
-      // Skill libraries are held for the preview surface. Listed last, so
-      // a state that fails never counts as the agent seeing them.
-      const skills = async () =>
-        context.surface === "preview"
-          ? await stateSkills(skillReaderFor(identity), spaceId)
-          : {}
+      // Listed last, so a state that fails never counts as the agent
+      // seeing its skills.
+      const skills = async () => await stateSkills(skillReaderFor(identity), spaceId)
       if (!spaceId) {
         const spaces = (await listSpaces()).filter(
           (space) => includeArchived || !getSpaceArchiveInfo(space)
@@ -3518,9 +3512,6 @@ async function _dispatchOperationInner(
     }
     case "skills.read":
     case "skills.propose": {
-      if (context.surface !== "preview") {
-        throw new Error("Skill libraries aren't available on this connection.")
-      }
       const reader = skillReaderFor(identity)
       if (operationId === "skills.propose") return await proposeSkillChange(reader, ProposeSkillInput.parse(args))
       const input = ReadSkillInput.parse(args)
@@ -3539,9 +3530,6 @@ async function _dispatchOperationInner(
         guide: DRAWING_GUIDE,
       }
     case "guidance.workflow": {
-      if (context.surface !== "preview") {
-        throw new Error("Workflow guides aren't available on this connection.")
-      }
       const { name } = args as { name: WorkflowGuideName }
       return { guide: WORKFLOW_GUIDES[name] }
     }

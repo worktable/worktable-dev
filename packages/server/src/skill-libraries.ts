@@ -55,7 +55,10 @@ import { getDocProvenance, readSpace } from "./store.ts"
 import { teamsEnabled } from "./team-database.ts"
 import {
   canAccessSpace,
+  listTeamAgents,
+  runWithoutTeamIdentity,
   teamAgentForParticipantKey,
+  teamAgentHasSpaceAccess,
   teamMemberForIdentity,
 } from "./team-policy.ts"
 import { hasScope, type TokenIdentity } from "./token-store.ts"
@@ -328,6 +331,16 @@ interface DocLocation {
 type Locate = (doc: LibraryEntry["doc"]) => Promise<DocLocation | null>
 
 /**
+ * A Space's Doc identities, read as Worktable itself: a library reaches
+ * agents that can't open the Space, so finding where its skill's Doc is
+ * mustn't depend on the request's Space access. Callers decide what of it
+ * to show.
+ */
+function skillDocIdentities(spaceId: string): ReturnType<typeof readDocumentIdentities> {
+  return runWithoutTeamIdentity(() => readDocumentIdentities(spaceId))
+}
+
+/**
  * Where Docs are now, or null for one deleted, archived or in an archived
  * Space. Each Space's identities come from its read-model snapshot, once per
  * locator.
@@ -335,7 +348,7 @@ type Locate = (doc: LibraryEntry["doc"]) => Promise<DocLocation | null>
 function docLocator(): Locate {
   const spaces = new Map<string, ReturnType<typeof readDocumentIdentities>>()
   return async (doc) => {
-    if (!spaces.has(doc.spaceId)) spaces.set(doc.spaceId, readDocumentIdentities(doc.spaceId))
+    if (!spaces.has(doc.spaceId)) spaces.set(doc.spaceId, skillDocIdentities(doc.spaceId))
     try {
       const { identities } = (await spaces.get(doc.spaceId))!
       if (identities.spaceArchived) return null
@@ -347,6 +360,35 @@ function docLocator(): Locate {
 }
 
 const docLocation: Locate = (doc) => docLocator()(doc)
+
+/** An archived skill Doc: where it waits, and whether its Space is what was archived. */
+export interface ArchivedDoc {
+  path: string
+  title: string
+  space?: true
+}
+
+/**
+ * Where archived Docs wait to be restored, or null for one that opens or is
+ * gone. A skill keeps its approved version while its Doc is archived.
+ */
+function archiveLocator(): (doc: LibraryEntry["doc"]) => Promise<ArchivedDoc | null> {
+  const spaces = new Map<string, ReturnType<typeof readDocumentIdentities>>()
+  return async (doc) => {
+    if (!spaces.has(doc.spaceId)) spaces.set(doc.spaceId, skillDocIdentities(doc.spaceId))
+    try {
+      const { identities } = (await spaces.get(doc.spaceId))!
+      const archived = identities.archived.get(doc.documentId)
+      if (identities.spaceArchived) {
+        const kept = archived ?? identities.current.get(doc.documentId)
+        return kept ? { path: kept.path, title: kept.title, space: true } : null
+      }
+      return archived ? { path: archived.path, title: archived.title } : null
+    } catch {
+      return null
+    }
+  }
+}
 
 /** The Doc at a path as it is now, after checking it can be a skill. */
 async function currentSkillDoc(spaceId: string, path: string) {
@@ -460,7 +502,8 @@ async function liveContent(entry: LibraryEntry, generationId: string): Promise<s
   const key = `${workspaceCacheKey()}\0${entry.doc.spaceId}\0${entry.doc.documentId}\0${generationId}`
   const kept = versionTexts.get(key)
   if (kept !== undefined) return kept
-  const text = await readVersionText(entry, generationId)
+  // A saved version, as Worktable reads it: the library decided who gets it.
+  const text = await runWithoutTeamIdentity(() => readVersionText(entry, generationId))
   if (!versionTexts.has(key)) {
     versionTexts.set(key, text)
     versionTextChars += text.length
@@ -663,6 +706,13 @@ export interface LibraryEntryView extends LibraryEntry {
   /** The Doc's path and title now; absent when it no longer opens. */
   docPath?: string
   docTitle?: string
+  /** The Doc is archived: its skill stays live at its approved version until restored or removed. */
+  docArchived?: ArchivedDoc
+  /**
+   * Agents the library reaches that can't open the Doc's Space, by name.
+   * They still follow the skill: its approved text, never the rest of the Space.
+   */
+  outsideAgents?: string[]
   /** The Doc was saved since its live version, so Save would change what agents get. */
   draft: boolean
   /** Whether the person reading may change this skill's library. */
@@ -697,22 +747,77 @@ function libraryVisibility(identity: TokenIdentity): (library: LibraryRef) => Pr
       : library.kind === "worktable" || (await mayChange(library))
 }
 
+/**
+ * The agents a library reaches, as a person sees a team's agents, that can't
+ * open a Space. Only a team Worktable narrows what agents open.
+ */
+function agentsOutside(identity: TokenIdentity): (library: LibraryRef, spaceId: string) => Promise<string[]> {
+  let agents: ReturnType<typeof listTeamAgents> | null = null
+  const visible = () => {
+    if (agents) return agents
+    try {
+      agents = teamsEnabled() ? listTeamAgents(identity).filter((agent) => agent.active) : []
+    } catch {
+      agents = []
+    }
+    return agents
+  }
+  return async (library, spaceId) => {
+    const all = visible()
+    if (all.length === 0) return []
+    let audience = all
+    if (library.kind === "space") {
+      audience = all.filter((agent) => teamAgentHasSpaceAccess(agent, library.spaceId, "read"))
+    } else if (library.kind === "agent") {
+      const key = await participantKeyFor(library.participantId)
+      const agent = key ? teamAgentForParticipantKey(key) : null
+      audience = agent ? all.filter((candidate) => candidate.id === agent.id) : []
+    }
+    return audience
+      .filter((agent) => !teamAgentHasSpaceAccess(agent, spaceId, "read"))
+      .map((agent) => agent.name)
+      .sort((a, b) => a.localeCompare(b))
+  }
+}
+
+/**
+ * Before a Doc is added to a library: the agents that library would reach
+ * that can't open the Doc's Space, so the person adding it can see who gets
+ * the skill's text without the Space.
+ */
+export async function agentsOutsideLibrary(
+  identity: TokenIdentity,
+  input: { spaceId: string; library: LibraryInput["library"] }
+): Promise<string[]> {
+  if (!isPerson(identity) || !canAccessSpace(input.spaceId, "read", identity)) return []
+  const library = await resolveLibrary(input.library, input.spaceId)
+  // Only someone who could add to that library learns who it reaches.
+  if (!(await personMayChange(library, identity))) return []
+  return agentsOutside(identity)(library, input.spaceId)
+}
+
 async function viewOf(
   entries: LibraryEntry[],
   identity: TokenIdentity
 ): Promise<LibraryEntryView[]> {
   const labels = await personLabels(entries)
   const locate = docLocator()
+  const archivedAt = archiveLocator()
   const mayChange = changeRights(identity)
+  const outside = agentsOutside(identity)
   return Promise.all(
     entries.map(async (entry) => {
       const location = await locate(entry.doc)
+      const docArchived = location ? null : await archivedAt(entry.doc)
       const libraryName = labels.name(entry.library)
+      const outsideAgents = entry.removed ? [] : await outside(entry.library, entry.doc.spaceId)
       return {
         ...entry,
         libraryLabel: labels.label(entry.library),
         ...(libraryName ? { libraryName } : {}),
         ...(location ? { docPath: location.path, docTitle: location.title } : {}),
+        ...(docArchived ? { docArchived } : {}),
+        ...(outsideAgents.length > 0 ? { outsideAgents } : {}),
         // The snapshot names what the Doc's last save made, so this reads
         // nothing more.
         draft: !entry.removed && savedSinceLive(entry.live, location?.lastSave),
@@ -1201,7 +1306,8 @@ export interface AgentSkill {
   entry: LibraryEntry
   live: NonNullable<LibraryEntry["live"]>
   library: string
-  path: string
+  /** The skill's Doc, when the agent can open it; absent while it is archived. */
+  path?: string
 }
 
 function libraryApplies(library: LibraryRef, reader: SkillReader): boolean {
@@ -1222,7 +1328,7 @@ export function applicableVersions(reader: SkillReader): Map<string, string> {
   if (file.entries.length === 0 || !hasScope([...reader.scopes], "documents:read")) return versions
   const now = Date.now()
   for (const entry of file.entries) {
-    if (!libraryApplies(entry.library, reader) || !reader.canAccess(entry.doc.spaceId, "read")) continue
+    if (!libraryApplies(entry.library, reader)) continue
     if (entry.removed) {
       if (now - Date.parse(entry.removed.at) < REMOVED_VISIBLE_MS) versions.set(entry.id, REMOVED_MARK)
     } else if (entry.live) {
@@ -1254,7 +1360,9 @@ function inScope(library: LibraryRef, spaceId: string | undefined): boolean {
 
 /**
  * The skills that apply to an agent: live, in a library that applies to it,
- * of a Doc it can read that still opens. With spaceId, only that Space's
+ * of a Doc that opens or is archived. The library decides who follows a
+ * skill, not the Doc's Space: a person approved the version agents read.
+ * With spaceId, only that Space's
  * library besides the Worktable's and the agent's own. Removed ones are
  * those removed within 30 days from libraries that apply.
  */
@@ -1270,8 +1378,7 @@ export async function skillsForAgent(
   const applicable = file.entries.filter(
     (entry) =>
       inScope(entry.library, options.spaceId) &&
-      libraryApplies(entry.library, reader) &&
-      reader.canAccess(entry.doc.spaceId, "read")
+      libraryApplies(entry.library, reader)
   )
   if (applicable.length === 0) return { live: [], removed: [] }
   const spaces = await spaceNames(
@@ -1280,6 +1387,7 @@ export async function skillsForAgent(
   const live: AgentSkill[] = []
   const removed: Array<{ entry: LibraryEntry; library: string }> = []
   const locate = docLocator()
+  const archivedAt = archiveLocator()
   for (const entry of applicable) {
     if (entry.removed) {
       if (now - Date.parse(entry.removed.at) < REMOVED_VISIBLE_MS) {
@@ -1289,8 +1397,14 @@ export async function skillsForAgent(
     }
     if (!entry.live) continue
     const location = await locate(entry.doc)
-    if (!location) continue
-    live.push({ entry, live: entry.live, library: agentLabel(entry.library, spaces), path: location.path })
+    if (!location && !(await archivedAt(entry.doc))) continue
+    const opens = location && reader.canAccess(entry.doc.spaceId, "read")
+    live.push({
+      entry,
+      live: entry.live,
+      library: agentLabel(entry.library, spaces),
+      ...(opens ? { path: location.path } : {}),
+    })
   }
   live.sort((a, b) => a.entry.name.localeCompare(b.entry.name))
   // A name back in its library isn't removed from it.
@@ -1341,8 +1455,8 @@ export async function readSkillForAgent(
     description: skill.entry.description,
     library: skill.library,
     version: skillVersion(skill.live.generationId),
-    spaceId: skill.entry.doc.spaceId,
-    path: skill.path,
+    // Where its Doc is, for an agent that can open it.
+    ...(skill.path ? { spaceId: skill.entry.doc.spaceId, path: skill.path } : {}),
     content: await liveContent(skill.entry, skill.live.generationId),
     note: SKILLS_NEVER_AUTHORIZE,
   }
@@ -1386,7 +1500,7 @@ function requireAgentMayPropose(library: LibraryRef, reader: SkillReader, doc: {
     throw new LibraryError("forbidden", "You can't propose changes to this library.")
   }
   if (!reader.canAccess(doc.spaceId, "read")) {
-    throw new LibraryError("forbidden", "You can't read this Doc.")
+    throw new LibraryError("forbidden", "You can't open this skill's Doc, so a person changes it.")
   }
 }
 
@@ -1415,8 +1529,7 @@ export async function proposeSkillChange(reader: SkillReader, input: ProposalInp
       !entry.removed &&
       entry.name === name &&
       matchesHint(entry.library, input) &&
-      libraryApplies(entry.library, reader) &&
-      reader.canAccess(entry.doc.spaceId, "read")
+      libraryApplies(entry.library, reader)
   )
   const { entry: target } = pickOne(candidates.map((entry) => ({ entry })), name)
   requireAgentMayPropose(target.library, reader, target.doc)

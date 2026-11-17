@@ -3,12 +3,25 @@ import {
   emptyQuickdrawDocument,
   type QuickdrawDocument,
 } from "@worktable/types"
+import { TIPS } from "../src/lib/help/registry"
 import { startWebHarness, type WebHarness } from "./harness"
 
 let harness: WebHarness
 
 test.beforeAll(async () => {
   harness = await startWebHarness("drawing-input")
+  // The first Drawing shows a card over the canvas until it's closed; these
+  // journeys start past it.
+  const closed = await fetch(`${harness.apiUrl}/api/profile/help`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: "drawing-meet",
+      event: "closed",
+      version: TIPS.drawingMeet.version,
+    }),
+  })
+  expect(closed.ok).toBe(true)
 })
 test.afterAll(async () => {
   await harness?.stop()

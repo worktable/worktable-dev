@@ -2,10 +2,10 @@ import { Hono, type Context, type Next } from "hono"
 import { z } from "zod"
 import { requireScope } from "../auth.ts"
 import { DocumentWriteError } from "../document-write-service.ts"
-import { configuredMcpSurface } from "../mcp/surface.ts"
 import { completeHelpEvidence, setupKeyForIdentity } from "../personal-setup.ts"
 import {
   addToLibrary,
+  agentsOutsideLibrary,
   approveLibraryProposal,
   discardLibraryProposal,
   isPerson,
@@ -32,13 +32,7 @@ async function requirePerson(c: Context, next: Next) {
   await next()
 }
 
-/** Libraries ride with the preview agent tools until they are released. */
-async function requirePreview(c: Context, next: Next) {
-  if (configuredMcpSurface() !== "preview") return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
-  await next()
-}
-
-libraryRouter.use("*", requirePreview, requireScope("documents:read"), requirePerson)
+libraryRouter.use("*", requireScope("documents:read"), requirePerson)
 
 const STATUS: Record<LibraryError["code"], 400 | 403 | 404 | 409 | 503> = {
   invalid: 400,
@@ -96,6 +90,33 @@ const SaveSchema = z.strictObject({
 
 // GET /api/library: the skills in the libraries this person may see.
 libraryRouter.get("/", (c) => answer(c, () => listLibraryForPerson(c.get("identity"))))
+
+// GET /api/library/outside: before adding a Doc, the agents its library
+// would reach that can't open the Doc's Space.
+const OutsideSchema = z.strictObject({
+  spaceId: z.string().min(1),
+  kind: z.enum(["worktable", "space", "agent"]),
+  librarySpaceId: z.string().min(1).optional(),
+  participantId: z.string().min(1).optional(),
+})
+
+libraryRouter.get("/outside", (c) => {
+  const parsed = OutsideSchema.safeParse(c.req.query())
+  if (!parsed.success) return c.json({ error: parsed.error.message, code: "VALIDATION_ERROR" }, 400)
+  const { spaceId, kind, librarySpaceId, participantId } = parsed.data
+  if (kind === "agent" && !participantId) {
+    return c.json({ error: "An agent's library needs participantId.", code: "VALIDATION_ERROR" }, 400)
+  }
+  const library =
+    kind === "agent"
+      ? { kind, participantId: participantId! }
+      : kind === "space"
+        ? { kind, ...(librarySpaceId ? { spaceId: librarySpaceId } : {}) }
+        : { kind }
+  return answer(c, async () => ({
+    agents: await agentsOutsideLibrary(c.get("identity"), { spaceId, library }),
+  }))
+})
 
 // POST /api/library: add a Doc. Its current content is saved and goes live.
 libraryRouter.post("/", requireScope("documents:write"), async (c) => {

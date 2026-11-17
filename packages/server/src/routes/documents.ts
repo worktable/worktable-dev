@@ -1,4 +1,3 @@
-import { configuredMcpSurface } from "../mcp/surface.ts"
 import { skillsOfDoc } from "../skill-libraries.ts"
 import { teamsEnabled } from "../team-database.ts";
 import { commentReplier } from "../comment-recipients.ts"
@@ -373,9 +372,7 @@ documentsRouter.get("/page", requireScope("documents:read"), async (c) => {
     ...(visitorCommentReader(c, spaceId) ? {visitorComments: (documentId: string) => visitorCommentPageSummary(c, spaceId, documentId)} : {}),
     // A Doc that is a skill says so on its own page, so opening a Doc asks
     // for nothing more.
-    ...(configuredMcpSurface() === "preview"
-      ? { skillsOf: (documentId: string) => skillsOfDoc(c.get("identity"), spaceId, documentId).catch(() => []) }
-      : {}),
+    skillsOf: (documentId: string) => skillsOfDoc(c.get("identity"), spaceId, documentId).catch(() => []),
   })
   if (!page) {
     return c.json({ error: "Document not found.", code: "NOT_FOUND" }, 404)

@@ -223,13 +223,26 @@ const TOOLS: CatalogTool[] = [
     name: "worktable_state",
     title: "Read Worktable state",
     description:
-      "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId, set index for the Space's full document and Record index.",
+      "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId, set index for the Space's full document and Record index. It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow.",
     annotations: READ,
     inputSchema: flatInput([], [state], {
       index: z
         .boolean()
         .describe("With spaceId: return the Space's full document and Record index instead."),
     }),
+    outputFields: {
+      skills: z
+        .array(SkillListingSchema)
+        .optional()
+        .describe(
+          "The skills in your team's Library that apply to you, up to 50. The Library is your team's approved Docs: a person reviewed each one for agents to follow. Prefer a skill there over other Docs on the same work; Docs elsewhere may be drafts. Read one with worktable_skills_read."
+        ),
+      moreSkills: z.number().int().positive().optional().describe("How many skills apply beyond those listed."),
+      removedSkills: z
+        .array(RemovedSkillSchema)
+        .optional()
+        .describe("Skills removed from those libraries in the last 30 days."),
+    },
     runs: [
       ["worktable_discover", "state"],
       ["worktable_discover", "space_index"],
@@ -895,16 +908,18 @@ const TOOLS: CatalogTool[] = [
     name: "worktable_guidance",
     title: "Read Worktable guidance",
     description:
-      "Read Worktable authoring guidance by topic: format_spec for Doc and file formats, drawings for drawing operations with examples, or html for the HTML Doc runtime contract.",
+      "Read Worktable authoring guidance by topic: format_spec for Doc and file formats, drawings for drawing operations with examples, html for the HTML Doc runtime contract, or workflow with a skill's name for the current guide behind one of the Worktable plugin's skills.",
     annotations: READ,
     inputSchema: flatInput(["topic"], [htmlGuide], {
-      topic: z.enum(["format_spec", "drawings", "html"]).describe("The guidance to read."),
+      topic: z.enum(["format_spec", "drawings", "html", "workflow"]).describe("The guidance to read."),
       profile: described(htmlGuide.profile!, "html only: the runtime profile."),
+      name: z.enum(WORKFLOW_GUIDE_NAMES).describe("workflow only: the skill whose current guide to read."),
     }),
     runs: [
       ["worktable_guidance", "format_spec"],
       ["worktable_guidance", "drawings"],
       ["worktable_html_read", "guide"],
+      ["worktable_guidance", "workflow"],
     ],
     route: (args) => {
       const { topic, ...rest } = args
@@ -930,47 +945,7 @@ const TOOLS: CatalogTool[] = [
         ? step("worktable_mermaid", "preview", without(args, "preview"))
         : step("worktable_mermaid", "validate", without(args, "preview")),
   },
-]
 
-export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
-
-/**
- * Listing changes held for the preview surface (mcp-tools.preview.json)
- * until agent directories review them. Each takes a released tool's place.
- */
-const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
-  worktable_guidance: (tool) => ({
-    ...tool,
-    description:
-      "Read Worktable authoring guidance by topic: format_spec for Doc and file formats, drawings for drawing operations with examples, html for the HTML Doc runtime contract, or workflow with a skill's name for the current guide behind one of the Worktable plugin's skills.",
-    inputSchema: flatInput(["topic"], [htmlGuide], {
-      topic: z.enum(["format_spec", "drawings", "html", "workflow"]).describe("The guidance to read."),
-      profile: described(htmlGuide.profile!, "html only: the runtime profile."),
-      name: z.enum(WORKFLOW_GUIDE_NAMES).describe("workflow only: the skill whose current guide to read."),
-    }),
-    runs: [...tool.runs, ["worktable_guidance", "workflow"]],
-  }),
-  worktable_state: (tool) => ({
-    ...tool,
-    description: `${tool.description} It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow.`,
-    outputFields: {
-      skills: z
-        .array(SkillListingSchema)
-        .optional()
-        .describe(
-          "The skills in your team's Library that apply to you, up to 50. The Library is your team's approved Docs: a person reviewed each one for agents to follow. Prefer a skill there over other Docs on the same work; Docs elsewhere may be drafts. Read one with worktable_skills_read."
-        ),
-      moreSkills: z.number().int().positive().optional().describe("How many skills apply beyond those listed."),
-      removedSkills: z
-        .array(RemovedSkillSchema)
-        .optional()
-        .describe("Skills removed from those libraries in the last 30 days."),
-    },
-  }),
-}
-
-/** Tools listed only on the preview surface, after the released ones. */
-const PREVIEW_TOOLS: CatalogTool[] = [
   {
     name: "worktable_skills_read",
     title: "Read a Worktable skill",
@@ -992,6 +967,17 @@ const PREVIEW_TOOLS: CatalogTool[] = [
     route: (args) => step("worktable_skills", "propose", args),
   },
 ]
+
+export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
+
+/**
+ * Listing changes held for the preview surface (mcp-tools.preview.json)
+ * until agent directories review them. Each takes a released tool's place.
+ */
+const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {}
+
+/** Tools listed only on the preview surface, after the released ones. */
+const PREVIEW_TOOLS: CatalogTool[] = []
 
 /** The tools a surface lists, in order. */
 export function catalogTools(surface: McpSurface): readonly CatalogTool[] {

@@ -61,6 +61,19 @@ async function waitForPairingCreate(page: Page, click: () => Promise<void>) {
   return (await result.json()) as { code: string; id: string }
 }
 
+/**
+ * Whether the owner has seen the welcome, which otherwise opens over Connect
+ * Your Agent. Journeys about other steps start past it.
+ */
+async function setWelcomed(welcomed: boolean) {
+  const response = await fetch(`${harness.apiUrl}/api/profile/setup`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ welcomed }),
+  })
+  expect(response.ok).toBe(true)
+}
+
 test.beforeAll(async () => {
   harness = await startWebHarness("onboarding-browser", {
     onboarding: "pending",
@@ -172,6 +185,7 @@ for (const wakeMethod of ["webhook", "email"] as const)
     })
     if (wakeMethod === "email")
       await page.setViewportSize({ width: 390, height: 844 })
+    await setWelcomed(true)
     await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
     await page.getByLabel("Your name").fill("Grok owner")
     await page.getByLabel("Worktable name").fill("Grok workspace")
@@ -431,6 +445,7 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
     (route) => route.fulfill({ json: { connections } })
   )
 
+  await setWelcomed(true)
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   await page.getByLabel("Your name").fill("Cloud owner")
   await page.getByLabel("Worktable name").fill("Cloud workspace")
@@ -477,6 +492,7 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
 test("a new owner creates their Worktable, connects agents and finishes their first steps in Getting Started", async ({
   page,
 }) => {
+  await setWelcomed(false)
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
 
@@ -486,6 +502,18 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
   await page.getByLabel("Your name").fill("Alex")
   await page.getByLabel("Worktable name").fill("Alex Worktable")
   await page.getByRole("button", { name: "Create Worktable" }).click()
+
+  // The welcome opens over Connect Your Agent once, and closing it lands there.
+  const welcome = page.getByRole("dialog")
+  const next = welcome.getByRole("button", { name: "Next", exact: true })
+  const finish = welcome.getByRole("button", {
+    name: "Connect Your Agent",
+    exact: true,
+  })
+  await expect(next).toBeVisible()
+  while (await next.isVisible()) await next.click()
+  await finish.click()
+  await expect(welcome).toHaveCount(0)
 
   await expect(
     page.getByRole("heading", { name: "Connect your agent" })

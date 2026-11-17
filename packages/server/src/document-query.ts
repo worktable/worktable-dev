@@ -477,8 +477,8 @@ export interface DocumentIdentities {
    * those whose path another claim also holds are left out.
    */
   current: ReadonlyMap<string, DocumentIdentity>
-  /** Documents that are archived. */
-  archived: ReadonlySet<string>
+  /** Documents that are archived, with the path and title they keep. */
+  archived: ReadonlyMap<string, { path: string; title: string }>
 }
 
 const documentPathsByContext = new WeakMap<
@@ -509,13 +509,13 @@ function documentIdentities(context: DocumentQueryContext): DocumentIdentities {
   const known = identitiesByContext.get(context)
   if (known) return known
   const current = new Map<string, DocumentIdentity>()
-  const archived = new Set<string>()
+  const archived = new Map<string, { path: string; title: string }>()
   for (const entry of context.catalog.entries) {
     if (entry.kind !== "document") continue
     for (const claim of claimsFor(entry)) {
       if (claim.kind !== "document" || claim.identity !== "durable") continue
       if (isArchived(claim, context.docArchives)) {
-        archived.add(claim.documentId)
+        archived.set(claim.documentId, { path: claim.path, title: claim.title })
       } else {
         const lastSave =
           claim.archiveProvider === "legacy-doc-metadata"

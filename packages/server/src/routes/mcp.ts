@@ -45,7 +45,6 @@ async function connectionSkills(
   identity: TokenIdentity,
   messages: JsonRpcMessage[]
 ): Promise<string | null> {
-  if (configuredMcpSurface() !== "preview") return null
   if (!messages.some((message) => message.method === "initialize" || message.method === "server/discover")) {
     return null
   }
@@ -153,7 +152,6 @@ interface JsonRpcMessage {
  * 2026-07-28 request says its client's capabilities every time.
  */
 function offersSkills(messages: JsonRpcMessage[], modern: boolean): boolean {
-  if (configuredMcpSurface() !== "preview") return false
   if (modern) return messages.some((message) => declaresSkills(message.params?._meta?.[CLIENT_CAPABILITIES_META_KEY]))
   const opening = messages.filter((message) => message.method === "initialize")
   return opening.length === 0 || opening.some((message) => declaresSkills(message.params?.capabilities))
@@ -295,13 +293,8 @@ export async function handleRemoteMcpRequest(
   })
   const server = createWorktableMcpServer({
     ...remoteMcpServerOptions(request, identity, origin),
-    skillsBrief:
-      request.method === "POST" && configuredMcpSurface() === "preview"
-        ? await connectionSkills(identity, await messagesOf())
-        : null,
-    skillsExtension:
-      configuredMcpSurface() === "preview" &&
-      (request.method !== "POST" || offersSkills(await messagesOf(), false)),
+    skillsBrief: request.method === "POST" ? await connectionSkills(identity, await messagesOf()) : null,
+    skillsExtension: request.method !== "POST" || offersSkills(await messagesOf(), false),
   })
   await server.connect(transport)
   // Read the call from the message the transport already parsed.

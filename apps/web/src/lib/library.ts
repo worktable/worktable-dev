@@ -40,6 +40,10 @@ export interface LibraryEntry {
   /** Absent when the Doc no longer opens. */
   docPath?: string
   docTitle?: string
+  /** The Doc is archived; agents keep its approved version until it's restored or removed. */
+  docArchived?: { path: string; title: string; space?: true }
+  /** Agents the library reaches that can't open the Doc's Space, by name. */
+  outsideAgents?: string[]
   /** The Doc was saved since its live version. */
   draft: boolean
   /** Whether this person may change the skill's library. */
@@ -47,8 +51,9 @@ export interface LibraryEntry {
 }
 
 /** A skill's own heading: its Doc's title, or its name while the Doc is gone. */
-export const skillTitle = (entry: Pick<LibraryEntry, "docTitle" | "name">) =>
-  entry.docTitle?.trim() || entry.name
+export const skillTitle = (
+  entry: Pick<LibraryEntry, "docTitle" | "docArchived" | "name">
+) => entry.docTitle?.trim() || entry.docArchived?.title.trim() || entry.name
 
 /** One key per library, to group and filter by. */
 export const libraryKey = (library: LibraryRef) =>
@@ -89,4 +94,28 @@ export const libraryQueryOptions = () =>
 export function useLibrary() {
   const enabled = useSkillLibrariesEnabled()
   return useQuery({ ...libraryQueryOptions(), enabled, staleTime: 0 })
+}
+
+/**
+ * Agents that follow a skill without opening its Doc's Space, said plainly:
+ * "Codex can't open Ops. It still follows this skill." With adding, before
+ * the skill exists, "It'll still follow this skill."
+ */
+export function outsideAgentsLine(
+  names: readonly string[],
+  spaceName: string,
+  options: { adding?: boolean } = {}
+): string | null {
+  if (names.length === 0) return null
+  const who =
+    names.length === 1
+      ? names[0]!
+      : names.length <= 3
+        ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
+        : `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
+  const one = names.length === 1
+  const follows = options.adding
+    ? `${one ? "It'll" : "They'll"} still follow this skill.`
+    : `${one ? "It still follows" : "They still follow"} this skill.`
+  return `${who} can't open ${spaceName}. ${follows}`
 }

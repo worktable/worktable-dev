@@ -9,6 +9,16 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Library:** Your team's skills live in Worktable. Choose **Add to Library** on a Doc to make it a skill for the whole Worktable, one Space or one agent, and every agent that library reaches follows the version you saved, in any app, with nothing to install. Agents suggest new skills and changes, which wait in **Pending** until someone approves them. An agent follows a skill even when it can't open the Doc's Space, and the Library names those agents. If a skill's Doc is archived, agents keep the saved version until you restore the Doc or remove the skill. Search finds skills too.
+- **Skills for agents:** Agents see your team's skills when they connect and in `worktable_state`, read them with `worktable_skills_read`, and suggest changes with `worktable_skills_write`. Their next tool call says when a skill changed. Apps that support Skills over MCP get them as skills of their own.
+
+### Changed
+
+- **Help:** The welcome, Next Steps, tips and How Worktable Works are on for everyone.
+- **Agents:** Agents read source code such as Python or Go files and Dockerfiles as text, and AVIF pictures as images they can see. `worktable_guidance` also serves the current guide behind each skill in Worktable's plugin.
+
 ## [0.1.50] - 2026-11-16
 
 ### Added

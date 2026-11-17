@@ -369,7 +369,7 @@ describe("files for agents on the released surface", () => {
   })
 })
 
-describe("files for agents on the preview surface", () => {
+describe("files for agents", () => {
   it("reads code the type table doesn't list and a Dockerfile as text, and an AVIF as an image", async () => {
     const manifestPath = join(root, "worktable.workspace.json")
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
@@ -395,8 +395,8 @@ describe("files for agents on the preview surface", () => {
         .toBuffer()
       await writeFile(join(docs, "app", "wide.avif"), wide)
       noteSpaceChanged(spaceId)
-      const readWith = async (surface: "released" | "preview", path: string) => {
-        const connected = await connect(["documents:read"], surface)
+      const readWith = async (path: string) => {
+        const connected = await connect(["documents:read"])
         const result = await connected.callTool({
           name: "worktable_files_read",
           arguments: { request: { action: "read_source", spaceId, path } },
@@ -406,24 +406,17 @@ describe("files for agents on the preview surface", () => {
         return result
       }
 
-      // The released surface reads them as it always has: as bytes.
-      for (const path of ["app/main.py", "app/Dockerfile", "app/shot.avif"]) {
-        expect((await readWith("released", path)).structuredContent).toMatchObject({
-          encoding: "base64",
-        })
-      }
-
-      expect((await readWith("preview", "app/main.py")).structuredContent).toMatchObject({
+      expect((await readWith("app/main.py")).structuredContent).toMatchObject({
         encoding: "utf8",
         source: "print('hello')\n",
       })
-      expect((await readWith("preview", "app/Dockerfile")).structuredContent).toMatchObject({
+      expect((await readWith("app/Dockerfile")).structuredContent).toMatchObject({
         encoding: "utf8",
         source: "FROM scratch\n",
       })
       // An AVIF comes as a PNG of the same picture, converted in the
       // sandboxed preview browser.
-      const image = await withSyntheticPreview(() => readWith("preview", "app/shot.avif"))
+      const image = await withSyntheticPreview(() => readWith("app/shot.avif"))
       expect(image.structuredContent).toMatchObject({ encoding: "image", mediaType: "image/png" })
       const block = (image.content as Array<{ type: string; mimeType?: string; data?: string }>).find(
         (item) => item.type === "image"
@@ -436,7 +429,7 @@ describe("files for agents on the preview surface", () => {
       // size is read from its box headers, and it comes as its bytes.
       expect(avifDeclaredSizes(new Uint8Array(wide))).toEqual([{ width: 9000, height: 10 }])
       expect(
-        (await withSyntheticPreview(() => readWith("preview", "app/wide.avif"))).structuredContent
+        (await withSyntheticPreview(() => readWith("app/wide.avif"))).structuredContent
       ).toMatchObject({ encoding: "base64" })
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]

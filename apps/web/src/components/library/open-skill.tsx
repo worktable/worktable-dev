@@ -9,6 +9,7 @@ import { SkillNameDialog } from "@/components/library/skill-name-dialog"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { restoreSpace } from "@/lib/api"
+import { HttpError } from "@/lib/http"
 import { mutateDocument } from "@/lib/documents-api"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
@@ -21,7 +22,7 @@ import {
 import { documentRoute } from "@/lib/document-views"
 import { documentQueryKeys, useDocuments } from "@/lib/documents-queries"
 import { documentOpenHint } from "@/lib/document-rows"
-import { useDocumentOpen } from "@/lib/use-document-open"
+import { DocumentCheckStatus, useDocumentOpen } from "@/lib/use-document-open"
 import {
   libraryKey,
   libraryQueryKey,
@@ -132,7 +133,11 @@ export function OpenSkill({
   const path = entry.docPath ?? ""
   // The Doc opens as on its own page: what the tab knows shows read-only at
   // once, and the editor takes over once a check validates this open.
-  const { pageQuery, page: checked } = useDocumentOpen(spaceId, path)
+  const {
+    page: checked,
+    openError,
+    temporarilyUnavailable,
+  } = useDocumentOpen(spaceId, path)
   // The Space's catalog stays live, as a Doc page's breadcrumb keeps it, so
   // a move or archive made elsewhere re-checks the open Doc.
   useLiveSpaceCatalog(spaceId)
@@ -298,7 +303,7 @@ export function OpenSkill({
   const unavailable =
     !path ||
     otherDoc ||
-    (pageQuery.isError && !pageQuery.isFetching) ||
+    openError !== null ||
     checked?.kind === "conflict" ||
     (page !== null && page.renderer?.key !== "doc")
   // The title and head hold the Doc's place while nothing of it is known yet.
@@ -319,19 +324,24 @@ export function OpenSkill({
           </SkillFrame>
         ) : unavailable ? (
           <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
-            Doc Missing
+            {openError &&
+            !(openError instanceof HttpError && openError.status === 404)
+              ? "Couldn’t open document"
+              : "Doc Missing"}
           </div>
         ) : formatId && (page || hint?.renderer === "doc") ? (
           <Suspense fallback={frame}>
             <SetPageMetaContext.Provider value={setDocMeta}>
-              <DocRenderer
-                spaceId={spaceId}
-                documentPath={page?.document.path ?? path}
-                formatId={formatId}
-                page={page}
-                preview={hint}
-                afterTitle={head}
-              />
+              <DocumentCheckStatus unavailable={temporarilyUnavailable}>
+                <DocRenderer
+                  spaceId={spaceId}
+                  documentPath={page?.document.path ?? path}
+                  formatId={formatId}
+                  page={page}
+                  preview={hint}
+                  afterTitle={head}
+                />
+              </DocumentCheckStatus>
             </SetPageMetaContext.Provider>
           </Suspense>
         ) : (

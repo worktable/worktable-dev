@@ -12,7 +12,7 @@ import {
 } from "@/lib/document-renderers"
 import { documentOpenHint } from "@/lib/document-rows"
 import { openDocument } from "@/lib/document-open"
-import { useDocumentOpen } from "@/lib/use-document-open"
+import { DocumentCheckStatus, useDocumentOpen } from "@/lib/use-document-open"
 import { toast } from "@worktable/ui/components/sonner"
 import { HttpError } from "@/lib/http"
 
@@ -53,19 +53,21 @@ function DocumentPageRoute() {
   const { spaceId, _splat } = Route.useParams()
   const path = _splat ?? ""
   const queryClient = useQueryClient()
-  const { pageQuery, page } = useDocumentOpen(spaceId, path)
+  const { page, openError, temporarilyUnavailable } = useDocumentOpen(
+    spaceId,
+    path
+  )
   if (!path) {
     return <Navigate to="/spaces/$spaceId" params={{ spaceId }} replace />
   }
-  if (pageQuery.error && !pageQuery.isFetching) {
-    const status =
-      pageQuery.error instanceof HttpError ? pageQuery.error.status : null
+  if (openError) {
+    const status = openError instanceof HttpError ? openError.status : null
     const serverDetail =
-      pageQuery.error instanceof HttpError &&
-      typeof pageQuery.error.body === "object" &&
-      pageQuery.error.body !== null &&
-      typeof (pageQuery.error.body as { error?: unknown }).error === "string"
-        ? (pageQuery.error.body as { error: string }).error
+      openError instanceof HttpError &&
+      typeof openError.body === "object" &&
+      openError.body !== null &&
+      typeof (openError.body as { error?: unknown }).error === "string"
+        ? (openError.body as { error: string }).error
         : null
     const notFound = status === 404
     const conflict = status === 409
@@ -96,13 +98,15 @@ function DocumentPageRoute() {
     const Preview = previewDocumentRenderer(hint.renderer).component
     return (
       <Suspense fallback={<EditorSkeleton />}>
-        <Preview
-          spaceId={spaceId}
-          documentPath={path}
-          formatId={hint.formatId}
-          page={null}
-          preview={hint}
-        />
+        <DocumentCheckStatus unavailable={false}>
+          <Preview
+            spaceId={spaceId}
+            documentPath={path}
+            formatId={hint.formatId}
+            page={null}
+            preview={hint}
+          />
+        </DocumentCheckStatus>
       </Suspense>
     )
   }
@@ -125,7 +129,9 @@ function DocumentPageRoute() {
   if (page.document.format.id === "worktable.file") {
     return (
       <Suspense fallback={<EditorSkeleton />}>
-        <FilePage spaceId={spaceId} page={page} />
+        <DocumentCheckStatus unavailable={temporarilyUnavailable}>
+          <FilePage spaceId={spaceId} page={page} />
+        </DocumentCheckStatus>
       </Suspense>
     )
   }
@@ -136,12 +142,14 @@ function DocumentPageRoute() {
   const Renderer = renderer.component
   return (
     <Suspense fallback={<EditorSkeleton />}>
-      <Renderer
-        spaceId={spaceId}
-        documentPath={page.document.path}
-        formatId={page.document.format.id}
-        page={page}
-      />
+      <DocumentCheckStatus unavailable={temporarilyUnavailable}>
+        <Renderer
+          spaceId={spaceId}
+          documentPath={page.document.path}
+          formatId={page.document.format.id}
+          page={page}
+        />
+      </DocumentCheckStatus>
     </Suspense>
   )
 }

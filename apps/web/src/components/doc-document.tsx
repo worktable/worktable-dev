@@ -33,6 +33,7 @@ import {
 } from "lucide-react"
 import { docQueryKeys } from "@/lib/docs-queries"
 import { documentQueryKeys, useDocumentContent } from "@/lib/documents-queries"
+import { DocumentStatus, useDocumentCheckFailed } from "@/lib/use-document-open"
 import type { DocumentRendererProps } from "@/lib/document-renderers"
 import type { DocumentOpenHint } from "@/lib/document-rows"
 import {
@@ -106,10 +107,7 @@ import {
   versionCommentedOn,
 } from "@/components/annotations/original-passage"
 import { Button } from "@worktable/ui/components/button"
-import {
-  DocumentStatus,
-  type DocumentStatusState,
-} from "@worktable/ui/components/document-status"
+import type { DocumentStatusState } from "@worktable/ui/components/document-status"
 import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import {
   aboveKeyboard,
@@ -189,6 +187,7 @@ const UNSENT_EDITS_MS = 1000
  * screen, and edits made before the room connects are kept and sent.
  */
 function SyncStatusPill({ provider }: { provider: WebsocketProvider | null }) {
+  const checkFailed = useDocumentCheckFailed()
   const [state, setState] = useState<SyncState>("connecting")
   // When the reader's first edit not yet on the server was made.
   const [unsentSince, setUnsentSince] = useState<number | null>(null)
@@ -269,7 +268,7 @@ function SyncStatusPill({ provider }: { provider: WebsocketProvider | null }) {
     return () => clearTimeout(timer)
   }, [displayState])
 
-  if (displayState === null) return null
+  if (displayState === null || checkFailed) return null
   return <DocumentStatus state={displayState} />
 }
 

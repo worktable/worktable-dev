@@ -16,6 +16,7 @@ import { useSpaces } from "@/lib/queries"
 import { useQuery } from "@tanstack/react-query"
 import { threadsQueryOptions } from "@/lib/threads-queries"
 import { ThreadParticipantAvatar } from "@/components/threads/thread-participant-avatar"
+import { Quote } from "@/components/quote"
 
 // ── Actor badge ────────────────────────────────────────────
 
@@ -326,9 +327,9 @@ export function ActivityItem({
           <Sentence entry={entry} />
         </p>
         {entry.quote && entry.action.startsWith("comment.") && (
-          <p className="mt-1.5 line-clamp-2 border-l-2 border-border pl-2.5 text-[0.8125rem] leading-[1.125rem]">
+          <Quote className="mt-1.5 line-clamp-2">
             {entry.quote}
-          </p>
+          </Quote>
         )}
         {spaceName && (
           <p

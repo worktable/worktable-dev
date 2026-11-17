@@ -30,6 +30,7 @@ import {
   DocumentFormatIcon,
 } from "@/components/document-format-icon"
 import { ActorBadge } from "@/components/home/activity-feed"
+import { Quote } from "@/components/quote"
 import { useSpaceDocumentTrees } from "@/hooks/use-space-document-trees"
 import { activityQueryOptions, type ActivityOptions } from "@/lib/activity"
 import { shortWhen } from "@/lib/activity-format"
@@ -388,7 +389,7 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
         <div className="text-foreground/85">
           <DocSentence entry={entry} />
         </div>
-        {comment && <div className="mt-0.5 line-clamp-1">{entry.quote}</div>}
+        {comment && <Quote className="mt-0.5 line-clamp-1">{entry.quote}</Quote>}
       </div>
       <span className="shrink-0 text-xs leading-5">{shortWhen(entry.at)}</span>
     </div>

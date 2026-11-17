@@ -205,11 +205,15 @@ for (const appearance of [
           .getByRole("button", { name: "View comment", exact: true })
           .click()
         await expect(
-          page.getByRole("tab", { name: /^Comments/ })
-        ).toHaveAttribute("aria-selected", "true")
+          page.getByRole("button", { name: "All Comments", exact: true })
+        ).toBeVisible()
         await expect(
           page.getByText(/Please check the forecast before publishing\./).last()
         ).toBeVisible()
+        await page.getByRole("button", { name: "All Comments", exact: true }).click()
+        await expect(
+          page.getByRole("tab", { name: /^Comments/ })
+        ).toHaveAttribute("aria-selected", "true")
         const retainedBefore = await (await page.request.get(listUrl)).json()
         const annotationId = retainedBefore.comments[0].passed.annotationId
         const teamUrl = `${harness.apiUrl}/api/spaces/visitor-review/annotations/${annotationId}?includeTargetContext=true`

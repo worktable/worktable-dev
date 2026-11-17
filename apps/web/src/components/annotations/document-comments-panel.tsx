@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useState } from "react"
 import { useLocation } from "@tanstack/react-router"
 import { X } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
@@ -9,7 +9,10 @@ import {
   TabsTrigger,
 } from "@worktable/ui/components/tabs"
 import type { AnnotationPanelProps } from "./annotation-panel"
-import { AnnotationPanelContent } from "./annotation-panel-content"
+import {
+  AnnotationPanelContent,
+  CommentComposeButton,
+} from "./annotation-panel-content"
 import { VisitorCommentsPanel } from "./visitor-comments-panel"
 
 export function DocumentCommentsPanel(props: AnnotationPanelProps) {
@@ -28,54 +31,41 @@ export function DocumentCommentsPanel(props: AnnotationPanelProps) {
         : "comments"
   if (selection.key !== key) setSelection({ key, tab })
   const setTab = (tab: string) => setSelection({ key, tab })
-  const commentsTabs = useRef<HTMLDivElement>(null)
-  const visitorsTabs = useRef<HTMLDivElement>(null)
-  const restoreTabFocus = useRef(false)
-  useLayoutEffect(() => {
-    if (!restoreTabFocus.current) return
-    restoreTabFocus.current = false
-    // Each panel owns its heading; restore the focused trigger after the swap.
-    const list = (tab === "visitors" ? visitorsTabs : commentsTabs).current
-    list?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus()
-  }, [tab])
   const openCount = props.annotations.filter(
     (annotation) => annotation.status !== "resolved"
   ).length
-  const header = (actions: ReactNode, panel: "comments" | "visitors") => (
-    <div className="flex shrink-0 items-center justify-between gap-2 p-4 pb-2">
-      <TabsList ref={panel === "comments" ? commentsTabs : visitorsTabs} aria-label="Document comments">
-        <TabsTrigger value="comments">
-          Comments{" "}
-          <span className="text-xs text-muted-foreground">{openCount}</span>
-        </TabsTrigger>
-        <TabsTrigger value="visitors">
-          Visitors{" "}
-          <span className="text-xs text-muted-foreground">
-            {context.newCount}
-          </span>
-        </TabsTrigger>
-      </TabsList>
-      <div className="flex shrink-0 items-center gap-1">{actions}</div>
-    </div>
-  )
   return (
     <Tabs
       value={tab}
-      onValueChange={(value) => {
-        if (value === tab) return
-        restoreTabFocus.current =
-          Boolean(commentsTabs.current?.contains(document.activeElement) ||
-            visitorsTabs.current?.contains(document.activeElement))
-        setTab(String(value))
-      }}
-      className="h-full min-h-0 gap-0"
+      onValueChange={(value) => setTab(String(value))}
+      className={`h-full min-h-0 gap-0 ${tab === "comments" ? "[&:has([data-annotation-thread])>[data-comments-header]]:hidden" : ""}`}
     >
-      <TabsContent value="comments" className="min-h-0">
-        <AnnotationPanelContent {...props} header={(actions) => header(actions, "comments")} />
-      </TabsContent>
-      <TabsContent value="visitors" className="flex min-h-0 flex-col">
-        {header(
-          props.onClose && (
+      {/* Preserve the tab list and its keyboard state when a thread replaces the heading. */}
+      <div
+        data-comments-header
+        className="flex shrink-0 items-center justify-between gap-2 p-4 pb-2"
+      >
+        <TabsList aria-label="Document comments">
+          <TabsTrigger value="comments">
+            Comments{" "}
+            <span className="text-xs text-muted-foreground">{openCount}</span>
+          </TabsTrigger>
+          <TabsTrigger value="visitors">
+            Visitors{" "}
+            <span className="text-xs text-muted-foreground">
+              {context.newCount}
+            </span>
+          </TabsTrigger>
+        </TabsList>
+        <div className="flex shrink-0 items-center gap-1">
+          {tab === "comments" && props.onCompose && !props.readOnly && (
+            <CommentComposeButton
+              iconOnly
+              onCompose={props.onCompose}
+              label={props.composeLabel}
+            />
+          )}
+          {props.onClose && (
             <Button
               variant="ghost"
               size="icon-sm"
@@ -84,9 +74,13 @@ export function DocumentCommentsPanel(props: AnnotationPanelProps) {
             >
               <X className="size-4" />
             </Button>
-          ),
-          "visitors"
-        )}
+          )}
+        </div>
+      </div>
+      <TabsContent value="comments" className="min-h-0">
+        <AnnotationPanelContent {...props} header={false} />
+      </TabsContent>
+      <TabsContent value="visitors" className="min-h-0">
         {tab === "visitors" && (
           <VisitorCommentsPanel
             context={context}

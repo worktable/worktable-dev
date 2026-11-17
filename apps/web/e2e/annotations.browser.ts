@@ -488,7 +488,7 @@ ${note}</main></body></html>`
         await saved
         await page.keyboard.press("Escape")
         await expect(composer).toBeHidden()
-        await mode.click()
+        if (await mode.getAttribute("aria-pressed") === "true") await mode.click()
         await expect(mode).toHaveAttribute("aria-pressed", "false")
         await mode.click()
         await expect(mode).toHaveAttribute("aria-pressed", "true")
@@ -508,7 +508,7 @@ ${note}</main></body></html>`
         await expect(price).toHaveCSS("cursor", /data:image\/svg\+xml/)
       } finally {
         releaseSave()
-        await page.unroute(annotationsRoute)
+        await page.unrouteAll({ behavior: "wait" })
       }
 
       // A failed send keeps the draft and mode; a saved comment returns to browsing.

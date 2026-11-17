@@ -74,8 +74,8 @@ function recipientsLine(annotation: Annotation, selfId?: string): string | null 
 }
 
 export interface AnnotationPanelContentProps {
-  /** Replaces the list heading while retaining its actions (e.g. visitor tabs). */
-  header?: ReactNode | ((actions: ReactNode) => ReactNode)
+  /** Replaces the list heading; false lets a surrounding panel own it. */
+  header?: ReactNode
   /** Can't resolve, reopen or add comments from the panel. */
   readOnly?: boolean
   /** May reply; with Teams a viewer may. Defaults to not readOnly. */
@@ -176,30 +176,15 @@ export function AnnotationPanelContent({
   const listActions = (
     <>
       {onCompose && !readOnly && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size={header !== undefined ? "icon-sm" : "xs"}
-                variant="outline"
-                aria-label={composeLabel ?? "Add Comment"}
-                onClick={(event) => onCompose(event.currentTarget)}
-              />
-            }
-          >
-            <MessageSquareText className="size-3.5" />
-            {header === undefined && (composeLabel ?? "Add Comment")}
-          </TooltipTrigger>
-          <TooltipContent>{composeLabel ?? "Add Comment"}</TooltipContent>
-        </Tooltip>
+        <CommentComposeButton onCompose={onCompose} label={composeLabel} />
       )}
       {closeAction}
     </>
   )
-  const listHeader = typeof header === "function" ? header(listActions) : header
 
   return (
     <aside
+      data-annotation-thread={thread ? "" : undefined}
       className={cn(
         "flex h-full min-h-0 w-full flex-col bg-transparent",
         className
@@ -243,8 +228,8 @@ export function AnnotationPanelContent({
             </>
           }
         />
-      ) : listHeader !== undefined ? (
-        listHeader
+      ) : header !== undefined ? (
+        header
       ) : (
         <ContextPanelHeader
           title="Comments"
@@ -323,6 +308,33 @@ export function AnnotationPanelContent({
       )}
     </aside>
   );
+}
+
+export function CommentComposeButton({
+  onCompose,
+  label = "Add Comment",
+  iconOnly = false,
+}: {
+  onCompose: (trigger: HTMLElement) => void
+  label?: string
+  iconOnly?: boolean
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={
+        <Button
+          size={iconOnly ? "icon-sm" : "xs"}
+          variant="outline"
+          aria-label={label}
+          onClick={(event) => onCompose(event.currentTarget)}
+        />
+      }>
+        <MessageSquareText className="size-3.5" />
+        {!iconOnly && label}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
 }
 
 interface ThreadMessageLike {

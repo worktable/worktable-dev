@@ -22,6 +22,7 @@ import {
   Trash,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
+import { HTML_DOC_THEME } from "@worktable/ui/lib/html-doc-theme.generated"
 import { queryKeys } from "@/lib/queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { isSpaceLive } from "@/lib/space-observation"
@@ -862,6 +863,8 @@ function WidgetDetailPage({
         frameSrc !== null && loadedFrameSrc === frameSrc ? "true" : undefined
       }
       className="flex h-full min-h-0 flex-col bg-background"
+      // Continue the HTML canvas behind floating panels without scoping their card roles.
+      style={{ backgroundColor: HTML_DOC_THEME[resolvedTheme].background }}
     >
       <WidgetPageMeta
         spaceId={spaceId}

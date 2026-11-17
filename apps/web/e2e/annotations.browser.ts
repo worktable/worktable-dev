@@ -473,12 +473,17 @@ ${note}</main></body></html>`
       await expect(mode).toHaveAttribute("aria-pressed", "false")
       await expect(price).not.toHaveCSS("cursor", /data:image\/svg\+xml/)
       if (!mobile) {
-        // The HTML canvas has its own dark theme; comments use the app's card roles.
+        // The canvas continues behind the floating panel, whose card keeps the app's roles.
+        const canvasBackground = await frame.locator("body").evaluate((element) =>
+          getComputedStyle(element).backgroundColor
+        )
+        await expect(page.locator('[data-document-ready="true"]')).toHaveCSS("background-color", canvasBackground)
         await expect.poll(() => panel.evaluate((element) =>
           getComputedStyle(element).getPropertyValue("--card").trim() ===
           getComputedStyle(document.documentElement).getPropertyValue("--card").trim()
         )).toBe(true)
         await panel.screenshot({ path: info.outputPath("comments-list-dark.png") })
+        await page.screenshot({ path: info.outputPath("comments-canvas-dark.png") })
       }
       await mode.click()
       await commentOn(frame.locator(".note"), "Cut this line.")

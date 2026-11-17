@@ -1,4 +1,5 @@
 import { useVisitorCommentsPanel } from "@/hooks/use-visitor-comments-panel"
+import { useDocumentCheckFailed } from "@/components/document/document-check-status"
 import { useVersionSnapshot } from "@/lib/version-history"
 import {
   VersionHistoryPanel,
@@ -189,6 +190,7 @@ const UNSENT_EDITS_MS = 1000
  * screen, and edits made before the room connects are kept and sent.
  */
 function SyncStatusPill({ provider }: { provider: WebsocketProvider | null }) {
+  const checkFailed = useDocumentCheckFailed()
   const [state, setState] = useState<SyncState>("connecting")
   // When the reader's first edit not yet on the server was made.
   const [unsentSince, setUnsentSince] = useState<number | null>(null)
@@ -269,7 +271,7 @@ function SyncStatusPill({ provider }: { provider: WebsocketProvider | null }) {
     return () => clearTimeout(timer)
   }, [displayState])
 
-  if (displayState === null) return null
+  if (displayState === null || checkFailed) return null
   return <DocumentStatus state={displayState} />
 }
 

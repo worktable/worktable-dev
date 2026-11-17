@@ -4,6 +4,7 @@ import { ArrowUpRight, Plus, SquarePen, Trash2 } from "lucide-react"
 import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { savedSinceLive } from "@worktable/types"
 import { SkillFrame, SkillHead } from "@/components/library/skill-frame"
+import { DocumentCheckStatus } from "@/components/document/document-check-status"
 import { loadDocCode, loadedDocCode } from "@/components/library/doc-code"
 import { SkillNameDialog } from "@/components/library/skill-name-dialog"
 import { Button } from "@worktable/ui/components/button"
@@ -132,7 +133,11 @@ export function OpenSkill({
   const path = entry.docPath ?? ""
   // The Doc opens as on its own page: what the tab knows shows read-only at
   // once, and the editor takes over once a check validates this open.
-  const { pageQuery, page: checked } = useDocumentOpen(spaceId, path)
+  const {
+    page: checked,
+    openError,
+    temporarilyUnavailable,
+  } = useDocumentOpen(spaceId, path)
   // The Space's catalog stays live, as a Doc page's breadcrumb keeps it, so
   // a move or archive made elsewhere re-checks the open Doc.
   useLiveSpaceCatalog(spaceId)
@@ -298,7 +303,7 @@ export function OpenSkill({
   const unavailable =
     !path ||
     otherDoc ||
-    (pageQuery.isError && !pageQuery.isFetching) ||
+    openError !== null ||
     checked?.kind === "conflict" ||
     (page !== null && page.renderer?.key !== "doc")
   // The title and head hold the Doc's place while nothing of it is known yet.
@@ -324,14 +329,16 @@ export function OpenSkill({
         ) : formatId && (page || hint?.renderer === "doc") ? (
           <Suspense fallback={frame}>
             <SetPageMetaContext.Provider value={setDocMeta}>
-              <DocRenderer
-                spaceId={spaceId}
-                documentPath={page?.document.path ?? path}
-                formatId={formatId}
-                page={page}
-                preview={hint}
-                afterTitle={head}
-              />
+              <DocumentCheckStatus unavailable={temporarilyUnavailable}>
+                <DocRenderer
+                  spaceId={spaceId}
+                  documentPath={page?.document.path ?? path}
+                  formatId={formatId}
+                  page={page}
+                  preview={hint}
+                  afterTitle={head}
+                />
+              </DocumentCheckStatus>
             </SetPageMetaContext.Provider>
           </Suspense>
         ) : (

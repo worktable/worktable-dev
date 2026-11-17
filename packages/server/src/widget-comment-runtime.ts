@@ -139,7 +139,8 @@ function ensure(){
     const shadow=host.attachShadow({mode:'closed'});
     shadow.innerHTML='<style>'
       +'div,button{position:absolute;top:0;left:0;box-sizing:border-box;margin:0;padding:0}'
-      +'.box{display:none;border-radius:4px;pointer-events:none;outline-offset:1px}'
+      // Four extra pixels around the target, without extending the page's scroll bounds.
+      +'.box{display:none;border-radius:4px;pointer-events:none;outline-offset:5px}'
       +'.hover{outline:2px solid '+colors.pick+';background:color-mix(in oklch,'+colors.pick+' 8%,transparent)}'
       +'.mark{outline:2px solid '+colors.mark+';background:color-mix(in oklch,'+colors.mark+' 14%,transparent)}'
       +'button{width:18px;height:18px;margin:-9px 0 0 -9px;border:2px solid '+colors.edge+';border-radius:50%;cursor:pointer;pointer-events:auto;'
@@ -163,10 +164,8 @@ function place(box,el,origin){
   const r=el&&el.isConnected?el.getBoundingClientRect():null;
   if(!r||(!r.width&&!r.height)){box.style.display='none';return}
   box.style.display='block';
-  // Visual breathing room only: picking and saved anchors keep the real bounds.
-  const padding=4;
-  box.style.translate=(r.left-origin.left-padding)+'px '+(r.top-origin.top-padding)+'px';
-  box.style.width=(r.width+padding*2)+'px';box.style.height=(r.height+padding*2)+'px';
+  box.style.translate=(r.left-origin.left)+'px '+(r.top-origin.top)+'px';
+  box.style.width=r.width+'px';box.style.height=r.height+'px';
 }
 function paint(){
   frame=0;

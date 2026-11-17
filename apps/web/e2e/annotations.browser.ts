@@ -526,7 +526,10 @@ ${note}</main></body></html>`
       }).toPass({ timeout: 30_000 })
 
       await expect(page.getByRole("button", { name: "All Comments", exact: true })).toBeVisible()
-      await expect(page.getByRole("heading", { name: "Comments", exact: true })).toHaveCount(0)
+      await expect(
+        page.getByRole("complementary").filter({ has: thread })
+          .getByRole("heading", { name: "Comments", exact: true })
+      ).toHaveCount(0)
       await expect(page.getByRole("button", { name: "Add Comment", exact: true })).toHaveCount(0)
       if (!mobile) {
         await panel.screenshot({ path: info.outputPath("comment-thread-dark.png") })

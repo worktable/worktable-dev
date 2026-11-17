@@ -10,11 +10,13 @@ import { themeConfig } from "@worktable/ui/theme"
 const COLORS = JSON.stringify({
   light: {
     pick: HTML_DOC_THEME.light.primary,
+    ink: HTML_DOC_THEME.light.foreground,
     mark: themeConfig.accents.bronze.light,
     edge: HTML_DOC_THEME.light.background,
   },
   dark: {
     pick: HTML_DOC_THEME.dark.primary,
+    ink: HTML_DOC_THEME.dark.foreground,
     mark: themeConfig.accents.bronze.dark,
     edge: HTML_DOC_THEME.dark.background,
   },
@@ -153,8 +155,8 @@ function ensure(){
     hoverBox=shadow.querySelector('.hover');markBox=shadow.querySelector('.mark');pinLayer=shadow.querySelector('.pins');
     // In the page, not the shadow: the pointer over the page shows the mode.
     cursor=document.createElement('style');
-    const bubble='<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><path d="M4 25V7a3 3 0 0 1 3-3h15a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H8Z" fill="'+colors.edge+'" stroke="'+colors.pick+'" stroke-width="2" stroke-linejoin="round"/><path d="M9 10h11M9 15h8" stroke="'+colors.pick+'" stroke-width="2" stroke-linecap="round"/></svg>';
-    cursor.textContent='*{cursor:url("data:image/svg+xml,'+encodeURIComponent(bubble)+'") 4 25,pointer !important}';
+    const bubble='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="'+colors.edge+'" stroke="'+colors.ink+'" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></svg>';
+    cursor.textContent='*{cursor:url("data:image/svg+xml,'+encodeURIComponent(bubble)+'") 3 21,pointer !important}';
     cursor.media='not all';
     host.appendChild(cursor);
   }

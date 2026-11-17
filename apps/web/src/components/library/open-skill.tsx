@@ -6,6 +6,10 @@ import { savedSinceLive } from "@worktable/types"
 import { SkillFrame, SkillHead } from "@/components/library/skill-frame"
 import { loadDocCode, loadedDocCode } from "@/components/library/doc-code"
 import { SkillNameDialog } from "@/components/library/skill-name-dialog"
+import { Button } from "@worktable/ui/components/button"
+import { toast } from "@worktable/ui/components/sonner"
+import { restoreSpace } from "@/lib/api"
+import { restoreDoc } from "@/lib/docs-api"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
 import {
@@ -26,12 +30,59 @@ import {
   type LibraryRef,
 } from "@/lib/library"
 import { useLibraryActions, type LibraryAction } from "@/lib/library-actions"
-import { useSpaces } from "@/lib/queries"
+import { queryKeys, useSpaces } from "@/lib/queries"
 
 // The Doc's own page, with its editor, loads when a skill is opened.
 const LazyDocRenderer = lazy(() =>
   loadDocCode().then((module) => ({ default: module.DocDocumentRenderer }))
 )
+
+/**
+ * A skill whose Doc, or the Doc's Space, is archived: agents keep its
+ * approved version, and the Doc comes back with Restore.
+ */
+function ArchivedSkillDoc({
+  entry,
+  onRemove,
+}: {
+  entry: LibraryEntry
+  onRemove?: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [pending, setPending] = useState(false)
+  const archived = entry.docArchived!
+  const restore = async () => {
+    setPending(true)
+    try {
+      if (archived.space) await restoreSpace(entry.doc.spaceId)
+      else await restoreDoc(entry.doc.spaceId, archived.path)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: libraryQueryKey, exact: true }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.spaces, exact: true }),
+      ])
+    } catch {
+      toast.error(archived.space ? "Couldn’t restore this Space. Try again." : "Couldn’t restore this Doc. Try again.")
+    } finally {
+      setPending(false)
+    }
+  }
+  return (
+    <div className="mt-6 rounded-lg border border-border px-4 py-3">
+      <p className="text-sm font-medium">{archived.space ? "Space Archived" : "Doc Archived"}</p>
+      <p className="mt-0.5 text-sm text-muted-foreground">Agents still follow the approved version.</p>
+      <div className="mt-3 flex gap-2">
+        <Button size="sm" disabled={pending} onClick={() => void restore()}>
+          Restore
+        </Button>
+        {onRemove && (
+          <Button size="sm" variant="ghost" disabled={pending} onClick={onRemove}>
+            Remove
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 /** What a skill keeps of its Doc's page actions: its history and recovery. */
 const DOC_ACTIONS = new Set(["recover-offline-edits", "version-history"])
@@ -239,7 +290,12 @@ export function OpenSkill({
   return (
     <>
       <div className="relative min-h-0 flex-1">
-        {unavailable ? (
+        {entry.docArchived && !entry.removed ? (
+          <SkillFrame entry={entry}>
+            {head}
+            <ArchivedSkillDoc entry={entry} onRemove={mayChange ? remove : undefined} />
+          </SkillFrame>
+        ) : unavailable ? (
           <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
             Doc Missing
           </div>

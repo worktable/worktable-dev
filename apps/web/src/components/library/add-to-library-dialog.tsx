@@ -21,7 +21,8 @@ import {
 } from "@worktable/ui/components/select"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { listAgentConnections } from "@/lib/agent-connections-api"
-import { type LibraryRef } from "@/lib/library"
+import { outsideAgentsLine, type LibraryRef } from "@/lib/library"
+import { fetchJSON } from "@/lib/http"
 import {
   useLibraryActions,
   type AddToLibraryInput,
@@ -91,6 +92,27 @@ export function AddToLibraryDialog({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const ready = name.trim() !== "" && description.trim() !== ""
+  // A library wider than the Doc's Space can reach agents that can't open it.
+  const outside = useQuery({
+    queryKey: ["library", "outside", spaceId, library],
+    queryFn: () =>
+      fetchJSON<{ agents: string[] }>(
+        `/api/library/outside?${new URLSearchParams({
+          spaceId,
+          ...(library === WORKTABLE
+            ? { kind: "worktable" }
+            : { kind: "agent", participantId: library.slice(AGENT.length) }),
+        })}`
+      ),
+    enabled: library !== SPACE,
+    staleTime: 60_000,
+  })
+  const outsideLine =
+    library === SPACE
+      ? null
+      : outsideAgentsLine(outside.data?.agents ?? [], spaceName ?? "this Space", {
+          adding: true,
+        })
 
   const labelOf = (value: string) =>
     value === WORKTABLE
@@ -173,6 +195,9 @@ export function AddToLibraryDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {outsideLine && (
+                <p className="text-xs text-muted-foreground">{outsideLine}</p>
+              )}
             </div>
             <div className="space-y-2">
               <label

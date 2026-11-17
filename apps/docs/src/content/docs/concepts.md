@@ -139,8 +139,11 @@ team approved for its agents. Agents suggest changes, and someone approves
 them.
 
 Choose **Add to Library** from a Doc's menu. A skill can be for the whole
-Worktable, one Space or one agent, and an agent gets it only if it can read the
-Doc's Space. Agents get the version someone saved, never a half-done edit.
+Worktable, one Space or one agent. Every agent that library reaches follows the
+skill, even one that can't open the Doc's Space: it gets the skill's text, not
+the rest of the Space, and the Library names those agents. Agents get the
+version someone saved, never a half-done edit. If the Doc is archived, agents
+keep the saved version until you restore the Doc or remove the skill.
 
 When an agent suggests a new skill, a change or a removal, it waits in the
 Library and in Pending. Choose **Approve** to make it live or **Discard** to

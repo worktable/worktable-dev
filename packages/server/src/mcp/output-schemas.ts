@@ -348,8 +348,8 @@ export const RemovedSkillSchema = z.looseObject({
 })
 
 const SkillReadOutputSchema = SkillListingSchema.extend({
-  spaceId: PortableCanonicalIdSchema,
-  path: z.string().describe("The skill's Doc."),
+  spaceId: PortableCanonicalIdSchema.optional(),
+  path: z.string().optional().describe("The skill's Doc, when you can open it."),
   content: z.string().describe("The skill's live version, as Markdown."),
   note: z.string(),
 })

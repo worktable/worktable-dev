@@ -6,13 +6,19 @@ import { toast } from "@worktable/ui/components/sonner"
 import { ChangeBar } from "@/components/library/change-bar"
 import { LibraryMark } from "@/components/library/library-mark"
 import { DOCUMENT_BYLINE_CHIP } from "@/components/document-organize"
-import { libraryKey, skillTitle, type LibraryEntry } from "@/lib/library"
+import {
+  libraryKey,
+  outsideAgentsLine,
+  skillTitle,
+  type LibraryEntry,
+} from "@/lib/library"
 import {
   useLibraryActions,
   useLibraryName,
   useSavedBy,
   type LibraryAction,
 } from "@/lib/library-actions"
+import { useSpaces } from "@/lib/queries"
 
 const WHEN_LABEL = "mb-0.5 block text-xs font-medium text-muted-foreground"
 const WHEN_TEXT = "text-[0.9375rem] leading-6 text-foreground"
@@ -130,6 +136,11 @@ export function SkillHead({
 }) {
   const libraryName = useLibraryName()
   const savedBy = useSavedBy()
+  const { data: spaces } = useSpaces()
+  const outside = outsideAgentsLine(
+    entry.outsideAgents ?? [],
+    spaces?.find((space) => space.id === entry.doc.spaceId)?.name ?? "its Space"
+  )
   const [comparing, setComparing] = useState(false)
   const saved = entry.live ? savedBy(entry.live) : null
   const name = libraryName(entry)
@@ -157,6 +168,9 @@ export function SkillHead({
           </span>
         )}
       </div>
+      {outside && (
+        <p className="mt-2 text-sm text-muted-foreground">{outside}</p>
+      )}
       {decides && (
         <ChangeBar
           entry={entry}

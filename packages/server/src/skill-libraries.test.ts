@@ -36,7 +36,7 @@ import { clearTeamAuthInstances, getTeamAuth } from "./team-auth.ts"
 import { closeTeamDatabases, currentTeamWorktable } from "./team-database.ts"
 import { identityForTeamMember } from "./team-identity.ts"
 import { findTeamMember } from "./team-members.ts"
-import { setSpaceAccessPolicy } from "./team-policy.ts"
+import { createTeamAgent, setSpaceAccessPolicy } from "./team-policy.ts"
 import { getDocProvenance, writeDoc, writeSpace } from "./store.ts"
 import type { RequestPrincipal, TokenIdentity } from "./token-store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
@@ -385,9 +385,15 @@ describe("skill libraries", () => {
       { id, proposed: false, live: expect.objectContaining({ generationId: expect.any(String) }) },
     ])
     expect((await page("release-checklist", helperIdentity)).skills).toBeUndefined()
-    // Archived, it is the same Doc, and still the skill.
+    // Archived, it is the same Doc, and still the skill: agents keep its
+    // approved version, and the Library says where to restore it.
     expect((await rest("POST", "/api/spaces/ops/documents/archive", { path: "release-checklist" })).status).toBe(200)
     expect((await page("release-checklist")).skills).toEqual([expect.objectContaining({ id })])
+    expect((await call(agent, "worktable_skills_read", { name: "release-checklist" })).content).toBe(RELEASE)
+    type Listed = { entries: Array<{ id: string; docPath?: string; docArchived?: { path: string } }> }
+    const archivedEntry = (await rest<Listed>("GET", "/api/library")).body.entries.find((entry) => entry.id === id)
+    expect(archivedEntry).toMatchObject({ docArchived: { path: "release-checklist" } })
+    expect(archivedEntry).not.toHaveProperty("docPath")
     expect((await rest("POST", "/api/spaces/ops/documents/restore", { path: "release-checklist" })).status).toBe(200)
 
     // Without a proposal, the Doc as last saved is what Save would make live.
@@ -475,11 +481,16 @@ describe("skill libraries", () => {
     })
     await auth.api.acceptInvitation({ headers: cookies(joined.headers), body: { invitationId: invitation.id } })
     const member = identityForTeamMember(findTeamMember(joined.response.user.id)!)
+    // A team agent that opens Ops only.
+    const codex = createTeamAgent({ name: "Codex", platform: "codex", ownership: "team" }, owner)
     setSpaceAccessPolicy(
       {
         spaceId: "ops",
         visibility: "restricted",
-        grants: [{ subjectType: "member", subjectId: member.team!.memberId!, access: "read" }],
+        grants: [
+          { subjectType: "member", subjectId: member.team!.memberId!, access: "read" },
+          { subjectType: "agent", subjectId: codex.id, access: "read" },
+        ],
       },
       owner
     )
@@ -492,10 +503,21 @@ describe("skill libraries", () => {
     // Everywhere, from a Doc in a Space the member can't read.
     const hidden = await add("private", "pay-runbook", { kind: "worktable" })
 
-    type Listed = { entries: Array<{ id: string; mayChange: boolean }> }
+    type Listed = { entries: Array<{ id: string; mayChange: boolean; outsideAgents?: string[] }> }
     const read = async (identity: TokenIdentity) =>
       (await rest<Listed>("GET", "/api/library", undefined, identity)).body.entries
     expect((await read(owner)).map((entry) => entry.id).sort()).toEqual([readable.id, hidden.id].sort())
+    // The owner sees which agents follow a skill without opening its Space,
+    // before adding it and after.
+    const byId = new Map((await read(owner)).map((entry) => [entry.id, entry]))
+    expect(byId.get(hidden.id)?.outsideAgents).toEqual(["Codex"])
+    expect(byId.get(readable.id)?.outsideAgents).toBeUndefined()
+    expect(
+      (await rest("GET", "/api/library/outside?spaceId=private&kind=worktable", undefined, owner)).body
+    ).toEqual({ agents: ["Codex"] })
+    expect((await rest("GET", "/api/library/outside?spaceId=ops&kind=worktable", undefined, owner)).body).toEqual({
+      agents: [],
+    })
     // Read access shows the skill and its text, and offers no changes.
     expect(await read(member)).toEqual([expect.objectContaining({ id: readable.id, mayChange: false })])
     expect((await rest("GET", `/api/library/${readable.id}/change`, undefined, member)).body).toMatchObject({
@@ -507,7 +529,7 @@ describe("skill libraries", () => {
     expect((await rest("PATCH", `/api/library/${hidden.id}`, { description: "Mine now." }, member)).status).toBe(404)
   })
 
-  it("gives a skill only to agents its library applies to that can read its Doc", async () => {
+  it("gives a skill to the agents its library applies to, whether or not they open its Doc", async () => {
     await rest("POST", "/api/library", {
       spaceId: "private",
       path: "pay-runbook",
@@ -535,12 +557,19 @@ describe("skill libraries", () => {
       "Space: Ops/release-checklist",
       "Yours/release-checklist",
     ])
-    // Without the private Space, the Worktable's skill from it never reaches the agent.
+    // Without the private Space, the Worktable's skill from it still reaches
+    // the agent: its approved text, not where its Doc is.
     const narrowed = reader((spaceId) => spaceId !== "private")
-    expect(await names(narrowed)).not.toContain("Worktable/pay-runbook")
-    await expect(readSkillForAgent(narrowed, { name: "pay-runbook" })).rejects.toThrow("No skill named")
+    expect(await names(narrowed)).toContain("Worktable/pay-runbook")
+    const outside = await readSkillForAgent(narrowed, { name: "pay-runbook" })
+    expect(outside.content).toContain("payroll")
+    expect(outside).not.toHaveProperty("path")
+    expect(outside).not.toHaveProperty("spaceId")
     // A Space's library needs that Space; an agent's library is its own.
-    expect(await names(reader((spaceId) => spaceId !== "ops"))).toEqual(["Worktable/pay-runbook"])
+    expect(await names(reader((spaceId) => spaceId !== "ops"))).toEqual([
+      "Worktable/pay-runbook",
+      "Yours/release-checklist",
+    ])
     expect(await names(reader(() => true, "another-agent"))).toEqual([
       "Worktable/pay-runbook",
       "Space: Ops/release-checklist",

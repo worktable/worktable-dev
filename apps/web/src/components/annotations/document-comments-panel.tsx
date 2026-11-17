@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { useLocation } from "@tanstack/react-router"
 import { X } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
@@ -28,12 +28,22 @@ export function DocumentCommentsPanel(props: AnnotationPanelProps) {
         : "comments"
   if (selection.key !== key) setSelection({ key, tab })
   const setTab = (tab: string) => setSelection({ key, tab })
+  const commentsTabs = useRef<HTMLDivElement>(null)
+  const visitorsTabs = useRef<HTMLDivElement>(null)
+  const restoreTabFocus = useRef(false)
+  useLayoutEffect(() => {
+    if (!restoreTabFocus.current) return
+    restoreTabFocus.current = false
+    // Each panel owns its heading; restore the focused trigger after the swap.
+    const list = (tab === "visitors" ? visitorsTabs : commentsTabs).current
+    list?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus()
+  }, [tab])
   const openCount = props.annotations.filter(
     (annotation) => annotation.status !== "resolved"
   ).length
-  const header = (actions: ReactNode) => (
+  const header = (actions: ReactNode, panel: "comments" | "visitors") => (
     <div className="flex shrink-0 items-center justify-between gap-2 p-4 pb-2">
-      <TabsList aria-label="Document comments">
+      <TabsList ref={panel === "comments" ? commentsTabs : visitorsTabs} aria-label="Document comments">
         <TabsTrigger value="comments">
           Comments{" "}
           <span className="text-xs text-muted-foreground">{openCount}</span>
@@ -51,11 +61,17 @@ export function DocumentCommentsPanel(props: AnnotationPanelProps) {
   return (
     <Tabs
       value={tab}
-      onValueChange={(value) => setTab(String(value))}
+      onValueChange={(value) => {
+        if (value === tab) return
+        restoreTabFocus.current =
+          Boolean(commentsTabs.current?.contains(document.activeElement) ||
+            visitorsTabs.current?.contains(document.activeElement))
+        setTab(String(value))
+      }}
       className="h-full min-h-0 gap-0"
     >
       <TabsContent value="comments" className="min-h-0">
-        <AnnotationPanelContent {...props} header={header} />
+        <AnnotationPanelContent {...props} header={(actions) => header(actions, "comments")} />
       </TabsContent>
       <TabsContent value="visitors" className="flex min-h-0 flex-col">
         {header(
@@ -68,7 +84,8 @@ export function DocumentCommentsPanel(props: AnnotationPanelProps) {
             >
               <X className="size-4" />
             </Button>
-          )
+          ),
+          "visitors"
         )}
         {tab === "visitors" && (
           <VisitorCommentsPanel

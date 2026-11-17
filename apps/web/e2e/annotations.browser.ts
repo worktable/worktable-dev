@@ -465,8 +465,53 @@ ${note}</main></body></html>`
         await expect(composer).toBeHidden()
       }
 
+      // A saved response from a closed composer must not end a newer selection session.
+      let releaseSave!: () => void
+      let noteSaved!: () => void
+      const heldSave = new Promise<void>((resolve) => { releaseSave = resolve })
+      const saved = new Promise<void>((resolve) => { noteSaved = resolve })
+      const annotationsRoute = "**/api/spaces/annotations/annotations"
+      await page.route(annotationsRoute, async (route) => {
+        if (route.request().method() !== "POST") return route.continue()
+        const response = await route.fetch()
+        noteSaved()
+        await heldSave
+        await route.fulfill({ response })
+      })
+      try {
+        await mode.click()
+        await choose(frame.getByText("Up to 12 people.", { exact: true }))
+        await expect(composer.getByRole("textbox")).toBeVisible()
+        if (mobile) await settled(composer)
+        await composer.getByRole("textbox").fill("Confirm the included seats.")
+        await composer.getByRole("button", { name: "Send comment", exact: true }).click()
+        await saved
+        await page.keyboard.press("Escape")
+        await expect(composer).toBeHidden()
+        await mode.click()
+        await expect(mode).toHaveAttribute("aria-pressed", "false")
+        await mode.click()
+        await expect(mode).toHaveAttribute("aria-pressed", "true")
+        const refreshed = page.waitForResponse((response) => {
+          const url = new URL(response.url())
+          return response.request().method() === "GET" &&
+            url.pathname === "/api/spaces/annotations/annotations" &&
+            url.searchParams.get("widgetId") === id
+        })
+        releaseSave()
+        await (await refreshed).finished()
+        // Let the completed save's React updates and effects reach the next paint.
+        await page.evaluate(() => new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        ))
+        await expect(mode).toHaveAttribute("aria-pressed", "true")
+        await expect(price).toHaveCSS("cursor", /data:image\/svg\+xml/)
+      } finally {
+        releaseSave()
+        await page.unroute(annotationsRoute)
+      }
+
       // A failed send keeps the draft and mode; a saved comment returns to browsing.
-      await mode.click()
       await expect(mode).toHaveAttribute("aria-pressed", "true")
       await expect(price).toHaveCSS("cursor", /data:image\/svg\+xml/)
       await commentOn(price, "Show the yearly price.", true)
@@ -562,7 +607,7 @@ ${note}</main></body></html>`
       }
       expect(
         annotations.map((annotation) => annotation.target.quote).sort()
-      ).toEqual(["$49 per month", "Prices exclude tax."])
+      ).toEqual(["$49 per month", "Prices exclude tax.", "Up to 12 people."])
       const context = async (body: string) =>
         (
           (await (

@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type RefObject,
 } from "react"
@@ -74,6 +75,7 @@ export function useElementComments({
   onPick: () => void
   onOpenComment: (annotationId: string) => void
 }) {
+  const session = useRef(0)
   const [wanted, setMode] = useState(false)
   const mode = wanted && enabled
   const [picked, setPicked] = useState<Picked | null>(null)
@@ -112,9 +114,27 @@ export function useElementComments({
     )
   }, [frameRef, frameKey, mode, drafting, activeAnnotationId, pins])
 
-  const toggle = useCallback(() => setMode((on) => !on), [])
-  const clearDraft = useCallback(() => setPicked(null), [])
-  const finish = useCallback(() => setMode(false), [])
+  const stop = useCallback(() => {
+    session.current += 1
+    setMode(false)
+  }, [])
+  const toggle = useCallback(() => {
+    session.current += 1
+    setMode((on) => !on)
+  }, [])
+  const clearDraft = useCallback(() => {
+    session.current += 1
+    setPicked(null)
+  }, [])
+  /** A saved comment may finish only the draft/session it was sent from. */
+  const finishWhenSaved = useCallback(() => {
+    const sendingSession = session.current
+    return () => {
+      if (session.current !== sendingSession) return false
+      stop()
+      return true
+    }
+  }, [stop])
 
   useEffect(() => {
     if (!enabled) return
@@ -126,11 +146,11 @@ export function useElementComments({
       ) {
         event.preventDefault()
         toggle()
-      } else if (event.key === "Escape" && mode && !composing) setMode(false)
+      } else if (event.key === "Escape" && mode && !composing) stop()
     }
     window.addEventListener("keydown", key)
     return () => window.removeEventListener("keydown", key)
-  }, [enabled, mode, composing, toggle])
+  }, [enabled, mode, composing, toggle, stop])
 
   /** A message from the page's runtime, already known to come from it. */
   const onFrameMessage = (data: { type?: string; [field: string]: unknown }) => {
@@ -145,6 +165,7 @@ export function useElementComments({
         typeof anchor?.quote === "string"
           ? anchor.quote.slice(0, HTML_ELEMENT_QUOTE_LENGTH)
           : ""
+      session.current += 1
       setPicked({ ...(quote ? { quote } : {}), element, rect })
       onPick()
     } else if (data.type === "worktable.comment.rect") {
@@ -171,7 +192,7 @@ export function useElementComments({
     } else if (data.type === "worktable.comment.key") {
       if (data["key"] === "toggle") {
         if (enabled) toggle()
-      } else if (!composing) setMode(false)
+      } else if (!composing) stop()
     }
   }
 
@@ -213,7 +234,7 @@ export function useElementComments({
   return {
     mode,
     toggle,
-    finish,
+    finishWhenSaved,
     draft,
     clearDraft,
     /** Open comments whose element is no longer on the page. */

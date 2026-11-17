@@ -1131,6 +1131,7 @@ function WidgetDetailPage({
         }}
         context={{ spaceId, contributors: docContributors(page) }}
         onSubmit={async (body, to, idempotencyKey) => {
+          const finish = elementComments.finishWhenSaved()
           await annotationMutations.create.mutateAsync({
             target: {
               type: "widget",
@@ -1147,7 +1148,7 @@ function WidgetDetailPage({
             to,
             idempotencyKey,
           })
-          elementComments.finish()
+          if (!finish()) return
           // Beside the HTML Doc only; narrower, the list would cover it.
           if (belowXl) return
           setAnnotationsOpen(true)

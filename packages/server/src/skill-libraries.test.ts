@@ -36,7 +36,7 @@ import { clearTeamAuthInstances, getTeamAuth } from "./team-auth.ts"
 import { closeTeamDatabases, currentTeamWorktable } from "./team-database.ts"
 import { identityForTeamMember } from "./team-identity.ts"
 import { findTeamMember } from "./team-members.ts"
-import { createTeamAgent, setSpaceAccessPolicy } from "./team-policy.ts"
+import { canAccessSpace, createTeamAgent, runWithTeamIdentity, setSpaceAccessPolicy } from "./team-policy.ts"
 import { getDocProvenance, writeDoc, writeSpace } from "./store.ts"
 import type { RequestPrincipal, TokenIdentity } from "./token-store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
@@ -508,6 +508,22 @@ describe("skill libraries", () => {
     expect((await rest("GET", "/api/library/outside?spaceId=ops&kind=worktable", undefined, owner)).body).toEqual({
       agents: [],
     })
+    // Under a request that can't open the private Space, as a team agent's
+    // MCP calls run, the Worktable's skill from it still reaches the agent.
+    const outsider: SkillReader = {
+      participantId: null,
+      displayName: "Outsider",
+      actorId: "agent:outsider",
+      scopes: ["*"],
+      canAccess: (spaceId, access) => canAccessSpace(spaceId, access),
+    }
+    const asMember = <T,>(action: () => T) => runWithTeamIdentity(member, action)
+    expect(asMember(() => canAccessSpace("private", "read"))).toBe(false)
+    const reached = await asMember(() => skillsForAgent(outsider))
+    expect(reached.live.map((skill) => skill.entry.name)).toContain("pay-runbook")
+    const text = await asMember(() => readSkillForAgent(outsider, { name: "pay-runbook" }))
+    expect(text.content).toContain("payroll")
+    expect(text).not.toHaveProperty("path")
     // Read access shows the skill and its text, and offers no changes.
     expect(await read(member)).toEqual([expect.objectContaining({ id: readable.id, mayChange: false })])
     expect((await rest("GET", `/api/library/${readable.id}/change`, undefined, member)).body).toMatchObject({

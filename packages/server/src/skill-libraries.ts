@@ -56,6 +56,7 @@ import { teamsEnabled } from "./team-database.ts"
 import {
   canAccessSpace,
   listTeamAgents,
+  runWithoutTeamIdentity,
   teamAgentForParticipantKey,
   teamAgentHasSpaceAccess,
   teamMemberForIdentity,
@@ -330,6 +331,16 @@ interface DocLocation {
 type Locate = (doc: LibraryEntry["doc"]) => Promise<DocLocation | null>
 
 /**
+ * A Space's Doc identities, read as Worktable itself: a library reaches
+ * agents that can't open the Space, so finding where its skill's Doc is
+ * mustn't depend on the request's Space access. Callers decide what of it
+ * to show.
+ */
+function skillDocIdentities(spaceId: string): ReturnType<typeof readDocumentIdentities> {
+  return runWithoutTeamIdentity(() => readDocumentIdentities(spaceId))
+}
+
+/**
  * Where Docs are now, or null for one deleted, archived or in an archived
  * Space. Each Space's identities come from its read-model snapshot, once per
  * locator.
@@ -337,7 +348,7 @@ type Locate = (doc: LibraryEntry["doc"]) => Promise<DocLocation | null>
 function docLocator(): Locate {
   const spaces = new Map<string, ReturnType<typeof readDocumentIdentities>>()
   return async (doc) => {
-    if (!spaces.has(doc.spaceId)) spaces.set(doc.spaceId, readDocumentIdentities(doc.spaceId))
+    if (!spaces.has(doc.spaceId)) spaces.set(doc.spaceId, skillDocIdentities(doc.spaceId))
     try {
       const { identities } = (await spaces.get(doc.spaceId))!
       if (identities.spaceArchived) return null
@@ -364,7 +375,7 @@ export interface ArchivedDoc {
 function archiveLocator(): (doc: LibraryEntry["doc"]) => Promise<ArchivedDoc | null> {
   const spaces = new Map<string, ReturnType<typeof readDocumentIdentities>>()
   return async (doc) => {
-    if (!spaces.has(doc.spaceId)) spaces.set(doc.spaceId, readDocumentIdentities(doc.spaceId))
+    if (!spaces.has(doc.spaceId)) spaces.set(doc.spaceId, skillDocIdentities(doc.spaceId))
     try {
       const { identities } = (await spaces.get(doc.spaceId))!
       const archived = identities.archived.get(doc.documentId)
@@ -491,7 +502,8 @@ async function liveContent(entry: LibraryEntry, generationId: string): Promise<s
   const key = `${workspaceCacheKey()}\0${entry.doc.spaceId}\0${entry.doc.documentId}\0${generationId}`
   const kept = versionTexts.get(key)
   if (kept !== undefined) return kept
-  const text = await readVersionText(entry, generationId)
+  // A saved version, as Worktable reads it: the library decided who gets it.
+  const text = await runWithoutTeamIdentity(() => readVersionText(entry, generationId))
   if (!versionTexts.has(key)) {
     versionTexts.set(key, text)
     versionTextChars += text.length

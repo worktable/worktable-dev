@@ -9,7 +9,7 @@ import { SkillNameDialog } from "@/components/library/skill-name-dialog"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { restoreSpace } from "@/lib/api"
-import { restoreDoc } from "@/lib/docs-api"
+import { mutateDocument } from "@/lib/documents-api"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
 import {
@@ -55,7 +55,7 @@ function ArchivedSkillDoc({
     setPending(true)
     try {
       if (archived.space) await restoreSpace(entry.doc.spaceId)
-      else await restoreDoc(entry.doc.spaceId, archived.path)
+      else await mutateDocument(entry.doc.spaceId, "restore", archived.path)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: libraryQueryKey, exact: true }),
         queryClient.invalidateQueries({ queryKey: queryKeys.spaces, exact: true }),

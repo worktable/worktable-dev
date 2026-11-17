@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.51] - 2026-11-17
+
 ### Added
 
 - **Library:** Your team's skills live in Worktable. Choose **Add to Library** on a Doc to make it a skill for the whole Worktable, one Space or one agent, and every agent that library reaches follows the version you saved, in any app, with nothing to install. Agents suggest new skills and changes, which wait in **Pending** until someone approves them. An agent follows a skill even when it can't open the Doc's Space, and the Library names those agents. If a skill's Doc is archived, agents keep the saved version until you restore the Doc or remove the skill. Search finds skills too.

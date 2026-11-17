@@ -4,12 +4,12 @@ import { ArrowUpRight, Plus, SquarePen, Trash2 } from "lucide-react"
 import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { savedSinceLive } from "@worktable/types"
 import { SkillFrame, SkillHead } from "@/components/library/skill-frame"
-import { DocumentCheckStatus } from "@/components/document/document-check-status"
 import { loadDocCode, loadedDocCode } from "@/components/library/doc-code"
 import { SkillNameDialog } from "@/components/library/skill-name-dialog"
 import { Button } from "@worktable/ui/components/button"
 import { toast } from "@worktable/ui/components/sonner"
 import { restoreSpace } from "@/lib/api"
+import { HttpError } from "@/lib/http"
 import { mutateDocument } from "@/lib/documents-api"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useLiveSpaceCatalog } from "@/hooks/use-live-space-catalog"
@@ -22,7 +22,7 @@ import {
 import { documentRoute } from "@/lib/document-views"
 import { documentQueryKeys, useDocuments } from "@/lib/documents-queries"
 import { documentOpenHint } from "@/lib/document-rows"
-import { useDocumentOpen } from "@/lib/use-document-open"
+import { DocumentCheckStatus, useDocumentOpen } from "@/lib/use-document-open"
 import {
   libraryKey,
   libraryQueryKey,
@@ -324,7 +324,10 @@ export function OpenSkill({
           </SkillFrame>
         ) : unavailable ? (
           <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">
-            Doc Missing
+            {openError &&
+            !(openError instanceof HttpError && openError.status === 404)
+              ? "Couldn’t open document"
+              : "Doc Missing"}
           </div>
         ) : formatId && (page || hint?.renderer === "doc") ? (
           <Suspense fallback={frame}>

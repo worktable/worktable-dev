@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, Download, FileQuestion } from "lucide-react"
 import type { DocumentPage } from "@worktable/types"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
-import { DocumentCheckStatus } from "@/components/document/document-check-status"
 import { pageShareTarget, useSetPageMeta } from "@/hooks/use-page-meta"
 import { downloadDocumentSource } from "@/lib/documents-api"
 import {
@@ -13,7 +12,7 @@ import {
 } from "@/lib/document-renderers"
 import { documentOpenHint } from "@/lib/document-rows"
 import { openDocument } from "@/lib/document-open"
-import { useDocumentOpen } from "@/lib/use-document-open"
+import { DocumentCheckStatus, useDocumentOpen } from "@/lib/use-document-open"
 import { toast } from "@worktable/ui/components/sonner"
 import { HttpError } from "@/lib/http"
 

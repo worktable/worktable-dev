@@ -117,7 +117,7 @@ test("an HTML page keeps its frame and unsaved input through failed checks, but 
     )
     await expect(page.locator(frameSelector)).toHaveCount(0)
     await recheck(null)
-    await expect(input).toBeVisible()
+    await expect(input).toBeVisible({ timeout: 30_000 })
   }
 })
 

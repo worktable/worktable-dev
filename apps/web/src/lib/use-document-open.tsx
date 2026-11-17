@@ -1,4 +1,12 @@
-import { useEffect, useState } from "react"
+/* eslint-disable react-refresh/only-export-components -- Keep the hook and its status provider in one existing document chunk, without another blocking request. */
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react"
+import { DocumentStatus } from "@worktable/ui/components/document-status"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import type { DocumentPageResult } from "@worktable/types"
 import { HttpError } from "./http.ts"
@@ -10,6 +18,32 @@ import {
   forgetDocumentOpen,
   useDocumentPage,
 } from "./documents-queries.ts"
+
+// Consumers share the notice and open state through this module so the
+// bundler keeps them in one existing document chunk.
+export { DocumentStatus }
+const DocumentCheckFailed = createContext(false)
+
+/** The document's own sync indicator yields to the shared connection notice. */
+export function useDocumentCheckFailed(): boolean {
+  return useContext(DocumentCheckFailed)
+}
+
+/** Keep the renderer mounted while its background check is unavailable. */
+export function DocumentCheckStatus({
+  unavailable,
+  children,
+}: {
+  unavailable: boolean
+  children: ReactNode
+}) {
+  return (
+    <DocumentCheckFailed.Provider value={unavailable}>
+      {children}
+      {unavailable && <DocumentStatus state="offline" />}
+    </DocumentCheckFailed.Provider>
+  )
+}
 
 /**
  * A Doc's page for one open of it: the page query, and the page once a check

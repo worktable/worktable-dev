@@ -32,11 +32,8 @@ import {
   Pencil,
 } from "lucide-react"
 import { docQueryKeys } from "@/lib/docs-queries"
-import {
-  documentQueryKeys,
-  useDocumentCheckFailed,
-  useDocumentContent,
-} from "@/lib/documents-queries"
+import { documentQueryKeys, useDocumentContent } from "@/lib/documents-queries"
+import { DocumentStatus, useDocumentCheckFailed } from "@/lib/use-document-open"
 import type { DocumentRendererProps } from "@/lib/document-renderers"
 import type { DocumentOpenHint } from "@/lib/document-rows"
 import {
@@ -110,10 +107,7 @@ import {
   versionCommentedOn,
 } from "@/components/annotations/original-passage"
 import { Button } from "@worktable/ui/components/button"
-import {
-  DocumentStatus,
-  type DocumentStatusState,
-} from "@worktable/ui/components/document-status"
+import type { DocumentStatusState } from "@worktable/ui/components/document-status"
 import { preloadableComponent } from "@worktable/ui/lib/preloadable-component"
 import {
   aboveKeyboard,

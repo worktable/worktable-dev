@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect } from "react"
+import { useEffect } from "react"
 import { spaceAccessKey } from "./team-access"
 import { browserTeamMemberId } from "./team-context"
 import {
@@ -22,15 +22,6 @@ import {
   spaceValidatedLive,
   trackSpaceRead,
 } from "./space-observation.ts"
-
-// Kept with the document queries every renderer already loads, so the
-// connection notice doesn't add a shared JavaScript request to each open.
-export const DocumentCheckFailed = createContext(false)
-
-/** The document's own sync indicator yields to the shared connection notice. */
-export function useDocumentCheckFailed(): boolean {
-  return useContext(DocumentCheckFailed)
-}
 
 // The page check sits beside the list, not under it, so refreshing the list
 // leaves an open document's page alone. Content sits beside both, keyed by

@@ -419,7 +419,7 @@ ${note}</main></body></html>`
       )
       const price = frame.locator(".price")
       await expect(price).toHaveText("$49 per month", { timeout: 60_000 })
-      const mode = page.getByRole("button", { name: "Comment", exact: true })
+      const mode = page.getByRole("button", { name: "Comment", exact: true, includeHidden: true })
       const composer = page.getByRole("dialog", { name: "Add Comment" })
       const thread = page.getByRole("article", { name: /^Comment by / })
       const panel = page.locator("[data-worktable-context-panel]").filter({
@@ -460,7 +460,7 @@ ${note}</main></body></html>`
           await page.unroute("**/api/spaces/annotations/annotations")
         }
         await composer
-          .getByRole("button", { name: "Send comment", exact: true })
+          .getByRole("button", { name: retry ? "Try sending again" : "Send comment", exact: true })
           .click()
         await expect(composer).toBeHidden()
       }

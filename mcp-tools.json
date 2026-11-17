@@ -44,6 +44,9 @@
             ],
             "additionalProperties": false
           }
+        },
+        "notices": {
+          "type": "string"
         }
       },
       "required": [
@@ -115,6 +118,9 @@
             "type": "string"
           },
           "additionalProperties": {}
+        },
+        "notices": {
+          "type": "string"
         }
       },
       "required": [
@@ -151,7 +157,7 @@
   {
     "name": "worktable_state",
     "title": "Read Worktable state",
-    "description": "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId, set index for the Space's full document and Record index.",
+    "description": "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId, set index for the Space's full document and Record index. It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -447,6 +453,87 @@
             "groups"
           ],
           "additionalProperties": {}
+        },
+        "skills": {
+          "description": "The skills in your team's Library that apply to you, up to 50. The Library is your team's approved Docs: a person reviewed each one for agents to follow. Prefer a skill there over other Docs on the same work; Docs elsewhere may be drafts. Read one with worktable_skills_read.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "library": {
+                "type": "string",
+                "description": "\"Worktable\", \"Space: <name>\" or \"Yours\"."
+              },
+              "version": {
+                "type": "string",
+                "description": "Changes whenever the skill's live version does."
+              },
+              "read": {
+                "description": "Only when skills in more than one library share the name: pass these with the name to worktable_skills_read.",
+                "type": "object",
+                "properties": {
+                  "library": {
+                    "type": "string",
+                    "enum": [
+                      "worktable",
+                      "space",
+                      "agent"
+                    ]
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "library"
+                ],
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "name",
+              "description",
+              "library",
+              "version"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "moreSkills": {
+          "description": "How many skills apply beyond those listed.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "removedSkills": {
+          "description": "Skills removed from those libraries in the last 30 days.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "library": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "library",
+              "note"
+            ],
+            "additionalProperties": {}
+          }
         },
         "notices": {
           "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
@@ -14124,7 +14211,7 @@
   {
     "name": "worktable_guidance",
     "title": "Read Worktable guidance",
-    "description": "Read Worktable authoring guidance by topic: format_spec for Doc and file formats, drawings for drawing operations with examples, or html for the HTML Doc runtime contract.",
+    "description": "Read Worktable authoring guidance by topic: format_spec for Doc and file formats, drawings for drawing operations with examples, html for the HTML Doc runtime contract, or workflow with a skill's name for the current guide behind one of the Worktable plugin's skills.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -14138,9 +14225,22 @@
           "enum": [
             "format_spec",
             "drawings",
-            "html"
+            "html",
+            "workflow"
           ],
           "description": "The guidance to read."
+        },
+        "name": {
+          "description": "workflow only: the skill whose current guide to read.",
+          "type": "string",
+          "enum": [
+            "worktable-collaborate-threads",
+            "worktable-create-or-manage-interactive-html",
+            "worktable-create-or-manage-records",
+            "worktable-create-or-update-docs",
+            "worktable-find-and-synthesize-context",
+            "worktable-review-with-annotations"
+          ]
         }
       },
       "required": [
@@ -14300,6 +14400,297 @@
       "readOnlyHint": true,
       "destructiveHint": false,
       "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "securitySchemes": [
+      {
+        "type": "oauth2",
+        "scopes": []
+      }
+    ],
+    "_meta": {
+      "securitySchemes": [
+        {
+          "type": "oauth2",
+          "scopes": []
+        }
+      ]
+    }
+  },
+  {
+    "name": "worktable_skills_read",
+    "title": "Read a Worktable skill",
+    "description": "Read an approved skill from your team's Library by name: its live version, the one a person approved, as Markdown, with its description, library and version. Without a name, list the skills that apply to you, each with when to use it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The skill's name, as worktable_state lists it. Omit to list the skills that apply to you, each with when to use it.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "library": {
+          "description": "When skills in more than one library share the name: worktable, space, or agent for your own.",
+          "type": "string",
+          "enum": [
+            "worktable",
+            "space",
+            "agent"
+          ]
+        },
+        "spaceId": {
+          "description": "With library space: the Space whose library holds it.",
+          "type": "string"
+        }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "library": {
+          "type": "string",
+          "description": "\"Worktable\", \"Space: <name>\" or \"Yours\"."
+        },
+        "version": {
+          "type": "string",
+          "description": "Changes whenever the skill's live version does."
+        },
+        "read": {
+          "type": "object",
+          "properties": {
+            "library": {
+              "type": "string",
+              "enum": [
+                "worktable",
+                "space",
+                "agent"
+              ]
+            },
+            "spaceId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "library"
+          ],
+          "additionalProperties": {}
+        },
+        "spaceId": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CanonicalId"
+            }
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string",
+          "description": "The skill's live version, as Markdown."
+        },
+        "note": {
+          "type": "string"
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "library": {
+                "type": "string",
+                "description": "\"Worktable\", \"Space: <name>\" or \"Yours\"."
+              },
+              "version": {
+                "type": "string",
+                "description": "Changes whenever the skill's live version does."
+              },
+              "read": {
+                "description": "Only when skills in more than one library share the name: pass these with the name to worktable_skills_read.",
+                "type": "object",
+                "properties": {
+                  "library": {
+                    "type": "string",
+                    "enum": [
+                      "worktable",
+                      "space",
+                      "agent"
+                    ]
+                  },
+                  "spaceId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "library"
+                ],
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "name",
+              "description",
+              "library",
+              "version"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
+        }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": {},
+      "definitions": {
+        "CanonicalId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$"
+        }
+      }
+    },
+    "annotations": {
+      "title": "Read a Worktable skill",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "securitySchemes": [
+      {
+        "type": "oauth2",
+        "scopes": []
+      }
+    ],
+    "_meta": {
+      "securitySchemes": [
+        {
+          "type": "oauth2",
+          "scopes": []
+        }
+      ]
+    }
+  },
+  {
+    "name": "worktable_skills_write",
+    "title": "Propose a Worktable skill change",
+    "description": "Propose a change to your team's Library. Nothing changes until a person approves it in Worktable; until then, keep following the live version. With spaceId, path, library and description, propose adding that Doc as a skill. With name, propose its Doc's current content as the skill's next version; with remove, propose removing it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The skill to update or remove. To add, the new skill's name in lowercase words joined by hyphens; the Doc's name when omitted.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "spaceId": {
+          "description": "To add: the Space holding the Doc.",
+          "type": "string"
+        },
+        "path": {
+          "description": "To add: the Doc's path. Its current content is what you propose.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "library": {
+          "description": "To add: worktable for every agent, space for agents that can work in the Doc's Space, or agent for only you. To update or remove, picks between skills that share a name.",
+          "type": "string",
+          "enum": [
+            "worktable",
+            "space",
+            "agent"
+          ]
+        },
+        "description": {
+          "description": "One line saying when the skill applies. Required to add.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 280
+        },
+        "remove": {
+          "description": "true proposes removing the named skill from its library.",
+          "type": "boolean"
+        }
+      },
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "proposal": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "library": {
+              "type": "string"
+            },
+            "change": {
+              "type": "string",
+              "enum": [
+                "add",
+                "update",
+                "remove"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "library",
+            "change"
+          ],
+          "additionalProperties": {}
+        },
+        "message": {
+          "type": "string"
+        },
+        "notices": {
+          "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "proposal",
+        "message"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": {}
+    },
+    "annotations": {
+      "title": "Propose a Worktable skill change",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
       "openWorldHint": false
     },
     "securitySchemes": [

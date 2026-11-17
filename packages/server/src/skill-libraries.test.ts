@@ -60,7 +60,7 @@ let appDir = ""
 let helperParticipant = ""
 const clients: Client[] = []
 
-async function connect(surface: "released" | "preview" = "preview"): Promise<Client> {
+async function connect(surface: "released" | "preview" = "released"): Promise<Client> {
   const server = createWorktableMcpServer({
     version: "test",
     surface,
@@ -156,7 +156,6 @@ async function addRelease(library: Record<string, unknown> = { kind: "worktable"
 }
 
 beforeEach(async () => {
-  process.env["WORKTABLE_MCP_PREVIEW"] = "1"
   root = await mkdtemp(join(tmpdir(), "worktable-skills-"))
   appDir = await mkdtemp(join(tmpdir(), "worktable-skills-app-"))
   setWorkspaceRootOverride(root)
@@ -171,7 +170,6 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  delete process.env["WORKTABLE_MCP_PREVIEW"]
   await Promise.all(clients.splice(0).map((client) => client.close()))
   clearTeamAuthInstances()
   closeTeamDatabases()
@@ -272,17 +270,9 @@ describe("skill libraries", () => {
     ])
   })
 
-  it("holds the tools and state's skills for the preview surface", async () => {
+  it("lists the Library's skills to agents on the released tools", async () => {
     await addRelease()
-    const released = await connect("released")
-    expect(await call(released, "worktable_state")).not.toHaveProperty("skills")
-    // The grouped shape answers no one off the preview.
-    expect(
-      await refusal(released, "worktable_skills", { request: { action: "read", name: "release-checklist" } })
-    ).toContain("aren't available")
-
-    const preview = await connect()
-    expect((await call(preview, "worktable_state")).skills).toEqual([
+    expect((await call(await connect("released"), "worktable_state")).skills).toEqual([
       expect.objectContaining({ name: "release-checklist", library: "Worktable", description: "Use when shipping a release." }),
     ])
   })
@@ -700,9 +690,6 @@ describe("skill libraries", () => {
     expect(listed.find((skill) => skill.library === "Worktable")!.read).toEqual({ library: "worktable" })
     const read = await call(agent, "worktable_skills_read", { name: "release-checklist", ...(inSpace.read as object) })
     expect(read.library).toBe("Space: Ops")
-
-    process.env["WORKTABLE_MCP_PREVIEW"] = "0"
-    expect(await instructions()).not.toContain("release-checklist")
   })
 
   it("serves the skills over MCP to apps that load them, as both protocol eras ask", async () => {
@@ -786,25 +773,13 @@ describe("skill libraries", () => {
     }
   })
 
-  it("serves the current guide behind each of the plugin's skills on the preview tools", async () => {
+  it("serves the current guide behind each of the plugin's skills", async () => {
     // A copy of the plugin an app froze at install reads the current guide here.
-    const guide = await call(await connect(), "worktable_guidance", {
+    const guide = await call(await connect("released"), "worktable_guidance", {
       topic: "workflow",
       name: "worktable-create-or-update-docs",
     })
     expect(guide.guide).toStartWith("# ")
     expect(guide.guide).not.toContain("description:")
-    expect(
-      await refusal(await connect("released"), "worktable_guidance", {
-        topic: "workflow",
-        name: "worktable-create-or-update-docs",
-      })
-    ).toContain("topic")
-  })
-
-  it("keeps libraries off while the preview tools are off", async () => {
-    delete process.env["WORKTABLE_MCP_PREVIEW"]
-    process.env["WORKTABLE_MCP_PREVIEW"] = "0"
-    expect((await rest("GET", "/api/library")).status).toBe(404)
   })
 })

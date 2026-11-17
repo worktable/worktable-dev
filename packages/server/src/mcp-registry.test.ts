@@ -437,39 +437,18 @@ describe("released tool surface", () => {
     }
   })
 
-  it("lists the released tools on both surfaces, and preview's own after them", async () => {
+  it("lists the same released tools on both surfaces while nothing waits in preview", async () => {
     const released = (await listTools()).tools
     const preview = (await listTools("preview")).tools
-    const names = (tools: typeof released) => tools.map((tool) => tool.name)
-    // Tools held for the preview come after every released one.
-    const previewOnly = ["worktable_skills_read", "worktable_skills_write"]
-    expect(names(preview)).toEqual([...names(released), ...previewOnly])
-    // Preview holds changes until agent directories review them, each with
-    // the inputs it adds. Every other tool is identical.
-    // search and fetch only add notices to their output on preview.
-    // Guidance on preview also serves the plugin skills' current guides.
-    const held: Record<string, string[]> = {
-      worktable_state: [],
-      search: [],
-      fetch: [],
-      worktable_guidance: ["name"],
-    }
-    expect(
-      preview.filter((tool) => !(tool.name in held) && !previewOnly.includes(tool.name))
-    ).toEqual(released.filter((tool) => !(tool.name in held)))
-    // State on preview also describes the skills it lists.
-    const state = (tools: typeof released) =>
-      tools.find((tool) => tool.name === "worktable_state")!
-    expect(state(preview).outputSchema?.properties).toHaveProperty("skills")
-    expect(state(preview).outputSchema?.properties).toHaveProperty("removedSkills")
-    expect(state(released).outputSchema?.properties).not.toHaveProperty("skills")
-    for (const [name, added] of Object.entries(held)) {
-      const inputs = (tools: typeof released) =>
-        Object.keys(
-          tools.find((tool) => tool.name === name)?.inputSchema.properties ?? {}
-        )
-      expect(inputs(preview)).toEqual([...inputs(released), ...added])
-    }
+    expect(preview).toEqual(released)
+    // The Library is released: state lists the skills, and agents read and
+    // propose them with their own tools.
+    const state = released.find((tool) => tool.name === "worktable_state")!
+    expect(state.outputSchema?.properties).toHaveProperty("skills")
+    expect(state.outputSchema?.properties).toHaveProperty("removedSkills")
+    expect(released.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["worktable_skills_read", "worktable_skills_write"])
+    )
     // A file read says why a file keeps no history, in its output schema.
     const outputs = (tools: typeof released) =>
       tools.find((tool) => tool.name === "worktable_files_read")?.outputSchema

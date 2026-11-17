@@ -113,18 +113,18 @@ export async function handleModernMcpRequest(
 
 function createModernServer(exchange: ModernMcpExchange): Server {
   const { info, instructions } = serverIdentity(exchange.server)
-  const preview = exchange.server.surface === "preview" && exchange.server.skillsExtension === true
+  const skills = exchange.server.skillsExtension === true
   // Pending waits are released. Both tool surfaces use the same task path.
   const server = new Server(info, {
     capabilities: {
       tools: {},
       events: {},
-      ...(preview ? { resources: {} } : {}),
-      extensions: { [TASKS_EXTENSION]: {}, ...(preview ? { [SKILLS_EXTENSION]: {} } : {}) },
+      ...(skills ? { resources: {} } : {}),
+      extensions: { [TASKS_EXTENSION]: {}, ...(skills ? { [SKILLS_EXTENSION]: {} } : {}) },
     } as ServerCapabilities,
     instructions,
   })
-  if (preview) {
+  if (skills) {
     // The shared server answers these as it does on the earlier revisions.
     for (const method of ["resources/list", "resources/read"] as const) {
       server.setRequestHandler(method, (request, ctx) => relay(exchange, request, ctx))

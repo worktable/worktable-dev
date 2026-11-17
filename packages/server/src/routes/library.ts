@@ -2,7 +2,6 @@ import { Hono, type Context, type Next } from "hono"
 import { z } from "zod"
 import { requireScope } from "../auth.ts"
 import { DocumentWriteError } from "../document-write-service.ts"
-import { configuredMcpSurface } from "../mcp/surface.ts"
 import { completeHelpEvidence, setupKeyForIdentity } from "../personal-setup.ts"
 import {
   addToLibrary,
@@ -33,13 +32,7 @@ async function requirePerson(c: Context, next: Next) {
   await next()
 }
 
-/** Libraries ride with the preview agent tools until they are released. */
-async function requirePreview(c: Context, next: Next) {
-  if (configuredMcpSurface() !== "preview") return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
-  await next()
-}
-
-libraryRouter.use("*", requirePreview, requireScope("documents:read"), requirePerson)
+libraryRouter.use("*", requireScope("documents:read"), requirePerson)
 
 const STATUS: Record<LibraryError["code"], 400 | 403 | 404 | 409 | 503> = {
   invalid: 400,

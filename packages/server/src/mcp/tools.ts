@@ -371,9 +371,7 @@ export function registerTools(
                 last.operation.args,
                 last.result
               ),
-              surface === "preview"
-                ? await skillChangeNotice(skillReaderFor(reader), last.operation.id, last.operation.args)
-                : null,
+              await skillChangeNotice(skillReaderFor(reader), last.operation.id, last.operation.args),
             ]
               .filter(Boolean)
               .join("\n\n") || null
@@ -413,9 +411,8 @@ export function registerTools(
   registerCompanyKnowledgeTools(server, {
     scopes,
     urlOrigin: urlOriginFor(),
-    preview: surface === "preview",
     // Agents often start with search, so it carries the skills line too.
-    ...(surface === "preview" && callerIdentity
+    ...(callerIdentity
       ? {
           notice: (operationId: string) =>
             skillChangeNotice(

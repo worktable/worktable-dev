@@ -194,14 +194,13 @@ export function registerCompanyKnowledgeTools(
   options: {
     scopes: string[]
     urlOrigin: string
-    /** The preview surface lists notices beside results. */
-    preview?: boolean
-    /** On the preview surface, for an identified caller: the skills line for this call, if any. */
+    /** For an identified caller: the skills line for this call, if any. */
     notice?: (operationId: string) => Promise<string | null>
   }
 ): void {
-  const searchOutput = options.preview ? SearchOutput.extend({ notices: z.string().optional() }) : SearchOutput
-  const fetchOutput = options.preview ? FetchOutput.extend({ notices: z.string().optional() }) : FetchOutput
+  // Notices go beside results.
+  const searchOutput = SearchOutput.extend({ notices: z.string().optional() })
+  const fetchOutput = FetchOutput.extend({ notices: z.string().optional() })
   server.registerTool(
     "search",
     {

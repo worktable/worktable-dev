@@ -10,7 +10,6 @@
 // Each source is read only when the reader has the scope that would let them
 // open it.
 
-import { configuredMcpSurface } from "./mcp/surface.ts"
 import type { PendingItem, PendingResult, SpaceFile } from "@worktable/types"
 import { readDocumentIdentities } from "./document-query.ts"
 import { resolveParticipant } from "./participant-store.ts"
@@ -39,7 +38,7 @@ export async function listPending(
   const canReadAnnotations =
     identity.principal.type === "human" &&
     hasScope(identity.scopes, "annotations:read")
-  const canReviewSkills = isPerson(identity) && configuredMcpSurface() === "preview"
+  const canReviewSkills = isPerson(identity)
   if (!canReadThreads && !canReadAnnotations && !visitorAccess && !canReviewSkills) {
     return { items: [], total: 0 }
   }

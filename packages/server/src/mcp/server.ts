@@ -97,15 +97,15 @@ export function createWorktableMcpServer(
   options: WorktableMcpServerOptions
 ): McpServer {
   const { info, instructions } = serverIdentity(options)
-  const preview = options.surface === "preview" && options.skillsExtension === true
+  const skills = options.skillsExtension === true
   const server = new McpServer(info, {
-    // Preview: the team's skills over MCP too, for apps that load them.
-    capabilities: preview
+    // The team's skills over MCP too, for apps that load them.
+    capabilities: skills
       ? { tools: {}, resources: {}, extensions: { [SKILLS_EXTENSION]: {} } }
       : { tools: {} },
     instructions,
   })
-  if (preview) registerSkillsExtension(server, () => skillReader(options))
+  if (skills) registerSkillsExtension(server, () => skillReader(options))
   registerTools(server, {
     scopes: options.scopes,
     urlOrigin: options.urlOrigin,

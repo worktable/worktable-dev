@@ -21,10 +21,20 @@ Optional skills supply broader workflows.
 
 `worktable_guidance` returns authoring guidance by `topic`: `format_spec` for
 the format used to serialize Worktable content, `drawings` for drawing
-operations, and `html` for the HTML sandbox, bridge, permission, theme, and
-runtime contract. The former skill-list and skill-read tools are retired. Workspace Docs under `skills/`
+operations, `html` for the HTML sandbox, bridge, permission, theme, and
+runtime contract, and `workflow` with a skill's `name` for the current guide
+behind one of the Worktable plugin's skills. Workspace Docs under `skills/`
 can still be searched and read through the ordinary Doc tools, but MCP never
 promotes them to instructions.
+
+Your team's skills come from the [Library](/concepts/#library), not from a
+folder. `worktable_state` lists the skills that apply to the agent, and
+`worktable_skills_read` reads one by name, or lists them without a name.
+`worktable_skills_write` proposes adding a Doc, changing a skill or removing
+one; nothing changes until a person approves it. After a skill changes, the
+agent's next tool call says so. Apps that support Skills over MCP
+(`io.modelcontextprotocol/skills`) also get the skills as `skill://`
+resources.
 
 `worktable_files_read` works across Docs, HTML Docs, drawings, and other
 registered file formats. Without `path` it lists a Space's files, filtered by
@@ -242,12 +252,12 @@ On a self-hosted Worktable, **Settings → Agents → Preview agent tools** serv
 agents tool changes that aren't released yet. Agents get them the next time
 they connect. `WORKTABLE_MCP_PREVIEW=1` or `0` overrides the
 setting for one server process, and the switch then shows that it's set by
-the environment. Worktable Cloud serves the released tools.
+the environment. Worktable Cloud serves the released tools. Nothing waits in
+preview right now.
 The server instructions name the Worktable, so an
 agent connected to several can tell them apart. Team Worktables leave the name
-out. With preview agent tools, they also list the skills in the Library that
-apply to the connecting agent, first, so its app has them before the first
-message.
+out. They also list the skills in the Library that apply to the connecting
+agent, first, so its app has them before the first message.
 MCP revision 2026-07-28 is enabled over HTTP by default, beside the earlier
 revisions on the same endpoint. `WORKTABLE_MCP_MODERN=0` turns it off. Over 2026-07-28, an agent such as ChatGPT can subscribe to
 the event `item.sent_to_you`: Worktable posts each comment or thread message

@@ -24,9 +24,9 @@ const TEXT_MAX_BYTES = 1024 * 1024
 
 /**
  * Source code the file type table doesn't list, by extension, which agents
- * on the preview surface read as text. Its page still shows it as a file.
+ * read as text. Its page still shows it as a file.
  */
-const PREVIEW_CODE_EXTENSIONS = new Set([
+const CODE_EXTENSIONS = new Set([
   "py", "pyi", "rb", "go", "rs", "java", "kt", "kts", "scala", "swift", "m",
   "c", "h", "cc", "cpp", "cxx", "hpp", "hh", "cs", "fs", "php", "pl", "pm",
   "lua", "r", "jl", "dart", "ex", "exs", "erl", "hrl", "hs", "clj", "cljs",
@@ -43,24 +43,23 @@ function extensionOf(path: string): string {
 }
 
 /**
- * How an agent reads a file of this type: on the preview surface, source
- * code the table doesn't list and a Dockerfile come as text.
+ * How an agent reads a file of this type: source code the table doesn't
+ * list and a Dockerfile come as text.
  */
-function agentReads(path: string, preview: boolean) {
+function agentReads(path: string) {
   const type = fileTypeFor(path)
   const reads = fileTypePolicy(type, "agent")
   if (
-    preview &&
     reads === "bytes" &&
     (type === "dockerfile" ||
-      (type === null && PREVIEW_CODE_EXTENSIONS.has(extensionOf(path))))
+      (type === null && CODE_EXTENSIONS.has(extensionOf(path))))
   ) {
     return { type, reads: "text" as const }
   }
   return { type, reads }
 }
 
-/** Whether a file is an AVIF, which the preview surface converts for agents. */
+/** Whether a file is an AVIF, which agents get converted into an image. */
 export function isAvifFile(path: string): boolean {
   return fileTypeFor(path) === "avif"
 }
@@ -72,10 +71,9 @@ export function isAvifFile(path: string): boolean {
  */
 export function fileReadsAs(
   path: string,
-  byteLength: number,
-  options: { preview?: boolean } = {}
+  byteLength: number
 ): "image" | "text" | null {
-  const { type, reads } = agentReads(path, options.preview === true)
+  const { type, reads } = agentReads(path)
   if (type !== null && reads === "image") {
     return byteLength <= IMAGE_MAX_BYTES ? "image" : null
   }
@@ -85,13 +83,12 @@ export function fileReadsAs(
 /** A file as an image or as text, when it is one and small enough. */
 export function readableFileSource(
   path: string,
-  bytes: Uint8Array,
-  options: { preview?: boolean } = {}
+  bytes: Uint8Array
 ):
   | { kind: "image"; mediaType: string }
   | { kind: "text"; text: string }
   | null {
-  const reads = fileReadsAs(path, bytes.byteLength, options)
+  const reads = fileReadsAs(path, bytes.byteLength)
   if (reads === null) return null
   if (reads === "image") {
     return { kind: "image", mediaType: FILE_TYPES[fileTypeFor(path)!].mediaType }

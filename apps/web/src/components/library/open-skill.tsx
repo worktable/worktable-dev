@@ -57,25 +57,44 @@ function ArchivedSkillDoc({
       if (archived.space) await restoreSpace(entry.doc.spaceId)
       else await mutateDocument(entry.doc.spaceId, "restore", archived.path)
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: libraryQueryKey, exact: true }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.spaces, exact: true }),
+        queryClient.invalidateQueries({
+          queryKey: libraryQueryKey,
+          exact: true,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.spaces,
+          exact: true,
+        }),
       ])
     } catch {
-      toast.error(archived.space ? "Couldn’t restore this Space. Try again." : "Couldn’t restore this Doc. Try again.")
+      toast.error(
+        archived.space
+          ? "Couldn’t restore this Space. Try again."
+          : "Couldn’t restore this Doc. Try again."
+      )
     } finally {
       setPending(false)
     }
   }
   return (
     <div className="mt-6 rounded-lg border border-border px-4 py-3">
-      <p className="text-sm font-medium">{archived.space ? "Space Archived" : "Doc Archived"}</p>
-      <p className="mt-0.5 text-sm text-muted-foreground">Agents still follow the approved version.</p>
+      <p className="text-sm font-medium">
+        {archived.space ? "Space Archived" : "Doc Archived"}
+      </p>
+      <p className="mt-0.5 text-sm text-muted-foreground">
+        Agents still follow the approved version.
+      </p>
       <div className="mt-3 flex gap-2">
         <Button size="sm" disabled={pending} onClick={() => void restore()}>
           Restore
         </Button>
         {onRemove && (
-          <Button size="sm" variant="ghost" disabled={pending} onClick={onRemove}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={pending}
+            onClick={onRemove}
+          >
             Remove
           </Button>
         )}
@@ -293,7 +312,10 @@ export function OpenSkill({
         {entry.docArchived && !entry.removed ? (
           <SkillFrame entry={entry}>
             {head}
-            <ArchivedSkillDoc entry={entry} onRemove={mayChange ? remove : undefined} />
+            <ArchivedSkillDoc
+              entry={entry}
+              onRemove={mayChange ? remove : undefined}
+            />
           </SkillFrame>
         ) : unavailable ? (
           <div className="flex h-full items-center justify-center px-6 text-sm text-muted-foreground">

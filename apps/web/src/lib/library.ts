@@ -51,8 +51,9 @@ export interface LibraryEntry {
 }
 
 /** A skill's own heading: its Doc's title, or its name while the Doc is gone. */
-export const skillTitle = (entry: Pick<LibraryEntry, "docTitle" | "docArchived" | "name">) =>
-  entry.docTitle?.trim() || entry.docArchived?.title.trim() || entry.name
+export const skillTitle = (
+  entry: Pick<LibraryEntry, "docTitle" | "docArchived" | "name">
+) => entry.docTitle?.trim() || entry.docArchived?.title.trim() || entry.name
 
 /** One key per library, to group and filter by. */
 export const libraryKey = (library: LibraryRef) =>

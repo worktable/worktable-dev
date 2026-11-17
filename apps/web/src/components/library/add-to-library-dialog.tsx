@@ -107,12 +107,18 @@ export function AddToLibraryDialog({
     enabled: library !== SPACE,
     staleTime: 60_000,
   })
+  // Who the skill reaches without its Space shows before it's added.
+  const checking = library !== SPACE && outside.isPending
   const outsideLine =
     library === SPACE
       ? null
-      : outsideAgentsLine(outside.data?.agents ?? [], spaceName ?? "this Space", {
-          adding: true,
-        })
+      : outsideAgentsLine(
+          outside.data?.agents ?? [],
+          spaceName ?? "this Space",
+          {
+            adding: true,
+          }
+        )
 
   const labelOf = (value: string) =>
     value === WORKTABLE
@@ -123,7 +129,7 @@ export function AddToLibraryDialog({
             ?.name ?? "Agent")
 
   const submit = async () => {
-    if (pending || !ready) return
+    if (pending || !ready || checking) return
     const target: AddToLibraryInput["library"] =
       library === WORKTABLE
         ? { kind: "worktable" }
@@ -256,7 +262,10 @@ export function AddToLibraryDialog({
           <Button variant="outline" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button onClick={() => void submit()} disabled={!ready || pending}>
+          <Button
+            onClick={() => void submit()}
+            disabled={!ready || pending || checking}
+          >
             {pending ? "Adding…" : "Add"}
           </Button>
         </ResponsiveDialogFooter>

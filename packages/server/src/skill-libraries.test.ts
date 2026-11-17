@@ -508,6 +508,10 @@ describe("skill libraries", () => {
     expect((await rest("GET", "/api/library/outside?spaceId=ops&kind=worktable", undefined, owner)).body).toEqual({
       agents: [],
     })
+    // Someone who can't add to a library doesn't learn who it reaches.
+    expect(
+      (await rest("GET", "/api/library/outside?spaceId=ops&kind=space&librarySpaceId=private", undefined, member)).body
+    ).toEqual({ agents: [] })
     // Under a request that can't open the private Space, as a team agent's
     // MCP calls run, the Worktable's skill from it still reaches the agent.
     const outsider: SkillReader = {

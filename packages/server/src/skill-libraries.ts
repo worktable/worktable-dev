@@ -791,6 +791,8 @@ export async function agentsOutsideLibrary(
 ): Promise<string[]> {
   if (!isPerson(identity) || !canAccessSpace(input.spaceId, "read", identity)) return []
   const library = await resolveLibrary(input.library, input.spaceId)
+  // Only someone who could add to that library learns who it reaches.
+  if (!(await personMayChange(library, identity))) return []
   return agentsOutside(identity)(library, input.spaceId)
 }
 

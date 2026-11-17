@@ -3,13 +3,18 @@
 // canonical sources.
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
-import { skillSourcePath, WORKTABLE_BUNDLED_SKILLS } from "./skill-inventory"
+import {
+  skillSourcePath,
+  skillsFor,
+  WORKTABLE_BUNDLED_SKILLS,
+} from "./skill-inventory"
 
 const check = process.argv.slice(2).includes("--check")
 const repositoryRoot = join(import.meta.dir, "..")
 const destination = join(repositoryRoot, "packages", "hermes-plugin", "skills")
 // The OpenAI listing overlay has no meaning to Hermes.
 const HERMES_SKILL_FILES = new Set(["SKILL.md", "LICENSE"])
+const HERMES_SKILLS = skillsFor("hermes", WORKTABLE_BUNDLED_SKILLS)
 
 async function listFiles(root: string): Promise<string[]> {
   const entries = await readdir(root, { recursive: true, withFileTypes: true })
@@ -20,7 +25,7 @@ async function listFiles(root: string): Promise<string[]> {
 }
 
 const expected = new Map<string, string>()
-for (const skill of WORKTABLE_BUNDLED_SKILLS) {
+for (const skill of HERMES_SKILLS) {
   for (const file of skill.files.filter((name) =>
     HERMES_SKILL_FILES.has(name)
   )) {
@@ -49,12 +54,12 @@ if (check) {
       `Hermes plugin skills are stale: ${stale.sort().join(", ")}. Run 'bun run generate:hermes-skills' and commit the result.`
     )
   }
-  console.log(`Verified ${WORKTABLE_BUNDLED_SKILLS.length} Hermes skills`)
+  console.log(`Verified ${HERMES_SKILLS.length} Hermes skills`)
 } else {
   await rm(destination, { recursive: true, force: true })
   for (const [path, contents] of expected) {
     await mkdir(dirname(join(destination, path)), { recursive: true })
     await writeFile(join(destination, path), contents)
   }
-  console.log(`Wrote ${WORKTABLE_BUNDLED_SKILLS.length} Hermes skills`)
+  console.log(`Wrote ${HERMES_SKILLS.length} Hermes skills`)
 }

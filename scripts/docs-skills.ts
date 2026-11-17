@@ -2,10 +2,17 @@ import { createHash } from "node:crypto"
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
-import { WORKTABLE_SKILLS } from "./skill-inventory.ts"
+import {
+  WORKFLOW_GUIDE_DIRECTORY,
+  workflowGuidePath,
+  WORKTABLE_BUNDLED_SKILLS,
+  WORKTABLE_SKILLS,
+} from "./skill-inventory.ts"
 
-// Navigation metadata only. Instructions and discovery descriptions live in SKILL.md.
+// Navigation metadata only. Instructions and discovery descriptions live in
+// SKILL.md, or in the skill's guide when its SKILL.md points to one.
 export const SKILL_PAGES: Record<string, { slug: string; title: string }> = {
+  "worktable-library": { slug: "library-check", title: "Check the Library" },
   "worktable-setup": { slug: "setup", title: "Set up Worktable" },
   "worktable-find-and-synthesize-context": {
     slug: "find-context",
@@ -47,11 +54,71 @@ export function parseSkill(source: string): {
   return {
     name: metadata.name,
     description: metadata.description,
-    body: match[2]!
-      .trimStart()
-      .replace(/^# .*\r?\n+/, "")
-      .trim(),
+    body: withoutTitle(match[2]!),
   }
+}
+
+/** A page's title comes from SKILL_PAGES, so the body drops its own. */
+function withoutTitle(markdown: string): string {
+  return markdown
+    .trimStart()
+    .replace(/^# .*\r?\n+/, "")
+    .trim()
+}
+
+/** The skill's full guide when its SKILL.md points to one, else its SKILL.md. */
+function pageSource(rootDir: string, name: string, skillPath: string): string {
+  const guide = `${WORKFLOW_GUIDE_DIRECTORY}/${name}.md`
+  return existsSync(join(rootDir, guide)) ? guide : skillPath
+}
+
+/**
+ * The Gemini app uploads one skill folder with one SKILL.md, and never updates
+ * it. This one holds the Library check and names each workflow guide, which
+ * the connected Worktable serves current.
+ */
+export function geminiAppSkill(rootDir: string): string {
+  const library = WORKTABLE_SKILLS.find(
+    (skill) => skill.name === "worktable-library"
+  )
+  if (!library) throw new Error("The inventory needs worktable-library")
+  const check = parseSkill(
+    readFileSync(join(rootDir, library.sourceDirectory, "SKILL.md"), "utf8")
+  )
+  const guides = WORKTABLE_BUNDLED_SKILLS.filter((skill) =>
+    existsSync(workflowGuidePath(rootDir, skill.name))
+  ).map((skill) => {
+    const overlay = Bun.YAML.parse(
+      readFileSync(
+        join(rootDir, skill.sourceDirectory, "agents/openai.yaml"),
+        "utf8"
+      )
+    ) as { interface?: { short_description?: unknown } }
+    const purpose = overlay.interface?.short_description
+    if (typeof purpose !== "string")
+      throw new Error(`${skill.name} needs a short description`)
+    return `- \`${skill.name}\`: ${purpose}.`
+  })
+  const description = `${check.description} It also names Worktable's current guides for finding context, Docs, HTML Docs, Records, annotations and threads.`
+  return `---
+name: worktable
+description: ${JSON.stringify(description)}
+---
+
+# Worktable
+
+## Check the Library
+
+${check.body}
+
+## Work in Worktable
+
+For work in Worktable itself, call \`worktable_guidance\` on the connected
+Worktable with \`topic: "workflow"\` and the guide's \`name\`. Follow the guide
+it returns over your own approach.
+
+${guides.join("\n")}
+`
 }
 
 export function sourceRevision(rootDir: string): string {
@@ -70,6 +137,7 @@ export function sourceRevision(rootDir: string): string {
         "--",
         "plugins/worktable/skills",
         "plugins/worktable/skill-inventory.json",
+        WORKFLOW_GUIDE_DIRECTORY,
         "skills",
         "scripts/skill-inventory.ts",
       ],
@@ -93,7 +161,7 @@ export async function publishSkills(rootDir: string): Promise<string[]> {
       if (!file.endsWith(".md") || currentPages.has(file)) continue
       const path = join(agentsDir, file)
       if (
-        /<!-- Generated at build time from (?:plugins\/worktable\/)?skills\//.test(
+        /<!-- Generated at build time from (?:(?:plugins\/worktable\/)?skills\/|packages\/server\/src\/mcp\/workflow-guides\/)/.test(
           readFileSync(path, "utf8")
         )
       ) {
@@ -130,7 +198,15 @@ export async function publishSkills(rootDir: string): Promise<string[]> {
       join(publicDir, download.slice(1)),
       await new Bun.Archive(files).blob()
     )
-    const sourcePath = `${skill.sourceDirectory}/SKILL.md`
+    // Pages show the full guide; the files above are what apps install.
+    const sourcePath = pageSource(
+      rootDir,
+      name,
+      `${skill.sourceDirectory}/SKILL.md`
+    )
+    const pageBody = sourcePath.endsWith("/SKILL.md")
+      ? body
+      : withoutTitle(readFileSync(join(rootDir, sourcePath), "utf8"))
     const sourceUrl = `https://github.com/worktable/worktable-dev/blob/${sourceRef}/${sourcePath}`
     const relPath = `apps/docs/src/content/docs/agents/${page.slug}.md`
     const frontmatter = [
@@ -144,10 +220,9 @@ export async function publishSkills(rootDir: string): Promise<string[]> {
       `  source: ${JSON.stringify(sourceUrl)}`,
       "---",
     ].join("\n")
-    // The workflow is the canonical skill body, with no separate edited copy.
     await Bun.write(
       join(rootDir, relPath),
-      `${frontmatter}\n\n<!-- Generated at build time from ${sourcePath}. -->\n\n${body}\n`
+      `${frontmatter}\n\n<!-- Generated at build time from ${sourcePath}. -->\n\n${pageBody}\n`
     )
     pages.push(relPath)
     catalog.push({
@@ -160,6 +235,13 @@ export async function publishSkills(rootDir: string): Promise<string[]> {
       sha256: digests,
     })
   }
+  // Kept out of the manifest: it repeats the skills listed there.
+  const gemini = geminiAppSkill(rootDir)
+  await Bun.write(join(downloadsDir, "gemini/worktable/SKILL.md"), gemini)
+  await Bun.write(
+    join(downloadsDir, "gemini/worktable.tar"),
+    await new Bun.Archive({ "worktable/SKILL.md": gemini }).blob()
+  )
   await Bun.write(
     join(rawDir, "index.json"),
     JSON.stringify({ revision, skills: catalog }, null, 2) + "\n"

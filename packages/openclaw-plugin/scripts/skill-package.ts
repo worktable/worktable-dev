@@ -10,7 +10,12 @@ const canonicalSkills = join(canonicalRoot, "skills")
 
 interface SkillInventory {
   schemaVersion: 1
-  skills: Array<{ name: string; files: string[]; bundled?: boolean }>
+  skills: Array<{
+    name: string
+    files: string[]
+    bundled?: boolean
+    skipIn?: string[]
+  }>
 }
 
 export interface SkillPackageFile {
@@ -79,6 +84,13 @@ function validateInventory(value: unknown): SkillInventory {
       throw new Error("The canonical Worktable skill inventory is invalid")
     }
     if ("bundled" in skill && typeof skill.bundled !== "boolean") {
+      throw new Error("The canonical Worktable skill inventory is invalid")
+    }
+    if (
+      "skipIn" in skill &&
+      (!Array.isArray(skill.skipIn) ||
+        skill.skipIn.some((runtime: unknown) => typeof runtime !== "string"))
+    ) {
       throw new Error("The canonical Worktable skill inventory is invalid")
     }
     assertPortableRelativePath(skill.name, "Skill name")
@@ -190,7 +202,11 @@ export async function prepareSkillPackage(): Promise<PreparedSkillPackage> {
   await rm(destination, { recursive: true, force: true })
   try {
     await mkdir(destination, { recursive: true })
-    for (const skill of inventory.skills) {
+    // OpenClaw lists the team's Library skills itself, so the inventory
+    // leaves the Library check out of OpenClaw.
+    for (const skill of inventory.skills.filter(
+      (candidate) => !candidate.skipIn?.includes("openclaw")
+    )) {
       for (const file of skill.files.filter(isOpenClawSkillFile)) {
         // Skills kept out of the agent plugin live under skills/ at the root.
         const source =

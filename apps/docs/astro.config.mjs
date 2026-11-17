@@ -154,6 +154,7 @@ export default defineConfig({
         {
           label: "Agent workflows",
           items: [
+            { slug: "agents/library-check" },
             { slug: "agents/find-context" },
             { slug: "agents/writing-docs" },
             { slug: "agents/drawings" },

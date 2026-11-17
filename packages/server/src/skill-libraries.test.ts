@@ -3,12 +3,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import type { PendingResult } from "@worktable/types"
 import { Hono } from "hono"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import { ownerIdentity } from "./auth.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
+import { WORKFLOW_GUIDES } from "./mcp/workflow-guides.generated.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { pendingRouter } from "./routes/activity.ts"
 import { documentsRouter } from "./routes/documents.ts"
@@ -803,13 +804,23 @@ describe("skill libraries", () => {
     }
   })
 
-  it("serves the current guide behind each of the plugin's skills", async () => {
-    // A copy of the plugin an app froze at install reads the current guide here.
-    const guide = await call(await connect("released"), "worktable_guidance", {
-      topic: "workflow",
-      name: "worktable-create-or-update-docs",
-    })
-    expect(guide.guide).toStartWith("# ")
-    expect(guide.guide).not.toContain("description:")
+  it("serves the guide each of the plugin's skills points to", async () => {
+    // A copy of the plugin an app froze at install holds only a pointer to
+    // its guide, so every pointer has to reach the full guide here.
+    const client = await connect("released")
+    const root = join(import.meta.dir, "../../..")
+    const skills = join(root, "plugins/worktable/skills")
+    const pointed: string[] = []
+    for (const name of (await readdir(skills)).sort()) {
+      const skill = await readFile(join(skills, name, "SKILL.md"), "utf8")
+      const target = skill.match(/`topic: "workflow"` and `name: "([^"]+)"`/)?.[1]
+      if (!target) continue
+      expect(target).toBe(name)
+      const served = await call(client, "worktable_guidance", { topic: "workflow", name })
+      const guide = await readFile(join(root, "packages/server/src/mcp/workflow-guides", `${name}.md`), "utf8")
+      expect(served.guide).toBe(guide.trim())
+      pointed.push(name)
+    }
+    expect(pointed).toEqual(Object.keys(WORKFLOW_GUIDES).sort())
   })
 })

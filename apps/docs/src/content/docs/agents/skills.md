@@ -12,6 +12,7 @@ skills does not connect an agent.
 | Skill | Purpose |
 | --- | --- |
 | [Set up Worktable](/agents/setup/) | Install or connect Worktable for a user and verify access. |
+| [Check the Library](/agents/library-check/) | Follow your team's approved skills before other work. |
 | [Find context](/agents/find-context/) | Retrieve sources and answer without changing the workspace. |
 | [Edit documents](/agents/writing-docs/) | Create and revise prose while preserving existing work. |
 | [Build HTML](/agents/building-widgets/) | Build and verify interactive HTML docs. |
@@ -19,10 +20,15 @@ skills does not connect an agent.
 | [Review annotations](/agents/annotations-protocol/) | Attach feedback and handle requested revisions. |
 | [Use threads](/agents/threads/) | Send and continue authorized conversations. |
 
-Each page is generated from its `SKILL.md`. Copy it for a one-off instruction,
-or download the complete package, with supporting files and license, to
-install by hand. The [skill manifest](/.well-known/skills/index.json) lists the
-files and the source revision.
+The workflow skills are short. Each tells the agent to read its guide from
+the connected Worktable with `worktable_guidance`, so a copy that an app never
+updates still follows the current guide. Each page shows that guide. Set up
+Worktable and Check the Library hold their full instructions.
+
+Copy a skill for a one-off instruction, or download the complete package, with
+supporting files and license, to install by hand. The
+[skill manifest](/.well-known/skills/index.json) lists the files and the source
+revision.
 
 ## Your team's skills
 
@@ -36,8 +42,10 @@ Plugins already include skills, so don't install a second copy:
 
 - The general Worktable plugin bundles every skill except Set up Worktable,
   along with its **Cloud** MCP connection.
-- The Hermes plugin bundles the same skills as the general plugin.
-- The OpenClaw plugin bundles all of them.
+- The Hermes plugin bundles the same skills except Check the Library. Hermes
+  lists your team's skills itself.
+- The OpenClaw plugin bundles all of them except Check the Library, for the
+  same reason.
 
 To add only Set up Worktable, download its package from the
 [Set up Worktable](/agents/setup/) page into your client's skills folder.
@@ -66,6 +74,14 @@ curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents
 ```
 
 This does not install the app, create a workspace, or configure MCP.
+
+### Gemini app
+
+The Gemini app takes one skill folder and never updates it. Download
+[worktable.tar](/downloads/skills/gemini/worktable.tar), unpack it, and upload
+the `worktable` folder. It checks your team's Library and names each workflow
+guide. Or save its [SKILL.md](/downloads/skills/gemini/worktable/SKILL.md) in a
+folder named `worktable` and upload that.
 
 ## Update and remove
 

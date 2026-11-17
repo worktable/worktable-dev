@@ -148,7 +148,8 @@ Hermes did not resume runs again.
 
 ## Development
 
-The skills in `skills/` are a generated copy of `plugins/worktable/skills`.
+The skills in `skills/` are a generated copy of `plugins/worktable/skills`,
+without the Library check, since the plugin lists the Library itself.
 Edit those sources, then run `bun run generate:hermes-skills` from the
 repository root.
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0] - 2026-11-17
+
+### Added
+
+- A Library skill has your agent check the skills your team approved in Worktable's Library, and follow the one that fits the task.
+
+### Changed
+
+- Each workflow skill now reads its current guide from the connected Worktable. Apps that keep their own copy of the plugin, such as Perplexity or an uploaded file, follow the current guide without an update.
+
 ## [0.1.10] - 2026-11-16
 
 ### Changed
@@ -20,7 +30,7 @@
 - The HTML skill changes an existing HTML Doc with exact edits and the revision it read, and replaces the whole page only when most of it changes.
 - The HTML skill exercises controls that change or delete Records only on Records it created, and asks before touching the user's own.
 - The HTML skill points to the guide's advice on pages a reader can take in at a glance.
-- The plugin ships a security policy, and is listed in Cursor's marketplace.
+- The plugin ships a security policy.
 
 ## [0.1.7] - 2026-10-28
 

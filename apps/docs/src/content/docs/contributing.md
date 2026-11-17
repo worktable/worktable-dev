@@ -34,9 +34,11 @@ outside the public application repository.
 ## Improve documentation
 
 Edit user guides in `apps/docs/src/content/docs`. Agent workflow pages come from
-the skills in `plugins/worktable/skills` (bundled with the agent plugin) and
-`skills/` (installed separately); command, tool, and runtime references come
-from their owning source. Edit those sources and regenerate the pages.
+the guides in `packages/server/src/mcp/workflow-guides`, which Worktable also
+serves to agents, and from the skills in `plugins/worktable/skills` (bundled
+with the agent plugin) and `skills/` (installed separately). Command, tool, and
+runtime references come from their owning source. Edit those sources and
+regenerate the pages.
 
 Keep titles short, explain the action directly, and check examples against the
 current product. Follow the development guide's documentation checks before

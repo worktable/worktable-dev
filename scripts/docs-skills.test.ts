@@ -8,21 +8,30 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { WORKFLOW_GUIDES } from "../packages/server/src/mcp/workflow-guides.generated.ts"
 import { publishSkills, parseSkill, SKILL_PAGES } from "./docs-skills.ts"
-import { WORKTABLE_SKILLS } from "./skill-inventory.ts"
+import {
+  WORKFLOW_GUIDE_DIRECTORY,
+  WORKTABLE_SKILLS,
+} from "./skill-inventory.ts"
 
 test("publishes complete canonical skill packages and matching readable workflows", async () => {
   const root = mkdtempSync(join(tmpdir(), "worktable-doc-skills-"))
   try {
-    for (const skill of WORKTABLE_SKILLS) {
-      for (const file of skill.files) {
-        const path = `${skill.sourceDirectory}/${file}`
-        mkdirSync(dirname(join(root, path)), { recursive: true })
-        writeFileSync(
-          join(root, path),
-          readFileSync(join(import.meta.dir, "..", path))
-        )
-      }
+    const sources = [
+      ...WORKTABLE_SKILLS.flatMap((skill) =>
+        skill.files.map((file) => `${skill.sourceDirectory}/${file}`)
+      ),
+      ...Object.keys(WORKFLOW_GUIDES).map(
+        (name) => `${WORKFLOW_GUIDE_DIRECTORY}/${name}.md`
+      ),
+    ]
+    for (const path of sources) {
+      mkdirSync(dirname(join(root, path)), { recursive: true })
+      writeFileSync(
+        join(root, path),
+        readFileSync(join(import.meta.dir, "..", path))
+      )
     }
     const output = join(root, "apps/docs/public")
     mkdirSync(join(output, ".well-known/skills/retired"), { recursive: true })
@@ -82,8 +91,31 @@ test("publishes complete canonical skill packages and matching readable workflow
         ),
         "utf8"
       )
-      expect(page).toContain(parseSkill(source).body)
+      // Apps install a pointer to the guide; the page shows the guide.
+      const guide = WORKFLOW_GUIDES[skill.name as keyof typeof WORKFLOW_GUIDES]
+      if (guide) {
+        expect(source).toContain(`name: "${skill.name}"`)
+        const guideBody = guide.replace(/^# .*\n+/, "")
+        expect(page).toContain(guideBody)
+        expect(source).not.toContain(guideBody.slice(0, 200))
+      } else {
+        expect(page).toContain(parseSkill(source).body)
+      }
       expect(page).not.toMatch(/^# /m)
+    }
+
+    // The Gemini app uploads one folder with one SKILL.md.
+    const gemini = await new Bun.Archive(
+      await Bun.file(
+        join(output, "downloads/skills/gemini/worktable.tar")
+      ).arrayBuffer()
+    ).files()
+    expect([...gemini.keys()]).toEqual(["worktable/SKILL.md"])
+    const combined = parseSkill(await gemini.get("worktable/SKILL.md")!.text())
+    expect(combined.name).toBe("worktable")
+    expect(combined.body).toContain("`worktable_state`")
+    for (const name of Object.keys(WORKFLOW_GUIDES)) {
+      expect(combined.body).toContain(`\`${name}\``)
     }
   } finally {
     rmSync(root, { recursive: true, force: true })

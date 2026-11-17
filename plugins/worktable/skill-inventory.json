@@ -2,6 +2,18 @@
   "schemaVersion": 1,
   "skills": [
     {
+      "name": "worktable-library",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "LICENSE"
+      ],
+      "skipIn": [
+        "hermes",
+        "openclaw"
+      ]
+    },
+    {
       "name": "worktable-collaborate-threads",
       "files": [
         "SKILL.md",

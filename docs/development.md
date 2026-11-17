@@ -165,6 +165,9 @@ accept a change outside a pull request.
 For product docs, use `bun run dev:docs` or `bun run build:docs`. CLI and MCP
 reference pages, runtime references, skill pages, and skill downloads are generated
 from their owning sources. Edit the command/tool definitions, runtime guide, or
-canonical skill instead of the published output. Keep page titles within three
+canonical skill instead of the published output. The plugin's workflow skills
+only point to their guides in `packages/server/src/mcp/workflow-guides`, which
+the server serves through `worktable_guidance`; run `bun run generate:guides`
+after changing one. Keep page titles within three
 words where possible and link shared procedures rather than copying them.
 See [Contributing](../CONTRIBUTING.md) before opening a pull request.

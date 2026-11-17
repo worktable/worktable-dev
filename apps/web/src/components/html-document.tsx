@@ -864,7 +864,12 @@ function WidgetDetailPage({
       }
       className="flex h-full min-h-0 flex-col bg-background"
       // Continue the HTML canvas behind floating panels without scoping their card roles.
-      style={{ backgroundColor: HTML_DOC_THEME[resolvedTheme].background }}
+      style={{
+        backgroundColor:
+          resolvedTheme === "dark"
+            ? HTML_DOC_THEME.dark.background
+            : HTML_DOC_THEME.light.background,
+      }}
     >
       <WidgetPageMeta
         spaceId={spaceId}

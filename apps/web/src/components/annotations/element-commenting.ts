@@ -114,6 +114,7 @@ export function useElementComments({
 
   const toggle = useCallback(() => setMode((on) => !on), [])
   const clearDraft = useCallback(() => setPicked(null), [])
+  const finish = useCallback(() => setMode(false), [])
 
   useEffect(() => {
     if (!enabled) return
@@ -212,6 +213,7 @@ export function useElementComments({
   return {
     mode,
     toggle,
+    finish,
     draft,
     clearDraft,
     /** Open comments whose element is no longer on the page. */

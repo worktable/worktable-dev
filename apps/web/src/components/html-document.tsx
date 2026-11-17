@@ -861,7 +861,6 @@ function WidgetDetailPage({
       data-document-ready={
         frameSrc !== null && loadedFrameSrc === frameSrc ? "true" : undefined
       }
-      data-surface="html-doc"
       className="flex h-full min-h-0 flex-col bg-background"
     >
       <WidgetPageMeta
@@ -890,6 +889,7 @@ function WidgetDetailPage({
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
           ref={wrapperRef}
+          data-surface="html-doc"
           className={`relative min-h-0 min-w-0 flex-col bg-background ${
             overlayFullscreen ? "fixed inset-0 z-50" : ""
           } ${previewVersionId ? "hidden xl:flex xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex flex-1"}`}
@@ -1139,6 +1139,7 @@ function WidgetDetailPage({
             to,
             idempotencyKey,
           })
+          elementComments.finish()
           // Beside the HTML Doc only; narrower, the list would cover it.
           if (belowXl) return
           setAnnotationsOpen(true)

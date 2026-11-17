@@ -15,8 +15,8 @@ export function ContextPanelHeader({
   meta,
   actions,
 }: {
-  title: string
-  icon: ReactNode
+  title: ReactNode
+  icon?: ReactNode
   meta?: ReactNode
   actions: ReactNode
 }) {

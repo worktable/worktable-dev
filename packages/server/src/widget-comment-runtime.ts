@@ -152,7 +152,8 @@ function ensure(){
     hoverBox=shadow.querySelector('.hover');markBox=shadow.querySelector('.mark');pinLayer=shadow.querySelector('.pins');
     // In the page, not the shadow: the pointer over the page shows the mode.
     cursor=document.createElement('style');
-    cursor.textContent='*{cursor:crosshair !important}';
+    const bubble='<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><path d="M4 25V7a3 3 0 0 1 3-3h15a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H8Z" fill="'+colors.edge+'" stroke="'+colors.pick+'" stroke-width="2" stroke-linejoin="round"/><path d="M9 10h11M9 15h8" stroke="'+colors.pick+'" stroke-width="2" stroke-linecap="round"/></svg>';
+    cursor.textContent='*{cursor:url("data:image/svg+xml,'+encodeURIComponent(bubble)+'") 4 25,pointer !important}';
     cursor.media='not all';
     host.appendChild(cursor);
   }
@@ -162,8 +163,10 @@ function place(box,el,origin){
   const r=el&&el.isConnected?el.getBoundingClientRect():null;
   if(!r||(!r.width&&!r.height)){box.style.display='none';return}
   box.style.display='block';
-  box.style.translate=(r.left-origin.left)+'px '+(r.top-origin.top)+'px';
-  box.style.width=r.width+'px';box.style.height=r.height+'px';
+  // Visual breathing room only: picking and saved anchors keep the real bounds.
+  const padding=4;
+  box.style.translate=(r.left-origin.left-padding)+'px '+(r.top-origin.top-padding)+'px';
+  box.style.width=(r.width+padding*2)+'px';box.style.height=(r.height+padding*2)+'px';
 }
 function paint(){
   frame=0;

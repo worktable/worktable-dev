@@ -473,6 +473,8 @@ describe("skill libraries", () => {
     const member = identityForTeamMember(findTeamMember(joined.response.user.id)!)
     // A team agent that opens Ops only.
     const codex = createTeamAgent({ name: "Codex", platform: "codex", ownership: "team" }, owner)
+    // And one that opens Private only.
+    const payBot = createTeamAgent({ name: "Pay bot", platform: "other", ownership: "team" }, owner)
     setSpaceAccessPolicy(
       {
         spaceId: "ops",
@@ -484,7 +486,14 @@ describe("skill libraries", () => {
       },
       owner
     )
-    setSpaceAccessPolicy({ spaceId: "private", visibility: "restricted", grants: [] }, owner)
+    setSpaceAccessPolicy(
+      {
+        spaceId: "private",
+        visibility: "restricted",
+        grants: [{ subjectType: "agent", subjectId: payBot.id, access: "read" }],
+      },
+      owner
+    )
 
     const add = async (spaceId: string, path: string, library: Record<string, unknown>) =>
       (await rest("POST", "/api/library", { spaceId, path, description: "Use it.", library }, owner)).body
@@ -506,12 +515,13 @@ describe("skill libraries", () => {
       (await rest("GET", "/api/library/outside?spaceId=private&kind=worktable", undefined, owner)).body
     ).toEqual({ agents: ["Codex"] })
     expect((await rest("GET", "/api/library/outside?spaceId=ops&kind=worktable", undefined, owner)).body).toEqual({
-      agents: [],
+      agents: ["Pay bot"],
     })
-    // Someone who can't add to a library doesn't learn who it reaches.
-    expect(
-      (await rest("GET", "/api/library/outside?spaceId=ops&kind=space&librarySpaceId=private", undefined, member)).body
-    ).toEqual({ agents: [] })
+    // Private's library reaches Pay bot, which can't open Ops: the owner, who
+    // may add to it, learns that; the member, who may not, learns nothing.
+    const privateLibrary = "/api/library/outside?spaceId=ops&kind=space&librarySpaceId=private"
+    expect((await rest("GET", privateLibrary, undefined, owner)).body).toEqual({ agents: ["Pay bot"] })
+    expect((await rest("GET", privateLibrary, undefined, member)).body).toEqual({ agents: [] })
     // Under a request that can't open the private Space, as a team agent's
     // MCP calls run, the Worktable's skill from it still reaches the agent.
     const outsider: SkillReader = {

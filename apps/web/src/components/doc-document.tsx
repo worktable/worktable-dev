@@ -1,5 +1,4 @@
 import { useVisitorCommentsPanel } from "@/hooks/use-visitor-comments-panel"
-import { useDocumentCheckFailed } from "@/hooks/use-document-check-status"
 import { useVersionSnapshot } from "@/lib/version-history"
 import {
   VersionHistoryPanel,
@@ -33,7 +32,11 @@ import {
   Pencil,
 } from "lucide-react"
 import { docQueryKeys } from "@/lib/docs-queries"
-import { documentQueryKeys, useDocumentContent } from "@/lib/documents-queries"
+import {
+  documentQueryKeys,
+  useDocumentCheckFailed,
+  useDocumentContent,
+} from "@/lib/documents-queries"
 import type { DocumentRendererProps } from "@/lib/document-renderers"
 import type { DocumentOpenHint } from "@/lib/document-rows"
 import {

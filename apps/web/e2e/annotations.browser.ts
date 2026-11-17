@@ -422,6 +422,9 @@ ${note}</main></body></html>`
       const mode = page.getByRole("button", { name: "Comment", exact: true })
       const composer = page.getByRole("dialog", { name: "Add Comment" })
       const thread = page.getByRole("article", { name: /^Comment by / })
+      const panel = page.locator("[data-worktable-context-panel]").filter({
+        has: page.getByRole("button", { name: "Close comments", exact: true }),
+      })
       const choose = (element: Locator) =>
         mobile ? element.tap() : element.click()
       const commentOn = async (
@@ -470,7 +473,6 @@ ${note}</main></body></html>`
       await expect(mode).toHaveAttribute("aria-pressed", "false")
       await expect(price).not.toHaveCSS("cursor", /data:image\/svg\+xml/)
       if (!mobile) {
-        const panel = page.locator("[data-worktable-context-panel]")
         // The HTML canvas has its own dark theme; comments use the app's card roles.
         await expect.poll(() => panel.evaluate((element) =>
           getComputedStyle(element).getPropertyValue("--card").trim() ===
@@ -527,7 +529,7 @@ ${note}</main></body></html>`
       await expect(page.getByRole("heading", { name: "Comments", exact: true })).toHaveCount(0)
       await expect(page.getByRole("button", { name: "Add Comment", exact: true })).toHaveCount(0)
       if (!mobile) {
-        await page.locator("[data-worktable-context-panel]").screenshot({ path: info.outputPath("comment-thread-dark.png") })
+        await panel.screenshot({ path: info.outputPath("comment-thread-dark.png") })
       }
 
       // The note's comment waits under Page Changed.

@@ -677,6 +677,8 @@ test("local Desktop Settings manages the two skill targets from allowed operatio
 test("a one-time token made for an agent survives changing apps and settings sections, its first use connects it, and it joins the list on Done", async ({
   page,
 }) => {
+  // Time runs as usual, but a quiet stretch can pass without a real wait.
+  await page.clock.install()
   // A loopback-only Worktable takes bare local calls, but the agent still
   // gets a token: it names the agent and tells this card it arrived.
   await page.route("**/api/system/connection", (route) =>
@@ -796,7 +798,7 @@ test("a one-time token made for an agent survives changing apps and settings sec
   await dialog.getByRole("button", { name: "General", exact: true }).click()
   await expect(secret).toBeHidden()
   const readsWhileAway = tokenReads
-  await page.waitForTimeout(4_000)
+  await page.clock.runFor(4_000)
   expect(tokenReads).toBe(readsWhileAway)
   await dialog.getByRole("button", { name: "Agents", exact: true }).click()
   await expect(secret).toBeVisible()

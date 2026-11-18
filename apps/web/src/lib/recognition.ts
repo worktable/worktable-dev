@@ -12,11 +12,15 @@ export function agentLogoUrl(
   platform: AgentPlatformId | undefined
 ): string | null {
   const logo = platform ? AGENT_PLATFORMS[platform]?.logo : null
-  if (!logo) return null
+  return logo ? agentLogoFileUrl(logo) : null
+}
+
+/** Where a file in the web app's `/agent-logos/` directory loads from. */
+export function agentLogoFileUrl(file: string): string {
   const base = typeof __WORKTABLE_AGENT_LOGO_BASE__ === "string"
     ? __WORKTABLE_AGENT_LOGO_BASE__
     : "/agent-logos/"
-  return `${base}${logo}`
+  return `${base}${file}`
 }
 
 /** A solid tile or avatar carrying white initials. */

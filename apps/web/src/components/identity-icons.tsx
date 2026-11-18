@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react"
 import {
+  AGENT_PLATFORMS,
   platformForName,
   type AgentPlatformId,
   type ParticipantRef,
@@ -10,8 +11,9 @@ import {
 } from "@worktable/types/recognition"
 import { cn } from "@worktable/ui/lib/utils"
 import { NamedIcon, resolveIcon } from "@/lib/icons"
+import { agentLogoFileForIcon, agentLogoFit } from "@/lib/agent-logos"
 import {
-  agentLogoUrl,
+  agentLogoFileUrl,
   personPhotoUrl,
   type TileLogo,
   participantInitials,
@@ -37,16 +39,14 @@ export function AgentAvatar({
   icon?: string | null
   className?: string
 }) {
-  const logo = icon ? null : agentLogoUrl(platform)
-  // Hermes fills its circle; OpenAI and Goose artwork include their own padding.
-  const fullBleed = platform === "hermes"
-  const prePadded =
-    platform === "chatgpt" ||
-    platform === "chatgpt-desktop" ||
-    platform === "codex" ||
-    platform === "goose"
+  // A chosen logo, else a chosen Lucide icon, else the platform's logo.
+  const chosenLogo = agentLogoFileForIcon(icon)
+  const platformLogo = platform ? AGENT_PLATFORMS[platform]?.logo : null
+  const logoFile = chosenLogo ?? (icon ? null : platformLogo)
+  const logo = logoFile ? agentLogoFileUrl(logoFile) : null
+  const fit = logoFile ? agentLogoFit(logoFile) : null
   const initials = participantInitials(name)
-  const fallback = icon ? (
+  const fallback = icon && !chosenLogo ? (
     <NamedIcon
       name={icon}
       className="size-[55%]"
@@ -64,7 +64,7 @@ export function AgentAvatar({
         className
       )}
       aria-label={name}
-      style={(icon ? recognitionChip : recognitionSolid)(
+      style={(icon && !chosenLogo ? recognitionChip : recognitionSolid)(
         recognitionColor(null, name)
       )}
     >
@@ -74,9 +74,9 @@ export function AgentAvatar({
           src={logo}
           fallback={fallback}
           className={cn(
-            fullBleed ? "object-cover" : "bg-white object-contain",
-            prePadded && "scale-125",
-            platform && !fullBleed && !prePadded && "p-[18%]"
+            fit === "fill" ? "object-cover" : "bg-white object-contain",
+            fit === "inset" && "scale-125",
+            fit === "pad" && "p-[18%]"
           )}
         />
       ) : (

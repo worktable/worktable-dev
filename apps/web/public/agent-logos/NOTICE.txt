@@ -1,7 +1,8 @@
 Agent platform logos
 
-These marks identify the platform a connected agent comes from. Each belongs
-to its owner; showing it does not imply endorsement of Worktable.
+These marks identify the platform a connected agent comes from, or the
+picture its owner chose for it. Each belongs to its owner; showing it does
+not imply endorsement of Worktable.
 
 openclaw.svg  OpenClaw mascot from the openclaw npm package
               (dist/control-ui/favicon.svg), animation removed.
@@ -66,3 +67,48 @@ perplexity.svg
               perplexity.ai) in Perplexity's turquoise, #1FB8CD.
               Perplexity is a trademark of Perplexity AI, Inc.
 
+Marks from Lobe Icons (@lobehub/icons-static-svg 1.103.0,
+https://github.com/lobehub/lobe-icons, MIT licensed, Copyright (c) 2023
+LobeHub). Width, height, and inline style removed so each scales; mono
+marks filled black. Each mark belongs to the company named.
+
+anthropic.svg          Anthropic                 Anthropic PBC
+codex.svg              Codex (codex-color)       OpenAI
+github-copilot.svg     GitHub Copilot            GitHub, Inc.
+microsoft-copilot.svg  Microsoft Copilot         Microsoft Corporation
+gemini-cli.svg         Gemini CLI                Google LLC
+windsurf.svg           Windsurf                  Cognition AI, Inc.
+cline.svg              Cline                     Cline Bot Inc.
+roo-code.svg           Roo Code                  Roo Code, Inc.
+kilo-code.svg          Kilo Code                 Kilo Code, Inc.
+kiro.svg               Kiro                      Amazon.com, Inc.
+junie.svg              Junie                     JetBrains s.r.o.
+devin.svg              Devin                     Cognition AI, Inc.
+manus.svg              Manus                     Butterfly Effect Pte. Ltd.
+replit.svg             Replit                    Replit, Inc.
+lovable.svg            Lovable                   Lovable Labs Incorporated
+v0.svg                 v0                        Vercel Inc.
+amp.svg                Amp                       Sourcegraph, Inc.
+openhands.svg          OpenHands                 All Hands AI, Inc.
+trae.svg               Trae                      ByteDance Ltd.
+mistral.svg            Mistral                   Mistral AI
+meta-ai.svg            Meta AI                   Meta Platforms, Inc.
+deepseek.svg           DeepSeek                  DeepSeek
+qwen.svg               Qwen                      Alibaba Group
+kimi.svg               Kimi                      Moonshot AI
+poe.svg                Poe                       Quora, Inc.
+notion.svg             Notion                    Notion Labs, Inc.
+notebooklm.svg         NotebookLM                Google LLC
+ollama.svg             Ollama                    Ollama, Inc.
+lm-studio.svg          LM Studio                 Element Labs, Inc.
+hugging-face.svg       Hugging Face              Hugging Face, Inc.
+n8n.svg                n8n                       n8n GmbH
+zapier.svg             Zapier                    Zapier, Inc.
+crewai.svg             CrewAI                    CrewAI, Inc.
+coze.svg               Coze                      ByteDance Ltd.
+
+Marks from Simple Icons 16.38.0 (https://simpleicons.org, CC0), filled with
+the brand color Simple Icons lists:
+
+zed.svg      Zed (zedindustries), #084CCF. Zed belongs to Zed Industries, Inc.
+warp.svg     Warp, #01A4FF. Warp belongs to Denver Technologies, Inc.

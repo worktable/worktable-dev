@@ -713,6 +713,23 @@ test("coding-agent selections keep their platform logos after connecting", async
       )
       .toBeGreaterThan(0)
   }
+
+  // Any agent can wear another app's logo, found by searching for it.
+  const vscode = inventory
+    .getByRole("listitem")
+    .filter({ has: page.locator('img[src="/agent-logos/vscode.svg"]') })
+  await vscode.getByRole("button", { name: "Edit", exact: true }).click()
+  const editor = page
+    .getByRole("dialog")
+    .filter({ has: page.getByRole("button", { name: "Save", exact: true }) })
+  await editor.getByPlaceholder("Search icons...").fill("claude")
+  await editor.getByRole("button", { name: "Claude", exact: true }).click()
+  await editor.getByRole("button", { name: "Save", exact: true }).click()
+  await expect(editor).toBeHidden()
+  await expect(
+    inventory.locator('img[src="/agent-logos/claude.svg"]')
+  ).toBeVisible()
+  await expect(vscode).toHaveCount(0)
 })
 
 test("a failed connection refetch preserves a newly minted one-time token", async ({

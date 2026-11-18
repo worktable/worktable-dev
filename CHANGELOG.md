@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Agent icons:** Give any agent the logo of the app or model behind it, from Claude, ChatGPT, Gemini and Grok to Copilot, Cursor, Devin and 40 more. Search the icon picker by name.
+
 ### Changed
 
 - **Getting Started:** Creation prefills an editable name, setup shows agent rules while connecting, and shorter starter prompts gather context before creating your first Space.

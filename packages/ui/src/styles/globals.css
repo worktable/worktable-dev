@@ -520,6 +520,26 @@
 .dark .help-icon-tile {
   background: color-mix(in oklch, var(--primary) 28%, transparent);
 }
+/* A Next Steps tile: the faint cobalt of help, so a step reads as
+   Worktable's suggestion, not the person's own work. */
+.help-tile {
+  background: color-mix(in oklch, var(--primary) 7%, var(--card));
+  border: 1px solid color-mix(in oklch, var(--primary) 18%, transparent);
+  transition: border-color 150ms ease-out;
+}
+.help-tile:hover {
+  border-color: color-mix(in oklch, var(--primary) 34%, transparent);
+}
+.dark .help-tile {
+  background: color-mix(in oklch, var(--primary) 14%, var(--card));
+  border-color: color-mix(in oklch, var(--primary) 30%, transparent);
+}
+.dark .help-tile:hover {
+  border-color: color-mix(in oklch, var(--primary) 55%, transparent);
+}
+.help-tile .help-icon-tile {
+  background: var(--popover);
+}
 
 /* Sonner injects its behavioral stylesheet at runtime. This higher-specificity
    adapter keeps keyboard focus on the same semantic overlay elevation instead

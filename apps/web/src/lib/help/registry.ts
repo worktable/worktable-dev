@@ -619,7 +619,7 @@ export const TRY_NEXT_COPY = {
   title: "Next Steps",
   // {done} and {total} count Try Next's cards.
   progress: "{done} of {total} done",
-  hide: "Hide Next Steps",
+  hide: "Hide",
   hideTitle: "Hide Next Steps?",
   hideText: "You can bring it back in Settings > Help.",
   hideConfirm: "Hide",

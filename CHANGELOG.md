@@ -17,6 +17,7 @@ infrastructure and personal context out of release notes.
 
 - **Getting Started:** Creation prefills an editable name, setup shows agent rules while connecting, and shorter starter prompts gather context before creating your first Space.
 - **Thread creation:** Start without a responder, mention several participants, and independently choose one to reply, with saved drafts and safe send retries.
+- **Next Steps:** Home shows your next steps as one row of tiles, in order, with a progress bar. Steps you finished before leave the row, and later ones scroll into view.
 
 ### Fixed
 

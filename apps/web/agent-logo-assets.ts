@@ -15,7 +15,7 @@ export function agentLogoAssets(): Plugin {
   const hash = createHash("sha256")
   for (const { name, source } of assets) hash.update(name).update("\0").update(source)
   // One content version keeps the URL table out of every page's startup code.
-  const prefix = `/assets/agent-logos-${hash.digest("hex").slice(0, 12)}/`
+  const prefix = `/assets/agent-logos-${hash.digest("hex").slice(0, 12)}-`
 
   return {
     name: "worktable-agent-logo-assets",

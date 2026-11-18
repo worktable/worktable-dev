@@ -25,6 +25,7 @@ import { Hono, type Context } from "hono"
 import { requestSource } from "../request-source.ts"
 import {
   type AgentAccess,
+  type AgentConnectionTarget,
   AGENT_PLATFORMS,
   type AgentPlatformId,
   CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS,
@@ -61,7 +62,10 @@ import {
   listParticipantBindings,
   resolveParticipant,
 } from "../participant-store.ts";
-import { upsertAgentConnection } from "../agent-connection-store.ts";
+import {
+  agentConnectionIdFor,
+  upsertAgentConnection,
+} from "../agent-connection-store.ts";
 import {
   ConnectionRequestLimitError,
   createConnectionRequest,
@@ -837,10 +841,12 @@ pairingRouter.post("/complete", async (c) => {
         await resolveParticipant(identity);
         await finalizeTeamCredentialRotation(tokenId, identity.team.agentId);
         void noteAgentPairedForSetup(setupKeyForIdentity(identity));
-        return;
+        return identity.team.agentId;
       }
       const target = session.target;
       let connectionStored = true;
+      let connectionTarget: AgentConnectionTarget;
+      const machine = session.redeemedBy?.hostname ?? null;
       if (target.kind === "agent-adapter") {
         const installationId = session.redeemedBy?.installationId;
         if (!installationId) {
@@ -857,15 +863,16 @@ pairingRouter.post("/complete", async (c) => {
             }
           )
         ).participant;
+        connectionTarget = {
+          kind: "agent-adapter",
+          adapter: target.adapter,
+          installationId,
+        };
         connectionStored = await upsertAgentConnection({
-          target: {
-            kind: "agent-adapter",
-            adapter: target.adapter,
-            installationId,
-          },
+          target: connectionTarget,
           mode: "always-on",
           participant,
-          machine: session.redeemedBy?.hostname ?? null,
+          machine,
           credentialId: tokenId,
           ...(target.icon ? { icon: target.icon } : {}),
         });
@@ -873,7 +880,6 @@ pairingRouter.post("/complete", async (c) => {
         const clientId = session.redeemedBy?.all
           ? null
           : (session.redeemedBy?.client ?? session.requestedClient ?? null);
-        const machine = session.redeemedBy?.hostname ?? null;
         // The agent's name is its thread name from the start. Like an
         // adapter's, it only names a new agent: reconnecting keeps the name
         // its owner gave it since.
@@ -887,8 +893,9 @@ pairingRouter.post("/complete", async (c) => {
             }
           )
         ).participant;
+        connectionTarget = { kind: "mcp-client", clientId };
         connectionStored = await upsertAgentConnection({
-          target: { kind: "mcp-client", clientId },
+          target: connectionTarget,
           mode: "on-demand",
           participant,
           machine,
@@ -901,10 +908,11 @@ pairingRouter.post("/complete", async (c) => {
         // A newer completion already owns this semantic connection. The
         // superseded bearer must not survive invisibly outside the inventory.
         await revokeToken(tokenId);
-        return;
+        return null;
       }
       await finalizeAgentTokenRotation(tokenId);
       void noteAgentPairedForSetup(OWNER_SETUP_KEY);
+      return agentConnectionIdFor(connectionTarget, machine, tokenId);
     }
   );
   if (!result.ok) {

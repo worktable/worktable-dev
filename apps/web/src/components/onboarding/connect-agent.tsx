@@ -83,7 +83,6 @@ import {
   latestPairingFailure,
   shouldPollPairing,
   type PairingCreated,
-  type PairingSession,
 } from "@/lib/pairing-api"
 import { useWorkspace } from "@/lib/queries"
 import { getConnection, type ConnectionInfo } from "@/lib/system-api"
@@ -166,25 +165,6 @@ async function currentConnections(
   }
 }
 
-/** The agent a verified pairing made or updated: same client, same machine. */
-function pairedConnection(
-  session: PairingSession,
-  connections: AgentConnection[]
-): AgentConnection | undefined {
-  const by = session.redeemedBy
-  if (!by) return undefined
-  return connections.find((connection) =>
-    session.target.kind === "agent-adapter"
-      ? connection.target.kind === "agent-adapter" &&
-        connection.target.installationId === by.installationId
-      : connection.authKind === "local-token" &&
-        connection.target.kind === "mcp-client" &&
-        connection.target.clientId ===
-          (by.client ?? session.requestedClient ?? null) &&
-        (connection.machine ?? null) === (by.hostname ?? null)
-  )
-}
-
 interface PanelProps {
   app: AgentApp
   way: Way
@@ -261,6 +241,7 @@ function PairingPanel({
   onConnected,
   pairings,
   onPairing,
+  active,
 }: PanelProps) {
   const queryClient = useQueryClient()
   const cloud = connection.mcpAuthMode === "oauth"
@@ -294,7 +275,7 @@ function PairingPanel({
   const status = useQuery({
     queryKey: ["pairing", pairing?.id],
     queryFn: () => getPairing(pairing!.id),
-    enabled: Boolean(pairing) && !connected,
+    enabled: active && Boolean(pairing) && !connected,
     refetchInterval: (query) =>
       shouldPollPairing(query.state.data) ? 2_000 : false,
   })
@@ -302,7 +283,8 @@ function PairingPanel({
   useEffect(() => {
     if (session?.status !== "verified" || !pairing || connected) return
     void currentConnections(queryClient, cloud).then((connections) => {
-      const made = pairedConnection(session, connections)
+      // The pairing names the agent it made or reconnected.
+      const made = connections.find((item) => item.id === session.connectionId)
       onConnected(
         setupFor(
           app,
@@ -398,26 +380,25 @@ function tokenId(token: string): string | null {
   return /^wt_([0-9a-f]{12})_/.exec(token)?.[1] ?? null
 }
 
-function tokenSteps(kind: Way["kind"], needsToken: boolean): string[] | null {
-  const paste = needsToken
-    ? "paste this address and an access token"
-    : "paste this address"
+function tokenSteps(kind: Way["kind"]): string[] | null {
   if (kind === "extension")
     return [
       "Download the extension and open it in Claude Desktop.",
-      `Approve it, ${paste}, then restart Claude.`,
+      "Approve it, paste this address and an access token, then restart Claude.",
     ]
   if (kind === "chatgpt-local")
     return [
       "In ChatGPT, open Settings, then MCP servers.",
-      `Add Worktable with Streamable HTTP and ${paste}.`,
+      "Add Worktable with Streamable HTTP and paste this address and an access token.",
     ]
   return null
 }
 
 /**
  * Apps and other MCP agents on a computer or server connect with this
- * Worktable's address and an access token made here.
+ * Worktable's address and an access token made here. The token is offered
+ * even where a bare local call works: it gives the agent its own name and
+ * access, and its first use is how this setup sees the agent arrive.
  */
 function TokenPanel({
   app,
@@ -427,17 +408,18 @@ function TokenPanel({
   onConnected,
   tokens: made,
   onToken,
+  active,
 }: PanelProps) {
   const queryClient = useQueryClient()
   const key = `${app.id}:${way.kind}`
   const token = made[key] ?? null
   const label = TOKEN_LABEL[way.kind] ?? null
-  const { endpoint, needsToken } = desktopAgentConnectionDetails(connection)
+  const { endpoint } = desktopAgentConnectionDetails(connection)
   // An app connected before is the same agent: keep its name and access.
   const existing = useQuery({
     queryKey: ["agent-connections", "app", label],
     queryFn: () => getAppAgent(label!),
-    enabled: Boolean(label),
+    enabled: active && Boolean(label),
   })
   const name =
     existing.data?.connection?.displayName ??
@@ -458,8 +440,8 @@ function TokenPanel({
   const tokens = useQuery({
     queryKey: ["tokens"],
     queryFn: listTokens,
-    enabled: Boolean(token) && !connected,
-    refetchInterval: token && !connected ? 3_000 : false,
+    enabled: active && Boolean(token) && !connected,
+    refetchInterval: 3_000,
   })
   const used = Boolean(
     token && tokens.data?.find((item) => item.id === token.id)?.lastUsedAt
@@ -478,7 +460,7 @@ function TokenPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [used, token?.id])
 
-  const steps = tokenSteps(way.kind, needsToken)
+  const steps = tokenSteps(way.kind)
   return (
     <>
       {steps ? (
@@ -489,8 +471,8 @@ function TokenPanel({
         </ol>
       ) : (
         <Instruction>
-          Add Worktable to your agent as an MCP server with this address
-          {needsToken ? " and an access token" : ""}.
+          Add Worktable to your agent as an MCP server with this address and an
+          access token.
         </Instruction>
       )}
       <div className="space-y-2">
@@ -514,7 +496,7 @@ function TokenPanel({
             Download
           </a>
         ) : null}
-        {token || connected || !needsToken ? null : (
+        {token || connected ? null : (
           <Button
             variant="outline"
             size="sm"
@@ -1182,6 +1164,15 @@ function SetupCard({
 }
 
 /**
+ * Changes the agents set up here from the list as it is when the change
+ * lands, so a late answer, like a rename saved after Done, never brings back
+ * a setup that was cleared since.
+ */
+export type SetupsUpdate = (
+  update: (current: SetupRecord[]) => SetupRecord[]
+) => void
+
+/**
  * Pick the app, then its one best setup for this Worktable. The apps fold
  * away into the setup's header, which changes the app. Each setup shows the
  * real command or address and waits for the agent; the other ways stay under
@@ -1196,7 +1187,7 @@ export function AgentConnectOptions({
   done = false,
 }: {
   setups: SetupRecord[]
-  onSetupsChange: (setups: SetupRecord[]) => void
+  onSetupsChange: SetupsUpdate
   /** Whether the surface is showing. */
   active?: boolean
   /** Row-sized app choices, for a page with other settings around them. */
@@ -1273,6 +1264,7 @@ export function AgentConnectOptions({
   const card = apps.find((item) => item.id === shown) ?? null
   const setupOf = (item: AgentApp) =>
     setups.find((setup) => setup.source === sourceOf(item))
+  const cardActive = active && app !== null
 
   const panelFor = (way: Way, where: Place, primary = true): PanelProps => ({
     app: card!,
@@ -1281,7 +1273,10 @@ export function AgentConnectOptions({
     connection: info,
     connected: setupOf(card!),
     onConnected: (setup) =>
-      onSetupsChange([...setups.filter((item) => item.id !== setup.id), setup]),
+      onSetupsChange((current) => [
+        ...current.filter((item) => item.id !== setup.id),
+        setup,
+      ]),
     pairings,
     onPairing: (key, pairing) =>
       setPairings((current) => {
@@ -1300,7 +1295,7 @@ export function AgentConnectOptions({
     baseline: baseline ?? new Set<string>(),
     another: done,
     pick,
-    active,
+    active: cardActive,
     primary,
   })
 
@@ -1340,7 +1335,7 @@ export function AgentConnectOptions({
               info={info}
               place={place}
               connected={setupOf(card)}
-              active={active && app !== null}
+              active={cardActive}
               onChange={() => setSelected(null)}
               onDone={
                 done
@@ -1355,8 +1350,20 @@ export function AgentConnectOptions({
                         )
                       setPairings(unused)
                       setTokens(unused)
-                      onSetupsChange(
-                        setups.filter(
+                      // The agent that just connected is no longer new: the
+                      // next pick waits for another one.
+                      const finished = setups.flatMap((setup) =>
+                        setup.source === sourceOf(card) && setup.connectionId
+                          ? [setup.connectionId]
+                          : []
+                      )
+                      if (finished.length)
+                        setBaseline(
+                          (current) =>
+                            new Set([...(current ?? []), ...finished])
+                        )
+                      onSetupsChange((current) =>
+                        current.filter(
                           (setup) => setup.source !== sourceOf(card)
                         )
                       )
@@ -1368,8 +1375,8 @@ export function AgentConnectOptions({
               }
               panelFor={panelFor}
               onRenamed={(setup, name) =>
-                onSetupsChange(
-                  setups.map((item) =>
+                onSetupsChange((current) =>
+                  current.map((item) =>
                     item.id === setup.id ? { ...item, name } : item
                   )
                 )
@@ -1389,7 +1396,7 @@ export function ConnectAgentStep({
   onBack,
 }: {
   setups: SetupRecord[]
-  onSetupsChange: (setups: SetupRecord[]) => void
+  onSetupsChange: SetupsUpdate
   onContinue: () => void
   onBack?: () => void
 }) {

@@ -92,7 +92,10 @@ import {
   PLUGIN_REPOSITORY,
   SKILLS_GUIDE,
 } from "@/lib/agent-app-steps"
-import { AgentConnectOptions } from "@/components/onboarding/connect-agent"
+import {
+  AgentConnectOptions,
+  type SetupsUpdate,
+} from "@/components/onboarding/connect-agent"
 import type { SetupRecord } from "@/lib/onboarding-setups"
 import { timeAgo } from "@/lib/time"
 import { AgentAccessFields } from "@/components/agents/agent-access-fields"
@@ -215,7 +218,7 @@ function ConnectAppGroup({
   active: boolean
   /** Agents connected here whose card is still open. */
   setups: SetupRecord[]
-  onSetupsChange: (setups: SetupRecord[]) => void
+  onSetupsChange: SetupsUpdate
 }) {
   return (
     <section className="flex flex-col gap-3" aria-labelledby="connect-app">

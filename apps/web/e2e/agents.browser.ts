@@ -418,6 +418,50 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
   expect(disconnected).toBe(true)
 })
 
+test("on Cloud, Done finishes the agent that signed in, so picking the app again waits for the next one", async ({
+  page,
+}) => {
+  // As Cloud lists sign-in agents: by app name, with no known platform.
+  const agent = (id: string, displayName: string) => ({
+    id,
+    authKind: "oauth",
+    displayName,
+    platform: "other",
+    ownership: "personal",
+    icon: null,
+    access: { threads: true, read: true, edit: true },
+    target: { kind: "mcp-client", clientId: null },
+    mode: "on-demand",
+    participant: null,
+    machine: null,
+    scopes: [],
+    connectedAt: null,
+    lastSeenAt: null,
+    permissionGroups: null,
+  })
+  const connections: ReturnType<typeof agent>[] = []
+  await page.route("**/api/system/connection", (route) =>
+    route.fulfill({ json: { ...connection, mcpAuthMode: "oauth" } })
+  )
+  await page.route("**/api/agent-connections", (route) =>
+    route.fulfill({ json: { connections } })
+  )
+
+  await openAgents(page)
+  let other = await pick(page, "Other")
+  await expect(other.getByText("Waiting for your agent")).toBeVisible()
+  connections.push(agent("agt_opencode", "OpenCode"))
+  await expect(other.getByLabel("Name", { exact: true })).toHaveValue(
+    "OpenCode"
+  )
+  await other.getByRole("button", { name: "Done", exact: true }).click()
+
+  other = await pick(page, "Other")
+  await expect(other.getByText("Waiting for your agent")).toBeVisible()
+  connections.push(agent("agt_vscode", "VS Code"))
+  await expect(other.getByLabel("Name", { exact: true })).toHaveValue("VS Code")
+})
+
 test("on this computer, each app says how it connects here, and Manual Setup says what works", async ({
   page,
 }) => {
@@ -630,13 +674,21 @@ test("local Desktop Settings manages the two skill targets from allowed operatio
   ).toBeVisible()
 })
 
-test("a one-time token made for an agent survives changing apps and settings sections", async ({
+test("a one-time token made for an agent survives changing apps and settings sections, and its first use connects it", async ({
   page,
 }) => {
+  // A loopback-only Worktable takes bare local calls, but the agent still
+  // gets a token: it names the agent and tells this card it arrived.
   await page.route("**/api/system/connection", (route) =>
     route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ ...connection, mcpAuthMode: "local-token" }),
+      body: JSON.stringify({
+        ...connection,
+        reachable: false,
+        originConfigured: false,
+        mcpTokenRequired: false,
+        mcpAuthMode: "local-token",
+      }),
     })
   )
   await page.route("**/api/agent-connections", (route) => {
@@ -653,6 +705,28 @@ test("a one-time token made for an agent survives changing apps and settings sec
       }),
     })
   })
+  let used = false
+  let tokenReads = 0
+  await page.route("**/api/tokens", (route) => {
+    if (route.request().method() !== "GET") return route.continue()
+    tokenReads++
+    return route.fulfill({
+      json: {
+        tokens: [
+          {
+            id: "123456789abc",
+            user: "owner",
+            agent: null,
+            scopes: ["*"],
+            workspace: "/tmp/worktable",
+            createdAt: new Date().toISOString(),
+            revokedAt: null,
+            lastUsedAt: used ? new Date().toISOString() : null,
+          },
+        ],
+      },
+    })
+  })
 
   await openAgents(page)
   const dialog = page.getByRole("dialog")
@@ -667,7 +741,7 @@ test("a one-time token made for an agent survives changing apps and settings sec
 
   const token = await openToken()
   await expect(
-    token.getByText(connection.remoteMcpUrl, { exact: true })
+    token.getByText(connection.endpoint, { exact: true })
   ).toBeVisible()
   await token.getByRole("button", { name: "Create Token" }).click()
   await expect(secret).toBeVisible()
@@ -677,10 +751,22 @@ test("a one-time token made for an agent survives changing apps and settings sec
   await openToken()
   await expect(secret).toBeVisible()
 
+  // Another section keeps Agents mounted, but it stops waiting for the agent.
   await dialog.getByRole("button", { name: "General", exact: true }).click()
   await expect(secret).toBeHidden()
+  const readsWhileAway = tokenReads
+  await page.waitForTimeout(4_000)
+  expect(tokenReads).toBe(readsWhileAway)
   await dialog.getByRole("button", { name: "Agents", exact: true }).click()
   await expect(secret).toBeVisible()
+
+  used = true
+  const card = dialog.getByRole("region", { name: "Connect Other" })
+  // It looks again every few seconds.
+  await expect(card.getByRole("img", { name: "Connected" })).toBeVisible({
+    timeout: 10_000,
+  })
+  await expect(secret).toBeHidden()
 })
 
 test("an agent connected from its card is named and narrowed there, keeps its logo, and nothing moves", async ({
@@ -718,22 +804,25 @@ test("an agent connected from its card is named and narrowed there, keeps its lo
     await expect(name).toHaveValue(label)
     // Connecting moves nothing above the card.
     expect((await card.boundingBox())?.y).toBe(before)
+    const saved = () =>
+      page.waitForResponse(
+        (item) =>
+          item.request().method() === "PATCH" &&
+          new URL(item.url()).pathname.startsWith("/api/agent-connections/")
+      )
+    let renamed: ReturnType<typeof saved> | null = null
     if (app === "Claude Code") {
-      const saved = page.waitForResponse(
-        (item) =>
-          item.request().method() === "PATCH" &&
-          new URL(item.url()).pathname.startsWith("/api/agent-connections/")
-      )
-      await name.fill("Studio Claude")
-      await name.press("Enter")
-      expect((await saved).ok()).toBe(true)
-      const narrowed = page.waitForResponse(
-        (item) =>
-          item.request().method() === "PATCH" &&
-          new URL(item.url()).pathname.startsWith("/api/agent-connections/")
-      )
+      const narrowed = saved()
       await card.getByText("Edit workspace").click()
       expect((await narrowed).ok()).toBe(true)
+      // A new name saves when the field is left, even straight for Done.
+      renamed = saved()
+      await name.fill("Studio Claude")
+    }
+    await card.getByRole("button", { name: "Done", exact: true }).click()
+    await expect(apps(page)).toBeVisible()
+    if (renamed) {
+      expect((await renamed).ok()).toBe(true)
       expect(
         await fetch(`${harness.apiUrl}/api/agent-connections`).then((res) =>
           res.json()
@@ -747,8 +836,6 @@ test("an agent connected from its card is named and narrowed there, keeps its lo
         ]),
       })
     }
-    await card.getByRole("button", { name: "Done", exact: true }).click()
-    await expect(apps(page)).toBeVisible()
     const image = inventory.locator(`img[src="/agent-logos/${logo}"]`)
     await expect(image.first()).toBeVisible()
     await expect

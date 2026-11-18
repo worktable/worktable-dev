@@ -55,6 +55,8 @@ export interface PairingSession {
     installationId?: string | null
   } | null
   tokenId: string | null
+  /** The agent connection this pairing made or updated, once verified. */
+  connectionId?: string
   outcome: "verified" | "failed" | null
   events: PairingEvent[]
 }

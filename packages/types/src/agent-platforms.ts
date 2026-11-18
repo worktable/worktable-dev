@@ -281,12 +281,22 @@ export function defaultAgentNameForLabel(label: string | null): string | null {
 
 /**
  * The platform an app's name points to, for sign-ins that carry only a name
- * (Worktable Cloud's OAuth apps: "Claude", "ChatGPT", "Claude Code").
+ * (Worktable Cloud's OAuth apps: "Claude", "ChatGPT", "Claude Code"), or for
+ * a name that says its app in brackets, such as "Ada (Claude)", or its
+ * token label, such as "codex@laptop".
  */
 export function platformForName(
   name: string | null | undefined
 ): AgentPlatformId {
   if (!name) return "other"
+  const app = /\(([^()]+)\)\s*$/.exec(name)?.[1]
+  if (app) {
+    const platform = platformForName(app)
+    if (platform !== "other") return platform
+  }
+  // An agent still named by its token label, such as "codex@laptop".
+  const labelled = clientIdForAgentLabel(name.trim())
+  if (labelled) return platformForClient(labelled)
   const slug = name.trim().toLowerCase().replace(/\s+/g, "-")
   const client = clientPlatform(slug)
   if (client) return client

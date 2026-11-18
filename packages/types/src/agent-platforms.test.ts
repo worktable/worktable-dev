@@ -17,6 +17,11 @@ describe("agent platforms", () => {
     // The Gemini app signs in to Worktable Cloud as "Google".
     expect(platformForName("Google")).toBe("gemini")
     expect(platformForName("Perplexity")).toBe("perplexity")
+    // An agent named for itself, with its app in brackets.
+    expect(platformForName("Ada (Claude)")).toBe("claude")
+    expect(platformForName("Robin (Claude Code)")).toBe("claude-code")
+    expect(platformForName("Sam (my helper)")).toBe("other")
+    expect(platformForName("codex@laptop")).toBe("codex")
   })
 
   it("knows a sign-in's app from its signed client id, not its name", () => {

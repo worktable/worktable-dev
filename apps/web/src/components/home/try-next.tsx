@@ -1,13 +1,20 @@
-import { useState, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+  type ReactNode,
+} from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   AppWindow,
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   CircleCheck,
-  EyeOff,
   Link2,
   MessageSquareText,
-  MoreVertical,
   Plug,
   ScrollText,
   Users,
@@ -17,11 +24,10 @@ import { Button } from "@worktable/ui/components/button"
 import { Checkbox } from "@worktable/ui/components/checkbox"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@worktable/ui/components/dropdown-menu"
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@worktable/ui/components/popover"
 import {
   Select,
   SelectContent,
@@ -80,10 +86,9 @@ export interface TryNextDoc {
 }
 
 /**
- * Things to do next on Home, each a benefit the person sees happen. A card
- * is done when Worktable sees it happen; done cards stay ticked until all are.
+ * Next Steps on Home, from the person's setup and recent work: one row of
+ * steps in order, so the early ones are in view and later ones scroll in.
  */
-/** Next Steps on Home, from the person's setup and recent work. */
 export default function TryNext({
   runs,
   spaces,
@@ -142,14 +147,21 @@ function TryNextPanel({
   gettingStartedSpaceId?: string
 }) {
   const queryClient = useQueryClient()
-  // A card done here stays where it was until the next visit, so finishing
-  // one never moves the others.
+  const headingId = useId()
+  // A step done here stays in its place, ticked, until the next visit, so
+  // finishing one never moves the others. Steps done before this visit
+  // leave the row; the progress marks still count them.
   const [order] = useState<string[]>(() => cards.map((card) => card.id))
+  const [doneBefore] = useState(
+    () => new Set(cards.filter((card) => card.done).map((card) => card.id))
+  )
   const place = (id: string) => {
     const index = order.indexOf(id)
     return index === -1 ? order.length : index
   }
-  const shown = [...cards].sort((a, b) => place(a.id) - place(b.id))
+  const shown = [...cards]
+    .filter((card) => !doneBefore.has(card.id))
+    .sort((a, b) => place(a.id) - place(b.id))
   const [confirming, setConfirming] = useState(false)
   const [hiding, setHiding] = useState(false)
   const hide = async () => {
@@ -163,76 +175,88 @@ function TryNextPanel({
       setHiding(false)
     }
   }
+  const row = useScrollRow()
+  const progress = fillTip(TRY_NEXT_COPY.progress, {
+    done: String(done),
+    total: String(total),
+  })
   return (
     <section
-      aria-labelledby="try-next-heading"
-      className="help-surface order-3 min-w-0 overflow-hidden rounded-2xl bg-popover @3xl/page:col-span-2"
+      aria-labelledby={headingId}
+      className="order-3 min-w-0 @3xl/page:col-span-2"
     >
-      <div className="help-band flex items-center justify-between gap-3 py-2 pr-2 pl-4">
+      <div className="mb-2.5 flex min-h-8 items-center justify-between gap-3">
         <h2
-          id="try-next-heading"
+          id={headingId}
           className="flex min-w-0 items-center gap-2 text-sm font-semibold text-primary-text"
         >
           <HelpMark />
           {TRY_NEXT_COPY.title}
-          <span className="font-normal text-muted-foreground tabular-nums">
-            {fillTip(TRY_NEXT_COPY.progress, {
-              done: String(done),
-              total: String(total),
-            })}
+          <span
+            role="img"
+            aria-label={progress}
+            title={progress}
+            className="ml-1 flex items-center gap-[3px]"
+          >
+            {Array.from({ length: total }, (_, index) => (
+              <span
+                key={index}
+                className={cn(
+                  "h-1 w-3.5 rounded-full",
+                  index < done ? "bg-primary" : "bg-muted-foreground/25"
+                )}
+              />
+            ))}
           </span>
         </h2>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="More"
-            className="flex size-8 shrink-0 items-center justify-center rounded-md text-primary-text transition-colors hover:bg-surface-hover"
-            render={<button type="button" />}
-          >
-            <MoreVertical className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" sideOffset={4} className="min-w-40">
-            <DropdownMenuItem onClick={() => setConfirming(true)}>
-              <EyeOff className="size-4" />
-              {TRY_NEXT_COPY.hide}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      <ul className="grid grid-cols-1 gap-3 p-3 @xl/page:grid-cols-2 @3xl/page:grid-cols-3">
-        {shown.map((card) => (
-          <li key={card.id} className="flex min-w-0">
-            {card.kind === "setup" ? (
-              <TryCard
-                icon={Plug}
-                title={TRY_NEXT_SETUP["connect-agent"].title}
-                line={TRY_NEXT_SETUP["connect-agent"].line}
+        <div className="flex shrink-0 items-center gap-1">
+          {row.overflows ? (
+            <div className="hidden items-center @xl/page:flex">
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Earlier Steps"
+                disabled={!row.canBack}
+                onClick={() => row.page(-1)}
               >
-                {gettingStartedSpaceId ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    nativeButton={false}
-                    render={
-                      <Link
-                        to="/spaces/$spaceId"
-                        params={{ spaceId: gettingStartedSpaceId }}
-                      />
-                    }
-                  >
-                    {TRY_NEXT_SETUP["connect-agent"].action}
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => openSettings("agents")}
-                  >
-                    {TRY_NEXT_SETUP["connect-agent"].action}
-                  </Button>
-                )}
-              </TryCard>
+                <ChevronLeft />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Later Steps"
+                disabled={!row.canForward}
+                onClick={() => row.page(1)}
+              >
+                <ChevronRight />
+              </Button>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="rounded-md px-1.5 py-1 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {TRY_NEXT_COPY.hide}
+          </button>
+        </div>
+      </div>
+      <ul
+        ref={row.ref}
+        className={cn(
+          "scrollbar-none -mx-1 -my-1 flex snap-x snap-mandatory scroll-px-1 gap-3 overflow-x-auto px-1 py-1",
+          // A wide fade where more steps wait, a narrow one where the row
+          // has scrolled past steps, so the first one in view stays sharp.
+          row.canForward && "mask-r-from-[calc(100%-3rem)]",
+          row.canBack && "mask-l-from-[calc(100%-0.75rem)]"
+        )}
+      >
+        {shown.map((card) => (
+          <li key={card.id} className="flex w-44 shrink-0 snap-start @xl/page:w-52">
+            {card.kind === "setup" ? (
+              <ConnectTile gettingStartedSpaceId={gettingStartedSpaceId} />
             ) : (
-              <CardFor card={card} space={space} doc={doc} />
+              <StepFor card={card} space={space} doc={doc} />
             )}
           </li>
         ))}
@@ -252,7 +276,131 @@ function TryNextPanel({
   )
 }
 
-function CardFor({
+/** A row that scrolls sideways a page at a time, and says which ways it can. */
+function useScrollRow() {
+  const [node, setNode] = useState<HTMLUListElement | null>(null)
+  const [state, setState] = useState({
+    overflows: false,
+    canBack: false,
+    canForward: false,
+  })
+  const measure = useCallback((el: HTMLUListElement) => {
+    const max = el.scrollWidth - el.clientWidth
+    const next = {
+      overflows: max > 1,
+      canBack: el.scrollLeft > 1,
+      canForward: el.scrollLeft < max - 1,
+    }
+    setState((prev) =>
+      prev.overflows === next.overflows &&
+      prev.canBack === next.canBack &&
+      prev.canForward === next.canForward
+        ? prev
+        : next
+    )
+  }, [])
+  useEffect(() => {
+    if (!node) return
+    // The observer reports once on start, which takes the first measure.
+    const onScroll = () => measure(node)
+    node.addEventListener("scroll", onScroll, { passive: true })
+    const resize = new ResizeObserver(() => measure(node))
+    resize.observe(node)
+    return () => {
+      node.removeEventListener("scroll", onScroll)
+      resize.disconnect()
+    }
+  }, [node, measure])
+  const page = (direction: 1 | -1) => {
+    const el = node
+    if (!el) return
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    el.scrollBy({
+      left: direction * el.clientWidth * 0.8,
+      behavior: reduce ? "auto" : "smooth",
+    })
+  }
+  return { ref: setNode, page, ...state }
+}
+
+const TILE =
+  "help-tile flex h-full min-h-28 w-full min-w-0 flex-col gap-2.5 rounded-xl p-3.5 text-left focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+
+/** A tile's face: icon, title, and the action it leads to. */
+function TileFace({
+  icon: Icon,
+  title,
+  action,
+  done = false,
+}: {
+  icon: LucideIcon
+  title: string
+  action: string
+  done?: boolean
+}) {
+  return (
+    <>
+      <span
+        aria-hidden
+        className="help-icon-tile flex size-7 shrink-0 items-center justify-center rounded-lg"
+      >
+        {done ? (
+          <CircleCheck className="size-4" strokeWidth={2.25} />
+        ) : (
+          <Icon className="size-4" strokeWidth={2.25} />
+        )}
+      </span>
+      <span
+        className={cn(
+          "text-[0.8125rem] leading-[1.35] font-medium",
+          done ? "text-muted-foreground" : "text-foreground"
+        )}
+      >
+        {title}
+      </span>
+      <span className="mt-auto flex items-center gap-1 text-[0.8125rem] font-medium text-primary-text">
+        {done ? (
+          TRY_NEXT_COPY.done
+        ) : (
+          <>
+            {action}
+            <ArrowRight aria-hidden className="size-3.5" />
+          </>
+        )}
+      </span>
+    </>
+  )
+}
+
+function ConnectTile({
+  gettingStartedSpaceId,
+}: {
+  gettingStartedSpaceId?: string
+}) {
+  const step = TRY_NEXT_SETUP["connect-agent"]
+  const face = <TileFace icon={Plug} title={step.title} action={step.action} />
+  return gettingStartedSpaceId ? (
+    <Link
+      to="/spaces/$spaceId"
+      params={{ spaceId: gettingStartedSpaceId }}
+      title={step.line}
+      className={TILE}
+    >
+      {face}
+    </Link>
+  ) : (
+    <button
+      type="button"
+      title={step.line}
+      onClick={() => openSettings("agents")}
+      className={TILE}
+    >
+      {face}
+    </button>
+  )
+}
+
+function StepFor({
   card,
   space,
   doc,
@@ -263,119 +411,91 @@ function CardFor({
 }) {
   const navigate = useNavigate()
   const { id, done } = card
-  const props: CardText = {
-    icon: ICONS[id],
-    title: card.card.title,
-    line: fillTip(card.card.line, doc ? { doc: doc.title } : {}),
-    done,
-  }
+  const title = card.card.title
+  const line = fillTip(card.card.line, doc ? { doc: doc.title } : {})
   const action = TRY_NEXT_ACTIONS[id]
+  const face = <TileFace icon={ICONS[id]} title={title} action={action} done={done} />
+  if (done)
+    return <div className={cn(TILE, "pointer-events-none")}>{face}</div>
+  const go = (run: () => void) => (
+    <button
+      type="button"
+      title={line}
+      onClick={run}
+      className={TILE}
+    >
+      {face}
+    </button>
+  )
   switch (id) {
-    case "interactive-page":
-      return <PagePrompt card={props} space={space} doc={doc?.title} />
     case "share-link":
-      return (
-        <TryCard {...props}>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              if (!doc) return
-              void navigate({
-                to: "/spaces/$spaceId/documents/$",
-                params: { spaceId: doc.spaceId, _splat: doc.path },
-                hash: "share",
-              })
-            }}
-          >
-            {action}
-          </Button>
-        </TryCard>
-      )
-    case "note-to-agent":
-      return doc ? <NoteStarter card={props} doc={doc} /> : null
-    case "agent-rules":
-      return <RulesLine card={props} />
+      return go(() => {
+        if (!doc) return
+        void navigate({
+          to: "/spaces/$spaceId/documents/$",
+          params: { spaceId: doc.spaceId, _splat: doc.path },
+          hash: "share",
+        })
+      })
     case "another-agent":
     case "invite-team":
+      return go(() => openSettings(id === "invite-team" ? "team" : "agents"))
+    case "interactive-page":
       return (
-        <TryCard {...props}>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              openSettings(id === "invite-team" ? "team" : "agents")
-            }
-          >
-            {action}
-          </Button>
-        </TryCard>
+        <StepPopover face={face} title={title} line={line}>
+          <PagePrompt space={space} doc={doc?.title} />
+        </StepPopover>
+      )
+    case "note-to-agent":
+      return doc ? (
+        <StepPopover face={face} title={title} line={line}>
+          <NoteStarter doc={doc} />
+        </StepPopover>
+      ) : null
+    case "agent-rules":
+      return (
+        <StepPopover face={face} title={title} line={line}>
+          <RulesLine />
+        </StepPopover>
       )
   }
 }
 
-interface CardText {
-  icon: LucideIcon
-  title: string
-  line: string
-  done: boolean
-}
-
-/** One card: what it gives, then how to do it, or Done once it happened. */
-function TryCard({
-  icon: Icon,
+/** A step that needs a choice first opens it beside its tile. */
+function StepPopover({
+  face,
   title,
   line,
-  done = false,
-  body,
   children,
 }: {
-  icon: LucideIcon
+  face: ReactNode
   title: string
   line: string
-  done?: boolean
-  /** What to pick and see before acting, such as a prompt. */
-  body?: ReactNode
-  /** The card's buttons, at its foot. */
-  children?: ReactNode
+  children: ReactNode
 }) {
   return (
-    <div className="flex w-full min-w-0 flex-col gap-3 rounded-xl card-surface p-4">
-      <span
-        aria-hidden
-        className="help-icon-tile flex size-8 shrink-0 items-center justify-center rounded-lg"
+    <Popover>
+      <PopoverTrigger
+        render={<button type="button" className={TILE} />}
       >
-        {done ? (
-          <CircleCheck className="size-4" strokeWidth={2.25} />
-        ) : (
-          <Icon className="size-4" strokeWidth={2.25} />
-        )}
-      </span>
-      <div className="min-w-0">
-        <h3 className="text-sm leading-5 font-semibold text-foreground">
-          {title}
-        </h3>
-        <p className="mt-0.5 text-[0.8125rem] leading-5 text-muted-foreground">
-          {line}
-        </p>
-      </div>
-      {!done && body ? (
-        <div className="flex min-w-0 flex-col gap-2.5">{body}</div>
-      ) : null}
-      {done ? (
-        <p className="mt-auto text-[0.8125rem] leading-8 font-medium text-primary-text">
-          {TRY_NEXT_COPY.done}
-        </p>
-      ) : children ? (
-        <div className="mt-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 pt-1">
-          {children}
+        {face}
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={6} className="w-80 gap-3 p-4">
+        <div className="min-w-0">
+          <p className="text-sm leading-5 font-semibold text-foreground">
+            {title}
+          </p>
+          <p className="mt-0.5 text-[0.8125rem] leading-5 text-muted-foreground">
+            {line}
+          </p>
         </div>
-      ) : null}
-    </div>
+        {children}
+      </PopoverContent>
+    </Popover>
   )
 }
 
-/** The text a card hands over, shown before it's copied or sent. */
+/** The text a step hands over, shown before it's copied or sent. */
 function Preview({
   clamp = false,
   children,
@@ -391,7 +511,7 @@ function Preview({
   )
 }
 
-/** A status beside a card's button, such as Copied. */
+/** A status beside a step's button, such as Copied. */
 function Status({ children }: { children: ReactNode }) {
   return (
     <span
@@ -403,117 +523,107 @@ function Status({ children }: { children: ReactNode }) {
   )
 }
 
-function PagePrompt({
-  card,
-  space,
-  doc,
-}: {
-  card: CardText
-  space?: string
-  doc?: string
-}) {
+function Actions({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 pt-1">
+      {children}
+    </div>
+  )
+}
+
+function PagePrompt({ space, doc }: { space?: string; doc?: string }) {
   const [kind, setKind] = useState<PageKind>("compare")
   const [copied, setCopied] = useState<PageKind | null>(null)
   const prompt = pagePrompt(kind, { space, doc })
   return (
-    <TryCard
-      {...card}
-      body={
-        <>
-          <Select
-            value={kind}
-            onValueChange={(value) => {
-              if (value) setKind(value)
-            }}
-          >
-            <SelectTrigger aria-label="Kind of page" className="h-9">
-              <SelectValue>
-                {PAGE_KINDS.find((item) => item.id === kind)?.label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_KINDS.map((item) => (
-                <SelectItem key={item.id} value={item.id}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Preview>{prompt}</Preview>
-        </>
-      }
-    >
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() =>
-          void copyText(prompt).then(
-            () => setCopied(kind),
-            () => toast.error("Couldn’t copy. Try again.")
-          )
-        }
+    <>
+      <Select
+        value={kind}
+        onValueChange={(value) => {
+          if (value) setKind(value)
+        }}
       >
-        {TRY_NEXT_ACTIONS["interactive-page"]}
-      </Button>
-      {copied === kind && <Status>{TRY_NEXT_COPY.copied}</Status>}
-    </TryCard>
+        <SelectTrigger aria-label="Kind of page" className="h-9">
+          <SelectValue>
+            {PAGE_KINDS.find((item) => item.id === kind)?.label}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {PAGE_KINDS.map((item) => (
+            <SelectItem key={item.id} value={item.id}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Preview>{prompt}</Preview>
+      <Actions>
+        <Button
+          size="sm"
+          onClick={() =>
+            void copyText(prompt).then(
+              () => setCopied(kind),
+              () => toast.error("Couldn’t copy. Try again.")
+            )
+          }
+        >
+          {TRY_NEXT_ACTIONS["interactive-page"]}
+        </Button>
+        {copied === kind && <Status>{TRY_NEXT_COPY.copied}</Status>}
+      </Actions>
+    </>
   )
 }
 
-function NoteStarter({ card, doc }: { card: CardText; doc: TryNextDoc }) {
+function NoteStarter({ doc }: { doc: TryNextDoc }) {
   const navigate = useNavigate()
   const [starter, setStarter] = useState<NoteStarterId>("missing")
   const text = NOTE_STARTERS.find((item) => item.id === starter)?.text ?? ""
   return (
-    <TryCard
-      {...card}
-      body={
-        <>
-          <Select
-            value={starter}
-            onValueChange={(value) => {
-              if (value) setStarter(value)
-            }}
-          >
-            <SelectTrigger aria-label="Note" className="h-9">
-              <SelectValue>
-                {NOTE_STARTERS.find((item) => item.id === starter)?.label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {NOTE_STARTERS.map((item) => (
-                <SelectItem key={item.id} value={item.id}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </>
-      }
-    >
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => {
-          toast(TRY_NEXT_COPY.noteNext)
-          // Shared with the comment box, which Home doesn't load.
-          void import("@/lib/help/note-draft").then(({ startNote }) => {
-            startNote(doc.spaceId, doc.path, text)
-            return navigate({
-              to: "/spaces/$spaceId/documents/$",
-              params: { spaceId: doc.spaceId, _splat: doc.path },
-              hash: "comments",
-            })
-          })
+    <>
+      <Select
+        value={starter}
+        onValueChange={(value) => {
+          if (value) setStarter(value)
         }}
       >
-        {TRY_NEXT_ACTIONS["note-to-agent"]}
-      </Button>
-    </TryCard>
+        <SelectTrigger aria-label="Note" className="h-9">
+          <SelectValue>
+            {NOTE_STARTERS.find((item) => item.id === starter)?.label}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {NOTE_STARTERS.map((item) => (
+            <SelectItem key={item.id} value={item.id}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Actions>
+        <Button
+          size="sm"
+          onClick={() => {
+            toast(TRY_NEXT_COPY.noteNext)
+            // Shared with the comment box, which Home doesn't load.
+            void import("@/lib/help/note-draft").then(({ startNote }) => {
+              startNote(doc.spaceId, doc.path, text)
+              return navigate({
+                to: "/spaces/$spaceId/documents/$",
+                params: { spaceId: doc.spaceId, _splat: doc.path },
+                hash: "comments",
+              })
+            })
+          }}
+        >
+          {TRY_NEXT_ACTIONS["note-to-agent"]}
+        </Button>
+      </Actions>
+    </>
   )
 }
 
-function RulesLine({ card }: { card: CardText }) {
+function RulesLine() {
   const queryClient = useQueryClient()
   const { setup } = usePersonalSetup()
   const [copied, setCopied] = useState(false)
@@ -522,7 +632,7 @@ function RulesLine({ card }: { card: CardText }) {
     setSaving(true)
     try {
       // Getting Started's rules step is the same one. It saves first, so a
-      // failure leaves this card's tick to try again.
+      // failure leaves this step's tick to try again.
       if (!setup.items["agent-instructions"])
         await saveSetup(queryClient, { done: "agent-instructions" })
       await saveHelp(queryClient, { evidence: "rules-added" })
@@ -533,30 +643,32 @@ function RulesLine({ card }: { card: CardText }) {
     }
   }
   return (
-    <TryCard {...card} body={<Preview clamp>{AGENT_RULES_LINE}</Preview>}>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() =>
-          void copyText(AGENT_RULES_LINE).then(
-            () => setCopied(true),
-            () => toast.error("Couldn’t copy. Try again.")
-          )
-        }
-      >
-        {TRY_NEXT_ACTIONS["agent-rules"]}
-      </Button>
-      <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-        <Checkbox
-          checked={saving}
-          disabled={saving}
-          onCheckedChange={(checked) => {
-            if (checked) void added()
-          }}
-        />
-        {TRY_NEXT_COPY.rulesAdded}
-      </label>
-      {copied && <Status>{TRY_NEXT_COPY.copied}</Status>}
-    </TryCard>
+    <>
+      <Preview>{AGENT_RULES_LINE}</Preview>
+      <Actions>
+        <Button
+          size="sm"
+          onClick={() =>
+            void copyText(AGENT_RULES_LINE).then(
+              () => setCopied(true),
+              () => toast.error("Couldn’t copy. Try again.")
+            )
+          }
+        >
+          {TRY_NEXT_ACTIONS["agent-rules"]}
+        </Button>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+          <Checkbox
+            checked={saving}
+            disabled={saving}
+            onCheckedChange={(checked) => {
+              if (checked) void added()
+            }}
+          />
+          {TRY_NEXT_COPY.rulesAdded}
+        </label>
+        {copied && <Status>{TRY_NEXT_COPY.copied}</Status>}
+      </Actions>
+    </>
   )
 }

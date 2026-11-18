@@ -250,11 +250,18 @@ describe("thread service", () => {
       expect((await listThreadSummaries(atlas, location)).some((thread) => thread.id === created.threadId)).toBe(true)
       await postThreadMessage(atlas, { ...followup, body: "Joining the conversation", idempotencyKey: `joined-${location.kind}`, notifyIdentityIds: [], responseIdentityId: null })
       expect((await postThreadMessage(owner, input)).messageId).toBe(created.messageId)
+      expect((await postThreadMessage(owner, followup)).messageId).toBe(replied.messageId)
       await expect(postThreadMessage(owner, { ...input, body: "Changed notes" })).rejects.toThrow("Idempotency key")
+      await expect(postThreadMessage(owner, { ...followup, body: "Changed follow-up" })).rejects.toThrow("Idempotency key")
 
       // Later addressing keeps the usual response and delivery behavior.
-      const addressed = await postThreadMessage(owner, { ...followup, body: "Now please help", idempotencyKey: `ask-${location.kind}`, waitSeconds: 0 })
+      const ask = { ...followup, body: "Now please help", idempotencyKey: `ask-${location.kind}`, waitSeconds: 0 }
+      const addressed = await postThreadMessage(owner, ask)
       expect(addressed.activity?.state).toBe("queued")
+      await postThreadMessage(mara, { ...followup, body: "Joining too", idempotencyKey: `joined-mara-${location.kind}`, notifyIdentityIds: [], responseIdentityId: null })
+      expect((await postThreadMessage(owner, followup)).messageId).toBe(replied.messageId)
+      expect((await postThreadMessage(owner, ask)).messageId).toBe(addressed.messageId)
+      await expect(postThreadMessage(owner, { ...ask, idempotencyKey: `ambiguous-${location.kind}` })).rejects.toThrow("A recipient is required")
     })
   }
 

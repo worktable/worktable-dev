@@ -672,6 +672,9 @@ function messageRecipientForRetry(
     return thread.members.find((member) => member.id === targetMemberIds[0])
   }
   if (targetMemberIds.length > 1) return undefined
+  // An empty recorded intent stays unaddressed as membership changes.
+  // Older messages without it still use the legacy two-member fallback.
+  if (message.creationIntent) return undefined
 
   const otherMembers = thread.members.filter(
     (member) => member.id !== authorMemberId
@@ -869,18 +872,22 @@ export function findThreadAppendRetry(
   const hasExplicitTargets =
     input.notifyIdentityIds !== undefined ||
     input.responseIdentityId !== undefined
+  const recipientNeedle = input.to?.trim().toLocaleLowerCase()
   const recipient = hasExplicitTargets
     ? undefined
-    : messageRecipientForRetry(thread, existing, input.author.id)
-  const recipientNeedle = input.to?.trim().toLocaleLowerCase()
+    : input.to
+      ? thread.members.find(
+          (member) => member.id === input.to ||
+            member.name.toLocaleLowerCase() === recipientNeedle
+        )
+      : messageRecipientForRetry(thread, existing, input.author.id)
   const intendedRecipient = hasExplicitTargets
     ? true
     : input.to
       ? recipient &&
         (recipient.id === input.to ||
           recipient.name.toLocaleLowerCase() === recipientNeedle)
-      : thread.members.filter((member) => member.id !== input.author.id)
-          .length <= 1
+      : true
 
   if (
     !intendedRecipient ||

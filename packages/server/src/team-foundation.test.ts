@@ -23,6 +23,7 @@ import { widgetsRouter } from "./routes/widgets.ts"
 import { createHtmlDocument } from "./html-document-create.ts"
 import {
   DEFAULT_AGENT_ACCESS,
+  defaultConversationIdentityId,
   type DocumentId,
   type SharingPolicy,
 } from "@worktable/types"
@@ -274,6 +275,29 @@ describe("team foundation", () => {
     expect(
       (await offered()).some((participant) => participant.name === "Reader")
     ).toBe(false)
+    const bobIdentityId = defaultConversationIdentityId(bob.id)
+    const mentioned = await runWithTeamIdentity(owner, () =>
+      postThreadMessage(owner, {
+        location,
+        body: `@${bob.name}, for your information.`,
+        idempotencyKey: crypto.randomUUID(),
+        notifyIdentityIds: [bobIdentityId],
+        responseIdentityId: null,
+      })
+    )
+    const shared = await runWithTeamIdentity(member, () => findThread(mentioned.threadId, location))
+    expect(shared.messages[0]!.notifyIdentityIds).toEqual([bobIdentityId])
+    expect(shared.messages[0]!.responseRequest).toBeUndefined()
+    await expect(
+      runWithTeamIdentity(owner, () =>
+        postThreadMessage(owner, {
+          location,
+          body: "Please reply",
+          idempotencyKey: crypto.randomUUID(),
+          responseIdentityId: bobIdentityId,
+        })
+      )
+    ).rejects.toThrow("Choose a recipient who can reply")
     await setTokenScopes(credential.metadata.id, [
       "threads:read",
       "threads:write",

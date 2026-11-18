@@ -288,8 +288,7 @@ async function assertCurrentThreadRecipients(
 async function participantContextForUnknownDefaultIdentities(
   identities: ThreadReadResult["thread"]["identities"],
   identityIds: string[],
-  location: ThreadLocation,
-  offeredParticipants?: ParticipantRef[]
+  location: ThreadLocation
 ): Promise<{
   participants: ParticipantRef[]
   availableParticipants: ParticipantRef[]
@@ -306,9 +305,9 @@ async function participantContextForUnknownDefaultIdentities(
     return { participants: [], availableParticipants: [] }
   }
 
-  const availableParticipants = offeredParticipants ?? (currentTeamWorktable()
+  const availableParticipants = currentTeamWorktable()
     ? await listThreadParticipants(undefined, location, false)
-    : (await listParticipantBindings()).map((binding) => binding.participant))
+    : (await listParticipantBindings()).map((binding) => binding.participant)
   const participantsByIdentity = new Map(
     availableParticipants.map((participant) => [
       defaultConversationIdentityId(participant.id),
@@ -641,8 +640,7 @@ export async function postThreadMessageWithStored(
         ...(input.responseIdentityId ? [input.responseIdentityId] : []),
       ]
       const offered = targetIds.length ? await listThreadParticipants(identity, location) : []
-      const attentionContext = await participantContextForUnknownDefaultIdentities([], targetIds, location,
-        [...offered, actor, ...(recipient ? [recipient] : [])])
+      const attentionContext = await participantContextForUnknownDefaultIdentities([], targetIds, location)
       await assertCurrentThreadRecipients(location, actor.id, recipient, input)
       result = await createThread(location, {
         title: input.title,

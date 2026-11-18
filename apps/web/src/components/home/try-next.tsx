@@ -3,6 +3,7 @@ import {
   useEffect,
   useId,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
@@ -243,13 +244,8 @@ function TryNextPanel({
       </div>
       <ul
         ref={row.ref}
-        className={cn(
-          "scrollbar-none -mx-1 -my-1 flex snap-x snap-mandatory scroll-px-1 gap-3 overflow-x-auto px-1 py-1",
-          // A wide fade where more steps wait, a narrow one where the row
-          // has scrolled past steps, so the first one in view stays sharp.
-          row.canForward && "mask-r-from-[calc(100%-3rem)]",
-          row.canBack && "mask-l-from-[calc(100%-0.75rem)]"
-        )}
+        className="scrollbar-none -mx-1 -my-1 flex snap-x snap-mandatory scroll-px-1 gap-3 overflow-x-auto px-1 py-1"
+        style={row.fade}
       >
         {shown.map((card) => (
           <li key={card.id} className="flex w-44 shrink-0 snap-start @xl/page:w-52">
@@ -305,10 +301,22 @@ function useScrollRow() {
     const onScroll = () => measure(node)
     node.addEventListener("scroll", onScroll, { passive: true })
     const resize = new ResizeObserver(() => measure(node))
-    resize.observe(node)
+    const watch = () => {
+      resize.disconnect()
+      resize.observe(node)
+      // Steps arriving or leaving change what the row holds, not its box.
+      for (const child of node.children) resize.observe(child)
+    }
+    watch()
+    const steps = new MutationObserver(() => {
+      watch()
+      measure(node)
+    })
+    steps.observe(node, { childList: true })
     return () => {
       node.removeEventListener("scroll", onScroll)
       resize.disconnect()
+      steps.disconnect()
     }
   }, [node, measure])
   const page = (direction: 1 | -1) => {
@@ -320,7 +328,18 @@ function useScrollRow() {
       behavior: reduce ? "auto" : "smooth",
     })
   }
-  return { ref: setNode, page, ...state }
+  // A wide fade where more steps wait, a narrow one where the row has
+  // scrolled past steps, so the first one in view stays sharp. Inline, as
+  // mask utilities would add to every page's stylesheet.
+  const fade: CSSProperties | undefined =
+    state.canBack || state.canForward
+      ? {
+          maskImage: `linear-gradient(to right, ${
+            state.canBack ? "transparent, black 0.75rem" : "black"
+          }, ${state.canForward ? "black calc(100% - 3rem), transparent" : "black"})`,
+        }
+      : undefined
+  return { ref: setNode, page, fade, ...state }
 }
 
 const TILE =

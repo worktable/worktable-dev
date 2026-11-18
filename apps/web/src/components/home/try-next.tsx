@@ -273,13 +273,18 @@ function TryNextPanel({
 }
 
 /** A row that scrolls sideways a page at a time, and says which ways it can. */
+// How the row last measured, so coming back to Home draws its arrows and
+// fade with the page instead of a frame later. A remounted row starts
+// scrolled to its start.
+let lastRow = { overflows: false, canBack: false, canForward: false }
+
 function useScrollRow() {
   const [node, setNode] = useState<HTMLUListElement | null>(null)
-  const [state, setState] = useState({
-    overflows: false,
+  const [state, setState] = useState(() => ({
+    ...lastRow,
     canBack: false,
-    canForward: false,
-  })
+    canForward: lastRow.overflows,
+  }))
   const measure = useCallback((el: HTMLUListElement) => {
     const max = el.scrollWidth - el.clientWidth
     const next = {
@@ -287,6 +292,7 @@ function useScrollRow() {
       canBack: el.scrollLeft > 1,
       canForward: el.scrollLeft < max - 1,
     }
+    lastRow = next
     setState((prev) =>
       prev.overflows === next.overflows &&
       prev.canBack === next.canBack &&

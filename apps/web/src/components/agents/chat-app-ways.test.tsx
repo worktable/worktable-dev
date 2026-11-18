@@ -18,7 +18,11 @@ const choices = (worktable: NonNullable<AppChoices["apps"][number]["worktable"]>
   appsUrl: "https://cloud.example/gateway/worktables/apps",
 })
 
-function steps(data: AppChoices | null, autoReply?: "on" | "off"): string {
+function steps(
+  data: AppChoices | null,
+  autoReply?: "on" | "off",
+  waiting = false
+): string {
   const client = new QueryClient()
   client.setQueryData(["app-choices"], data)
   client.setQueryData(["system", "connection"], { mcpAuthMode: "local-token" })
@@ -38,7 +42,7 @@ function steps(data: AppChoices | null, autoReply?: "on" | "off"): string {
     return renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <ol>
-          <OfficialAppSteps app="chatgpt" first={2} />
+          <OfficialAppSteps app="chatgpt" first={2} waiting={waiting} />
         </ol>
       </QueryClientProvider>
     )
@@ -77,4 +81,10 @@ test("ChatGPT's steps finish adding once Cloud knows it, and say where to paste 
   expect(unknown).toContain("Add the Worktable app in ChatGPT")
   expect(unknown).toContain("find Worktable in Apps")
   expect(unknown).toContain('href="https://chatgpt.com/"')
+
+  // Waiting for it says so until Cloud knows it.
+  expect(steps(null, undefined, true)).toContain("Waiting for ChatGPT")
+  expect(
+    steps(choices({ id: "wl_notes", name: "Notes", here: true }), "off", true)
+  ).not.toContain("Waiting for ChatGPT")
 })

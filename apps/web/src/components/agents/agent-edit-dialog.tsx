@@ -29,6 +29,7 @@ import { AgentAvatar } from "./agent-avatar"
 import { AgentFields } from "./agent-fields"
 import { AutoReplySetting } from "./auto-reply"
 import { useConnectionApp, worksElsewhere } from "@/lib/app-choices"
+import { ExternalButton } from "./setup-parts"
 import { WorksInSetting } from "./works-in"
 import { CloudTaskSetup } from "./cloud-task-setup"
 
@@ -228,14 +229,13 @@ export function AgentEditDialog({
         </ResponsiveDialogBody>
         <ResponsiveDialogFooter>
           {connection.link && (
-            <a
+            <ExternalButton
               href={connection.link.manageUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm text-muted-foreground hover:text-foreground sm:mr-auto sm:self-center"
+              size="default"
+              className="sm:mr-auto"
             >
               Manage in Cloud
-            </a>
+            </ExternalButton>
           )}
           {onDisconnect && (
             <Button

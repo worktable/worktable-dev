@@ -2,13 +2,12 @@ import { AgentInstructions } from "@/components/agent-instructions"
 import {
   APP_STEPS,
   CODING_PLUGIN_STEPS,
-  GEMINI_SKILL_DOWNLOAD,
   appValue,
   appsFor,
   claudeConnectorLink,
+  connectCommand,
   placeOf,
   sharedAddressLandsHere,
-  skillsCommand,
   waysFor,
   type AgentApp,
   type AppId,
@@ -16,13 +15,19 @@ import {
   type Way,
 } from "@/lib/agent-app-steps"
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, ChevronRight, Loader2 } from "lucide-react"
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query"
+import { ChevronRight, Loader2, Plug } from "lucide-react"
 import {
   AGENT_PLATFORMS,
   agentConnectionOnCodexHost,
   DEFAULT_AGENT_ACCESS,
   platformForClient,
+  type AgentAccess,
   type AgentConnection,
   type DirectAgentLabel,
 } from "@worktable/types"
@@ -33,16 +38,25 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@worktable/ui/components/collapsible"
-import { useCopy } from "@worktable/ui/hooks/use-copy"
+import { Input } from "@worktable/ui/components/input"
+import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
 
+import { AgentAccessFields } from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
+import { AutoReplySetting } from "@/components/agents/auto-reply"
 import {
   AddOfficialApp,
   LinkedAppSteps,
   OfficialAppSteps,
 } from "@/components/agents/chat-app-ways"
 import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
+import {
+  CommandBlock,
+  ConnectedMark,
+  ExternalButton,
+  StatusLine,
+} from "@/components/agents/setup-parts"
 import { MoveHereButton } from "@/components/agents/works-in"
 import {
   agentConnectionPlatform,
@@ -51,18 +65,17 @@ import {
   listAgentConnections,
   saveAgentChanges,
 } from "@/lib/agent-connections-api"
-import {
-  cloudConnectorCommand,
-  HERMES,
-  OPENCLAW,
-  type AlwaysOnAgent,
-} from "@/lib/always-on-agents"
+import { HERMES, OPENCLAW, type AlwaysOnAgent } from "@/lib/always-on-agents"
 import {
   appOfFamily,
   useAppChoices,
+  useConnectionApp,
+  worksElsewhere,
   worktableLabel,
+  type AppChoice,
   type AppFamily,
 } from "@/lib/app-choices"
+import { insideDesktop } from "@/lib/desktop-connection"
 import { desktopAgentConnectionDetails } from "@/lib/desktop-agent-connection"
 import type { SetupRecord } from "@/lib/onboarding-setups"
 import {
@@ -71,9 +84,11 @@ import {
   latestPairingFailure,
   shouldPollPairing,
   type PairingCreated,
+  type PairingSession,
 } from "@/lib/pairing-api"
 import { useWorkspace } from "@/lib/queries"
 import { getConnection, type ConnectionInfo } from "@/lib/system-api"
+import { threadQueryKeys } from "@/lib/threads-queries"
 import { listTokens } from "@/lib/tokens-api"
 import { StepHeading } from "./onboarding-shared"
 
@@ -112,100 +127,66 @@ const WAY_NAME: Record<Way["kind"], string> = {
   token: "Access Token",
 }
 
-function shellLines(lines: Array<string | null | false>): string {
-  return lines.filter(Boolean).join("\n")
+/** The page this setup is open in, which decides "On this computer". */
+function thisPage() {
+  return { hostname: window.location.hostname, desktop: insideDesktop() }
 }
 
-function CommandBlock({
-  value,
-  pending = false,
-}: {
-  value: string
-  /** Shown in its final shape while the real value is on its way. */
-  pending?: boolean
-}) {
-  const copy = useCopy()
-  return (
-    <div className="relative rounded-xl border border-border bg-surface-inset py-2.5 pr-20 pl-3">
-      <code
-        className={cn(
-          "block font-mono text-xs leading-5 break-all whitespace-pre-wrap transition-colors duration-200",
-          pending ? "text-muted-foreground" : "text-foreground"
-        )}
-      >
-        {value}
-      </code>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={pending}
-        className="absolute top-1.5 right-1.5 h-7 px-2.5 text-xs"
-        onClick={() => void copy.copy(value)}
-      >
-        {copy.copied ? "Copied" : "Copy"}
-      </Button>
-    </div>
-  )
+function shellLines(lines: Array<string | null | false>): string {
+  return lines.filter(Boolean).join("\n")
 }
 
 function Instruction({ children }: { children: ReactNode }) {
   return <p className="mb-2 text-sm leading-6 text-foreground/80">{children}</p>
 }
 
-function StatusLine({
-  connected,
-  waiting,
-  children,
-}: {
-  connected?: boolean
-  waiting?: boolean
-  children: ReactNode
-}) {
-  return (
-    <p
-      role="status"
-      className={cn(
-        "mt-3 flex min-h-5 items-center gap-2 text-sm",
-        connected ? "text-foreground" : "text-muted-foreground"
-      )}
-    >
-      {connected ? (
-        <span className="grid size-4 shrink-0 place-items-center rounded-full bg-success text-background">
-          <Check className="size-2.5" strokeWidth={3} />
-        </span>
-      ) : waiting ? (
-        <span
-          aria-hidden
-          className="size-1.5 shrink-0 animate-pulse rounded-full bg-warning"
-        />
-      ) : null}
-      <span>{children}</span>
-    </p>
-  )
+/** The agent list Settings shows, which setups read and refresh. */
+function connectionsQuery(cloud: boolean) {
+  return {
+    queryKey: ["agent-connections", cloud],
+    queryFn: () => listAgentConnections({ workspaceAgentsOnCloud: cloud }),
+  }
 }
 
-function connectedLine(name: string, alwaysOn: boolean): string {
-  return alwaysOn
-    ? `${name} is connected. Ask it for work in Threads.`
-    : `${name} is connected.`
+/** The agent list as it is now, for finding the agent that just connected. */
+async function currentConnections(
+  queryClient: QueryClient,
+  cloud: boolean
+): Promise<AgentConnection[]> {
+  try {
+    const inventory = await queryClient.fetchQuery({
+      ...connectionsQuery(cloud),
+      staleTime: 0,
+    })
+    return inventory.connections
+  } catch {
+    return []
+  }
 }
 
-function OpenLink({ href, children }: { href: string; children: ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className={buttonVariants({ variant: "outline", size: "sm" })}
-    >
-      {children}
-    </a>
+/** The agent a verified pairing made or updated: same client, same machine. */
+function pairedConnection(
+  session: PairingSession,
+  connections: AgentConnection[]
+): AgentConnection | undefined {
+  const by = session.redeemedBy
+  if (!by) return undefined
+  return connections.find((connection) =>
+    session.target.kind === "agent-adapter"
+      ? connection.target.kind === "agent-adapter" &&
+        connection.target.installationId === by.installationId
+      : connection.authKind === "local-token" &&
+        connection.target.kind === "mcp-client" &&
+        connection.target.clientId ===
+          (by.client ?? session.requestedClient ?? null) &&
+        (connection.machine ?? null) === (by.hostname ?? null)
   )
 }
 
 interface PanelProps {
   app: AgentApp
   way: Way
+  place: Place
   connection: ConnectionInfo
   /** The agent this app already connected, if it did. */
   connected: SetupRecord | undefined
@@ -213,6 +194,9 @@ interface PanelProps {
   /** Pairings made here, kept per way so switching back reuses one. */
   pairings: Record<string, PairingCreated>
   onPairing: (key: string, pairing: PairingCreated | null) => void
+  /** Tokens made here, kept like pairings: each is shown only once. */
+  tokens: Record<string, MadeToken>
+  onToken: (key: string, token: MadeToken) => void
   /** Agents already signed in to Cloud when this step opened. */
   baseline: Set<string>
   cloudConnections: AgentConnection[] | undefined
@@ -226,7 +210,12 @@ function sourceOf(app: AgentApp): string {
   return `app:${app.id}`
 }
 
-function setupFor(app: AgentApp, id: string, name: string): SetupRecord {
+function setupFor(
+  app: AgentApp,
+  id: string,
+  name: string,
+  connectionId?: string
+): SetupRecord {
   return {
     id,
     name,
@@ -235,10 +224,11 @@ function setupFor(app: AgentApp, id: string, name: string): SetupRecord {
     verified: true,
     platform: app.platform,
     source: sourceOf(app),
+    ...(connectionId ? { connectionId } : {}),
   }
 }
 
-/** What the agent is called until its owner renames it. */
+/** What an always-on agent is called until its owner renames it. */
 function agentName(app: AgentApp): string {
   if (app.id === "other") return "My agent"
   if (app.id === "codex") return AGENT_PLATFORMS.codex.name
@@ -254,11 +244,12 @@ const CODE_PLACEHOLDER = "·····-·····"
 
 /**
  * Agents on this computer or a server connect directly with a one-use code.
- * Coding agents get Worktable's skills from the same paste.
+ * Coding agents get Worktable's skills from the same command.
  */
 function PairingPanel({
   app,
   way,
+  place,
   connection,
   connected,
   onConnected,
@@ -266,9 +257,9 @@ function PairingPanel({
   onPairing,
 }: PanelProps) {
   const queryClient = useQueryClient()
+  const cloud = connection.mcpAuthMode === "oauth"
   const key = `${app.id}:${way.kind}`
   const pairing = pairings[key]
-  const name = agentName(app)
   const agent = way.kind === "always-on" ? ALWAYS_ON[way.adapter] : null
   const client = way.kind === "pairing" ? way.client : null
   const create = useMutation({
@@ -278,15 +269,12 @@ function PairingPanel({
             target: {
               kind: "agent-adapter",
               adapter: agent.adapter,
-              participantName: name,
+              participantName: agentName(app),
             },
             access: DEFAULT_AGENT_ACCESS,
           })
-        : createPairing({
-            client,
-            displayName: name,
-            access: DEFAULT_AGENT_ACCESS,
-          }),
+        : // Worktable names the agent, and tells two on one Worktable apart.
+          createPairing({ client, access: DEFAULT_AGENT_ACCESS }),
     onSuccess: (created) => onPairing(key, created),
   })
   // The command is ready when the app is chosen. One request per command: a
@@ -307,8 +295,17 @@ function PairingPanel({
   const session = status.data
   useEffect(() => {
     if (session?.status !== "verified" || !pairing || connected) return
-    onConnected(setupFor(app, `pairing:${pairing.id}`, name))
-    void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
+    void currentConnections(queryClient, cloud).then((connections) => {
+      const made = pairedConnection(session, connections)
+      onConnected(
+        setupFor(
+          app,
+          `pairing:${pairing.id}`,
+          made?.displayName ?? agentName(app),
+          made?.id
+        )
+      )
+    })
     // Only the verified transition adds the agent.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.status, pairing?.id])
@@ -325,10 +322,14 @@ function PairingPanel({
         agent.localConnectCommand(origin, code),
         !agent.restartBeforeConnect && agent.restartCommand,
       ])
-    : shellLines([
-        `curl -fsSL ${pairing ? new URL("/connect.sh", pairing.mcpUrl).href : `${origin}/connect.sh`} | sh -s -- ${code}${client ? ` --client ${client}` : ""}`,
-        way.kind === "pairing" && way.skills && skillsCommand(way.skills),
-      ])
+    : way.kind === "pairing"
+      ? connectCommand(way, {
+          connectScript: pairing
+            ? new URL("/connect.sh", pairing.mcpUrl).href
+            : `${origin}/connect.sh`,
+          code,
+        })
+      : ""
   const ended = session?.status === "expired" || session?.status === "failed"
   const failure = session ? latestPairingFailure(session) : null
 
@@ -336,17 +337,15 @@ function PairingPanel({
     <>
       <Instruction>
         {agent
-          ? `Run this where ${agent.name} runs.`
+          ? place === "computer"
+            ? "Run this in your terminal."
+            : `Run this where ${agent.name} runs.`
           : client
             ? "Run this in your terminal."
             : "Run this in your terminal. It adds Worktable to the agents it finds, such as OpenCode and VS Code."}
       </Instruction>
       <CommandBlock value={command} pending={!pairing} />
-      {connected ? (
-        <StatusLine connected>
-          {connectedLine(connected.name, connected.mode === "always-on")}
-        </StatusLine>
-      ) : create.isError ? (
+      {create.isError ? (
         <Callout variant="danger" className="mt-3">
           Couldn’t make the command.{" "}
           <button
@@ -381,6 +380,13 @@ function PairingPanel({
   )
 }
 
+/** A token made for an app, and the agent it belongs to. */
+interface MadeToken {
+  value: string
+  id: string
+  agent: AgentConnection
+}
+
 /** The token's id, from its `wt_<id>_<secret>` form. */
 function tokenId(token: string): string | null {
   return /^wt_([0-9a-f]{12})_/.exec(token)?.[1] ?? null
@@ -407,9 +413,18 @@ function tokenSteps(kind: Way["kind"], needsToken: boolean): string[] | null {
  * Apps and other MCP agents on a computer or server connect with this
  * Worktable's address and an access token made here.
  */
-function TokenPanel({ app, way, connection, connected, onConnected }: PanelProps) {
+function TokenPanel({
+  app,
+  way,
+  connection,
+  connected,
+  onConnected,
+  tokens: made,
+  onToken,
+}: PanelProps) {
   const queryClient = useQueryClient()
-  const [token, setToken] = useState<{ value: string; id: string } | null>(null)
+  const key = `${app.id}:${way.kind}`
+  const token = made[key] ?? null
   const label = TOKEN_LABEL[way.kind] ?? null
   const { endpoint, needsToken } = desktopAgentConnectionDetails(connection)
   // An app connected before is the same agent: keep its name and access.
@@ -422,17 +437,15 @@ function TokenPanel({ app, way, connection, connected, onConnected }: PanelProps
     existing.data?.connection?.displayName ??
     (label ? AGENT_PLATFORMS[platformForClient(label)].name : agentName(app))
   const mint = useMutation({
-    mutationFn: async () =>
-      (
-        await connectAgentApp({
-          client: label,
-          displayName: name,
-          access: existing.data?.connection?.access ?? DEFAULT_AGENT_ACCESS,
-        })
-      ).token,
-    onSuccess: (value) => {
+    mutationFn: () =>
+      connectAgentApp({
+        client: label,
+        displayName: name,
+        access: existing.data?.connection?.access ?? DEFAULT_AGENT_ACCESS,
+      }),
+    onSuccess: ({ token: value, connection: agent }) => {
       const id = tokenId(value)
-      if (id) setToken({ value, id })
+      if (id) onToken(key, { value, id, agent })
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     },
   })
@@ -447,7 +460,14 @@ function TokenPanel({ app, way, connection, connected, onConnected }: PanelProps
   )
   useEffect(() => {
     if (!used || !token || connected) return
-    onConnected(setupFor(app, `token:${token.id}`, name))
+    onConnected(
+      setupFor(
+        app,
+        `token:${token.id}`,
+        token.agent.displayName,
+        token.agent.id
+      )
+    )
     // Only the first use adds the agent.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [used, token?.id])
@@ -483,7 +503,7 @@ function TokenPanel({ app, way, connection, connected, onConnected }: PanelProps
           <a
             href="/integrations/claude-desktop.mcpb"
             download="worktable-claude-desktop.mcpb"
-            className={buttonVariants({ variant: "outline", size: "sm" })}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
           >
             Download
           </a>
@@ -499,11 +519,7 @@ function TokenPanel({ app, way, connection, connected, onConnected }: PanelProps
           </Button>
         )}
       </div>
-      {connected ? (
-        <StatusLine connected>
-          {connectedLine(connected.name, connected.mode === "always-on")}
-        </StatusLine>
-      ) : mint.isError || existing.isError ? (
+      {mint.isError || existing.isError ? (
         <Callout variant="danger" className="mt-3">
           Couldn’t create the token. Try again.
         </Callout>
@@ -515,8 +531,15 @@ function TokenPanel({ app, way, connection, connected, onConnected }: PanelProps
 }
 
 /** Whether a Cloud connection is the one this app is waiting for. */
-function signedInHere(app: AgentApp, way: Way, connection: AgentConnection): boolean {
-  if (way.kind === "always-on" && ALWAYS_ON[way.adapter].cloudAuth === "approval") {
+function signedInHere(
+  app: AgentApp,
+  way: Way,
+  connection: AgentConnection
+): boolean {
+  if (
+    way.kind === "always-on" &&
+    ALWAYS_ON[way.adapter].cloudAuth === "approval"
+  ) {
     return (
       connection.target.kind === "agent-adapter" &&
       connection.target.adapter === way.adapter
@@ -551,7 +574,7 @@ function cloudStep(
       return { step: APP_STEPS[way.app], value: appValue(way.app) }
     case "claude-connector":
       return {
-        step: "On Claude’s Free plan, add Worktable as a connector. Skills need the plugin.",
+        step: "Works on every Claude plan, Free included.",
         value: url,
         open: { label: "Add Connector", href: claudeConnectorLink(url) },
       }
@@ -571,7 +594,7 @@ function cloudStep(
             : way.client
               ? "Run this in your terminal, then choose Allow access when your browser opens."
               : "Run this in your terminal and sign in when asked. It adds Worktable to the agents it finds, such as OpenCode and VS Code.",
-        value: cloudConnectorCommand(url, way.client ?? "auto"),
+        value: connectCommand(way, { mcpUrl: url }),
       }
     case "always-on": {
       const agent = ALWAYS_ON[way.adapter]
@@ -614,7 +637,9 @@ function useCloudArrival({
       return selected
     },
     onSuccess: (selected) =>
-      onConnected(setupFor(app, selected.id, selected.displayName)),
+      onConnected(
+        setupFor(app, selected.id, selected.displayName, selected.id)
+      ),
   })
   const accepted = useRef<string | null>(null)
   useEffect(() => {
@@ -626,14 +651,8 @@ function useCloudArrival({
 }
 
 function CloudStatus(props: PanelProps) {
-  const { app, connected } = props
+  const { app } = props
   const { arrived, accept } = useCloudArrival(props)
-  if (connected)
-    return (
-      <StatusLine connected>
-        {connectedLine(connected.name, connected.mode === "always-on")}
-      </StatusLine>
-    )
   if (accept.isError)
     return (
       <Callout variant="danger" className="mt-3">
@@ -656,18 +675,21 @@ function SignInPanel(props: PanelProps) {
   const { step, value, open } = cloudStep(app, way, connection.remoteMcpUrl)
   return (
     <>
-      <Instruction>{step}{props.connected ? null : " Then return to Worktable."}</Instruction>
+      <Instruction>
+        {step}
+        {props.primary ? " Then return to Worktable." : null}
+      </Instruction>
       <CommandBlock value={value} />
       {open ? (
         <div className="mt-3">
-          <OpenLink href={open.href}>{open.label}</OpenLink>
+          <ExternalButton href={open.href}>{open.label}</ExternalButton>
         </div>
       ) : null}
-      {way.kind === "address" && app.id === "gemini" ? (
+      {way.skills.via === "files" ? (
         <p className="mt-3 text-sm text-muted-foreground">
           For skills, upload the{" "}
           <a
-            href={GEMINI_SKILL_DOWNLOAD}
+            href={way.skills.href}
             className="font-medium text-primary-text hover:underline"
           >
             Worktable skill
@@ -682,10 +704,39 @@ function SignInPanel(props: PanelProps) {
 
 /** Claude and ChatGPT add their official Worktable plugin or app. */
 function OfficialAppPanel(props: PanelProps) {
-  const { way, active } = props
+  const { app, way, active, connection, onConnected } = props
+  const queryClient = useQueryClient()
   if (way.kind !== "claude-plugin" && way.kind !== "chatgpt-app") return null
   const chat = way.kind === "claude-plugin" ? "claude" : "chatgpt"
-  if (way.link) return <LinkedAppSteps app={chat} active={active} />
+  if (way.link)
+    return (
+      <LinkedAppSteps
+        app={chat}
+        active={active}
+        onConnected={(official: AppChoice) => {
+          // Cloud signs the app in; it is listed here once it reaches this
+          // Worktable through Link.
+          void currentConnections(
+            queryClient,
+            connection.mcpAuthMode === "oauth"
+          ).then((connections) => {
+            const agent = connections.find(
+              (item) =>
+                item.target.kind === "mcp-client" &&
+                item.target.clientId === official.clientId
+            )
+            onConnected(
+              setupFor(
+                app,
+                agent?.id ?? `link:${official.clientId}`,
+                agent?.displayName ?? official.name,
+                agent?.id
+              )
+            )
+          })
+        }}
+      />
+    )
   return (
     <>
       {chat === "claude" ? (
@@ -741,52 +792,50 @@ function WayPanel(props: PanelProps) {
   }
 }
 
+/** Ways that sign in at Cloud's shared address rather than this Worktable's own. */
+function usesSharedAddress(way: Way): boolean {
+  return (
+    way.kind === "claude-plugin" ||
+    way.kind === "chatgpt-app" ||
+    way.kind === "coding-plugin" ||
+    way.kind === "app-plugin"
+  )
+}
+
 /**
  * Where the app will work, and how it gets there. On Cloud, an app that
  * Cloud knows says which Worktable it works in, with Move Here when that's
  * another one.
  */
 function Destination({
-  app,
   way,
   place,
-  connection,
-  active,
+  known,
+  sharedHere,
 }: {
-  app: AgentApp
   way: Way
   place: Place
-  connection: ConnectionInfo
-  active: boolean
+  /** Where Cloud says the app works, when it can say. */
+  known: AppChoice | undefined
+  sharedHere: boolean
 }) {
   const workspace = useWorkspace()
-  const family = FAMILY[app.id]
-  const viaCloud =
-    place === "cloud" ||
-    ((way.kind === "claude-plugin" || way.kind === "chatgpt-app") && way.link)
-  const choices = useAppChoices(active && viaCloud && family !== undefined)
-  const known = family ? appOfFamily(choices.data, family) : undefined
   const name = workspace.data?.name
-  // The plugins use Cloud's shared address; the others use this Worktable's own.
-  const shared =
-    way.kind === "claude-plugin" ||
-    way.kind === "chatgpt-app" ||
-    way.kind === "coding-plugin" ||
-    way.kind === "app-plugin"
+  const link =
+    (way.kind === "claude-plugin" || way.kind === "chatgpt-app") && way.link
   const how =
     place === "cloud"
       ? "Through Worktable Cloud"
-      : viaCloud
+      : link
         ? "Through Worktable Link"
         : place === "computer"
           ? "On this computer"
           : "Connects directly"
-  const elsewhere = known?.worktable && !known.worktable.here ? known.worktable : null
-  const worksHere =
-    known?.worktable?.here === true ||
-    place !== "cloud" ||
-    !shared ||
-    sharedAddressLandsHere(connection.remoteMcpUrl)
+  const elsewhere =
+    known?.worktable && !known.worktable.here ? known.worktable : null
+  // Off Cloud, Link sends the app here. On Cloud, a way with this
+  // Worktable's own address works here, and a plugin wherever Cloud sends it.
+  const worksHere = place !== "cloud" || !usesSharedAddress(way) || sharedHere
   return (
     <p className="text-xs leading-5 text-muted-foreground">
       {elsewhere ? (
@@ -796,7 +845,9 @@ function Destination({
         </span>
       ) : worksHere && name ? (
         <>
-          Works in <span className="text-foreground">{name}</span> · {how}
+          Works in <span className="text-foreground">{name}</span>{" "}
+          {/* The dot stays with what follows it, never alone at a line's end. */}
+          <span className="whitespace-nowrap">· {how}</span>
         </>
       ) : (
         how
@@ -815,7 +866,11 @@ function OtherWays({
   const [open, setOpen] = useState(false)
   if (!ways.length) return null
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="mt-4 border-t border-border pt-3">
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="mt-4 border-t border-border pt-3"
+    >
       <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground">
         Other Ways
         <ChevronRight
@@ -842,15 +897,36 @@ function OtherWays({
   )
 }
 
+/** An app's mark; Other is any MCP agent, so it gets a plug. */
+function AppMark({ app, className }: { app: AgentApp; className: string }) {
+  if (app.id === "other")
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          "grid place-items-center rounded-lg bg-surface-tint text-muted-foreground",
+          className
+        )}
+      >
+        <Plug className="size-1/2" />
+      </span>
+    )
+  return (
+    <AgentAvatar
+      name={app.name}
+      platform={app.platform}
+      className={cn("rounded-lg", className)}
+    />
+  )
+}
+
 function AppTile({
   app,
-  selected,
   connected,
   compact,
   onSelect,
 }: {
-  app: AgentApp | null
-  selected: boolean
+  app: AgentApp
   connected: boolean
   compact: boolean
   onSelect: () => void
@@ -858,58 +934,257 @@ function AppTile({
   return (
     <button
       type="button"
-      aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "flex rounded-xl text-foreground transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+        "flex rounded-xl card-surface-interactive card-surface text-foreground transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
         compact
           ? "min-h-11 items-center gap-2.5 px-3 py-2 text-left text-sm"
-          : "min-h-20 flex-col items-center justify-center gap-2 px-1 py-3 text-center text-xs leading-tight",
-        selected
-          ? "border border-primary bg-surface-selected"
-          : "card-surface card-surface-interactive"
+          : "min-h-20 flex-col items-center justify-center gap-2 px-1 py-3 text-center text-xs leading-tight"
       )}
     >
-      <span className="relative">
-        {app ? (
-          <AgentAvatar
-            name={app.name}
-            platform={app.id === "other" ? undefined : app.platform}
-            className={cn("rounded-lg", compact ? "size-6" : "size-7")}
-          />
-        ) : (
-          <span
-            className={cn(
-              "grid place-items-center rounded-lg bg-surface-tint text-muted-foreground",
-              compact ? "size-6" : "size-7"
-            )}
-          >
-            ···
-          </span>
-        )}
+      <span aria-hidden className="relative">
+        <AppMark app={app} className={compact ? "size-6" : "size-7"} />
         {connected ? (
-          <span className="absolute -right-1 -bottom-1 grid size-3.5 place-items-center rounded-full bg-success text-background ring-2 ring-card">
-            <Check className="size-2" strokeWidth={3.5} aria-hidden />
-          </span>
+          <ConnectedMark className="absolute -right-1 -bottom-1 size-3.5 ring-2 ring-card" />
         ) : null}
       </span>
       <span className={compact ? "min-w-0 truncate" : undefined}>
-        {app ? app.name : "More"}
+        {app.name}
       </span>
     </button>
   )
 }
 
 /**
- * Pick the app, then its one best setup for this Worktable. Each setup shows
- * the real command or address and waits for the agent; the other ways stay
- * under Other Ways.
+ * The agent that just connected, set up where it connected: its name, what
+ * it may do, and auto-reply where the app has it. The same changes as Edit
+ * in Settings, saved as they are made.
+ */
+function ConnectedPanel({
+  setup,
+  cloud,
+  active,
+  onRenamed,
+}: {
+  setup: SetupRecord
+  cloud: boolean
+  active: boolean
+  onRenamed: (name: string) => void
+}) {
+  const queryClient = useQueryClient()
+  const list = useQuery({ ...connectionsQuery(cloud), enabled: active })
+  const connection = list.data?.connections.find(
+    (item) => item.id === setup.connectionId
+  )
+  const app = useConnectionApp(connection, active)
+  const [name, setName] = useState(setup.name)
+  const [access, setAccess] = useState<AgentAccess | null>(null)
+  const shownAccess = access ?? connection?.access ?? null
+  const save = useMutation({
+    mutationFn: (changes: { name: string; access: AgentAccess | null }) =>
+      saveAgentChanges(connection!, {
+        name: changes.name,
+        icon: connection!.icon ?? null,
+        access: changes.access,
+      }),
+    onSuccess: (_result, changes) => {
+      if (changes.name !== setup.name) onRenamed(changes.name)
+      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
+      void queryClient.invalidateQueries({ queryKey: ["tokens"] })
+      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.root })
+    },
+    onError: (error) => {
+      setAccess(null)
+      toast.error(
+        error instanceof Error ? error.message : "Couldn’t save the agent."
+      )
+    },
+  })
+  // Only a token made here or a sign-in with access is changed here; Cloud
+  // holds a Link sign-in.
+  const editable =
+    connection !== undefined &&
+    (connection.authKind === "local-token" ||
+      (connection.authKind === "oauth" && connection.access != null))
+  const saveName = () => {
+    const trimmed = name.trim()
+    if (!connection || !trimmed || trimmed.length > 100)
+      return setName(setup.name)
+    if (trimmed !== connection.displayName)
+      save.mutate({ name: trimmed, access: shownAccess })
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      {editable ? (
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor={`agent-name-${setup.id}`}
+            className="text-sm font-medium text-foreground"
+          >
+            Name
+          </label>
+          <Input
+            id={`agent-name-${setup.id}`}
+            value={name}
+            maxLength={100}
+            onChange={(event) => setName(event.target.value)}
+            onBlur={saveName}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur()
+            }}
+          />
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          <span className="text-sm font-medium text-foreground">Name</span>
+          <span className="text-sm text-foreground/80">
+            {connection?.displayName ?? setup.name}
+          </span>
+        </div>
+      )}
+      {editable && shownAccess ? (
+        <AgentAccessFields
+          value={shownAccess}
+          alwaysOn={connection.mode === "always-on"}
+          disabled={save.isPending}
+          onChange={(next) => {
+            setAccess(next)
+            save.mutate({
+              name: name.trim() || connection.displayName,
+              access: next,
+            })
+          }}
+        />
+      ) : null}
+      {connection?.autoReply ? (
+        <AutoReplySetting
+          connection={connection}
+          elsewhere={worksElsewhere(app)}
+        />
+      ) : null}
+      {connection?.link ? (
+        <div>
+          <ExternalButton href={connection.link.manageUrl}>
+            Manage in Cloud
+          </ExternalButton>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * The chosen app's setup: where it works, its one best way and the others,
+ * then, once it connects, the agent itself.
+ */
+function SetupCard({
+  app,
+  info,
+  place,
+  connected,
+  active,
+  onChange,
+  onDone,
+  panelFor,
+  onRenamed,
+}: {
+  app: AgentApp
+  info: ConnectionInfo
+  place: Place
+  connected: SetupRecord | undefined
+  active: boolean
+  onChange: () => void
+  onDone?: () => void
+  panelFor: (way: Way, place: Place, primary?: boolean) => PanelProps
+  onRenamed: (setup: SetupRecord, name: string) => void
+}) {
+  const cloud = info.mcpAuthMode === "oauth"
+  const family = FAMILY[app.id]
+  // Cloud says where its apps work; off Cloud it does only through Link.
+  const asked =
+    cloud ||
+    ((app.id === "claude" || app.id === "chatgpt") && place !== "cloud")
+  const choices = useAppChoices(active && asked && family !== undefined)
+  const known = family ? appOfFamily(choices.data, family) : undefined
+  const sharedHere = known?.worktable
+    ? known.worktable.here
+    : sharedAddressLandsHere(info.remoteMcpUrl)
+  const ways = waysFor(app.id, { place, sharedHere })
+  if (!ways) return null
+  // Grok Bot keeps its own steps after it connects: the reply test follows.
+  const settled = connected && ways.best.kind !== "grok"
+  return (
+    <section
+      aria-label={`Connect ${app.name}`}
+      className="rounded-xl card-surface p-4 sm:p-5"
+    >
+      <header className="mb-4 flex items-center gap-3">
+        <AppMark app={app} className="size-8" />
+        <div className="min-w-0 flex-1">
+          <h3 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+            {app.id === "other" ? "Other agents" : app.name}
+            {settled ? (
+              <span role="img" aria-label="Connected">
+                <ConnectedMark />
+              </span>
+            ) : null}
+          </h3>
+          <Destination
+            way={ways.best}
+            place={place}
+            known={known}
+            sharedHere={sharedHere}
+          />
+        </div>
+        {/* Once connected, Done brings the apps back where there is one. */}
+        {settled && onDone ? null : (
+          <Button variant="ghost" size="sm" onClick={onChange}>
+            Change
+          </Button>
+        )}
+      </header>
+      {settled ? (
+        <>
+          <ConnectedPanel
+            key={connected.id}
+            setup={connected}
+            cloud={cloud}
+            active={active}
+            onRenamed={(name) => onRenamed(connected, name)}
+          />
+          {onDone ? (
+            <div className="mt-5 flex justify-end">
+              <Button onClick={onDone}>Done</Button>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div key={app.id}>
+          <WayPanel {...panelFor(ways.best, place)} />
+          <OtherWays
+            ways={ways.others}
+            render={(way) => <WayPanel {...panelFor(way, place, false)} />}
+          />
+        </div>
+      )}
+    </section>
+  )
+}
+
+/**
+ * Pick the app, then its one best setup for this Worktable. The apps fold
+ * away into the setup's header, which changes the app. Each setup shows the
+ * real command or address and waits for the agent; the other ways stay under
+ * Other Ways. Once the agent connects, the same card names it and sets what
+ * it may do.
  */
 export function AgentConnectOptions({
   setups,
   onSetupsChange,
   active = true,
   compact = false,
+  done = false,
 }: {
   setups: SetupRecord[]
   onSetupsChange: (setups: SetupRecord[]) => void
@@ -917,14 +1192,19 @@ export function AgentConnectOptions({
   active?: boolean
   /** Row-sized app choices, for a page with other settings around them. */
   compact?: boolean
+  /** A connected app's card ends with Done, which brings the apps back for another. */
+  done?: boolean
 }) {
   const [selected, setSelected] = useState<AppId | null>(null)
-  const [more, setMore] = useState(false)
+  // The card keeps its app while it folds away.
+  const [shown, setShown] = useState<AppId | null>(null)
+  if (selected && selected !== shown) setShown(selected)
   // Cloud agents already signed in when this step loaded aren't new. Each
   // app matches its own platform, so one that connects while another app is
   // on show still counts when it's chosen.
   const [baseline, setBaseline] = useState<Set<string> | null>(null)
   const [pairings, setPairings] = useState<Record<string, PairingCreated>>({})
+  const [tokens, setTokens] = useState<Record<string, MadeToken>>({})
   const connection = useQuery({
     queryKey: ["system", "connection"],
     queryFn: getConnection,
@@ -977,110 +1257,112 @@ export function AgentConnectOptions({
   }
 
   const info = connection.data!
-  const place = placeOf(info)
+  const place = placeOf(info, thisPage())
   const apps = appsFor(place)
   const app = apps.find((item) => item.id === selected) ?? null
-  const showAll = more || (app !== null && !app.featured)
-  const shown = showAll ? apps : apps.filter((item) => item.featured)
-  const connectedApp = (item: AgentApp) =>
-    setups.some((setup) => setup.source === sourceOf(item))
+  const card = apps.find((item) => item.id === shown) ?? null
+  const setupOf = (item: AgentApp) =>
+    setups.find((setup) => setup.source === sourceOf(item))
 
-  const panelFor = (way: Way, primary = true): PanelProps | null =>
-    app
-      ? {
-          app,
-          way,
-          connection: info,
-          connected: setups.find((setup) => setup.source === sourceOf(app)),
-          onConnected: (setup) =>
-            onSetupsChange([
-              ...setups.filter((item) => item.id !== setup.id),
-              setup,
-            ]),
-          pairings,
-          onPairing: (key, pairing) =>
-            setPairings((current) => {
-              const next = { ...current }
-              if (pairing) next[key] = pairing
-              else delete next[key]
-              return next
-            }),
-          // An agent one app accepted isn't another app's arrival.
-          cloudConnections: baseline
-            ? loaded?.filter(
-                (item) => !setups.some((setup) => setup.id === item.id)
-              )
-            : undefined,
-          baseline: baseline ?? new Set<string>(),
-          active,
-          primary,
-        }
-      : null
-  const ways = app ? waysFor(app.id, place) : null
+  const panelFor = (way: Way, where: Place, primary = true): PanelProps => ({
+    app: card!,
+    way,
+    place: where,
+    connection: info,
+    connected: setupOf(card!),
+    onConnected: (setup) =>
+      onSetupsChange([...setups.filter((item) => item.id !== setup.id), setup]),
+    pairings,
+    onPairing: (key, pairing) =>
+      setPairings((current) => {
+        const next = { ...current }
+        if (pairing) next[key] = pairing
+        else delete next[key]
+        return next
+      }),
+    tokens,
+    onToken: (key, token) =>
+      setTokens((current) => ({ ...current, [key]: token })),
+    // An agent one app accepted isn't another app's arrival.
+    cloudConnections: baseline
+      ? loaded?.filter((item) => !setups.some((setup) => setup.id === item.id))
+      : undefined,
+    baseline: baseline ?? new Set<string>(),
+    active,
+    primary,
+  })
 
   return (
-    <div className="flex flex-col gap-4">
-      <div
-        role="group"
-        aria-label="Apps"
-        className={cn(
-          "grid gap-2",
-          compact ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-4"
-        )}
-      >
-        {shown.map((item) => (
-          <AppTile
-            key={item.id}
-            app={item}
-            selected={item.id === selected}
-            connected={connectedApp(item)}
-            compact={compact}
-            onSelect={() => setSelected(item.id === selected ? null : item.id)}
-          />
-        ))}
-        {showAll ? null : (
-          <AppTile
-            app={null}
-            selected={false}
-            connected={false}
-            compact={compact}
-            onSelect={() => setMore(true)}
-          />
-        )}
-      </div>
-      {app && ways ? (
-        <section
-          aria-label={`Connect ${app.name}`}
-          className="rounded-xl card-surface p-4 sm:p-5"
-        >
-          <header className="mb-4 flex items-center gap-3">
-            <AgentAvatar
-              name={app.name}
-              platform={app.id === "other" ? undefined : app.platform}
-              className="size-8 rounded-lg"
-            />
-            <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium text-foreground">
-                {app.id === "other" ? "Other agents" : app.name}
-              </h3>
-              <Destination
-                app={app}
-                way={ways.best}
-                place={place}
-                connection={info}
-                active={active}
+    <div className="flex flex-col">
+      <Collapsible open={app === null}>
+        <CollapsibleContent>
+          <div
+            role="group"
+            aria-label="Apps"
+            className={cn(
+              "grid gap-2",
+              compact ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-4"
+            )}
+          >
+            {apps.map((item) => (
+              <AppTile
+                key={item.id}
+                app={item}
+                connected={setupOf(item) !== undefined}
+                compact={compact}
+                onSelect={() => setSelected(item.id)}
               />
-            </div>
-          </header>
-          <div key={app.id}>
-            <WayPanel {...panelFor(ways.best)!} />
-            <OtherWays
-              ways={ways.others}
-              render={(way) => <WayPanel {...panelFor(way, false)!} />}
-            />
+            ))}
           </div>
-        </section>
-      ) : null}
+        </CollapsibleContent>
+      </Collapsible>
+      <Collapsible open={app !== null}>
+        <CollapsibleContent>
+          {card ? (
+            <SetupCard
+              key={card.id}
+              app={card}
+              info={info}
+              place={place}
+              connected={setupOf(card)}
+              active={active && app !== null}
+              onChange={() => setSelected(null)}
+              onDone={
+                done
+                  ? () => {
+                      // Picking the app again connects another one.
+                      const prefix = `${card.id}:`
+                      const unused = <T,>(current: Record<string, T>) =>
+                        Object.fromEntries(
+                          Object.entries(current).filter(
+                            ([key]) => !key.startsWith(prefix)
+                          )
+                        )
+                      setPairings(unused)
+                      setTokens(unused)
+                      onSetupsChange(
+                        setups.filter(
+                          (setup) => setup.source !== sourceOf(card)
+                        )
+                      )
+                      setSelected(null)
+                      // Gone at once: folding it would set the app up again.
+                      setShown(null)
+                    }
+                  : undefined
+              }
+              panelFor={panelFor}
+              onRenamed={(setup, name) =>
+                onSetupsChange(
+                  setups.map((item) =>
+                    item.id === setup.id ? { ...item, name } : item
+                  )
+                )
+              }
+            />
+          ) : null}
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   )
 }
@@ -1106,12 +1388,24 @@ export function ConnectAgentStep({
         <AgentConnectOptions setups={setups} onSetupsChange={onSetupsChange} />
       </div>
       {setups.some((entry) => entry.verified) ? (
-        <section aria-label="Agent rules" className="mt-6 space-y-3 border-t border-border pt-5">
+        <section
+          aria-label="Agent rules"
+          className="mt-6 space-y-3 border-t border-border pt-5"
+        >
           <div>
-            <h2 className="text-sm font-medium">Add Worktable to your agent’s rules</h2>
-            <p className="text-xs text-muted-foreground">So your agents save here without being asked.</p>
+            <h2 className="text-sm font-medium">
+              Add Worktable to your agent’s rules
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              So your agents save here without being asked.
+            </p>
           </div>
-          <AgentInstructions actionVariant="outline" platforms={setups.filter((entry) => entry.verified).map((entry) => entry.platform ?? "other")} />
+          <AgentInstructions
+            actionVariant="outline"
+            platforms={setups
+              .filter((entry) => entry.verified)
+              .map((entry) => entry.platform ?? "other")}
+          />
         </section>
       ) : null}
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3">

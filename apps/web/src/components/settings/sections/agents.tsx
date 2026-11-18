@@ -20,7 +20,8 @@ import {
   type AgentConnection,
   type ConnectorInstallableMcpClientId,
 } from "@worktable/types"
-import { Button } from "@worktable/ui/components/button"
+import { Button, buttonVariants } from "@worktable/ui/components/button"
+import { ExternalButton } from "@/components/agents/setup-parts"
 import { Badge } from "@worktable/ui/components/badge"
 import { Callout } from "@worktable/ui/components/callout"
 import { Card, CardContent } from "@worktable/ui/components/card"
@@ -123,6 +124,39 @@ export function AgentsSection() {
       listAgentConnections({ workspaceAgentsOnCloud: agentsOnCloud }),
     enabled: sectionActive && connectionQuery.isFetched,
   })
+  // What's connected leads once there is something; until then, connecting
+  // does, and an empty list waits below it for an agent. Decided once, when
+  // the section opens, so connecting an agent moves nothing on the page.
+  const anyConnected =
+    (agents.data?.connections.length ?? 0) > 0 ||
+    (agents.data?.grokBots?.length ?? 0) > 0 ||
+    agents.isError
+  const [opened, setOpened] = useState<{
+    leadWithAgents: boolean
+    listed: Set<string>
+  } | null>(null)
+  if (!opened && (agents.isSuccess || agents.isError))
+    setOpened({
+      leadWithAgents: anyConnected,
+      listed: new Set(agents.data?.connections.map((item) => item.id)),
+    })
+  const leadWithAgents = opened?.leadWithAgents ?? null
+  // A new agent connected here is set up in its card, and joins the list on
+  // Done, so the list doesn't grow under the card meanwhile. One listed
+  // already, reconnected, stays where it is.
+  const [setups, setSetups] = useState<SetupRecord[]>([])
+  const settingUp = new Set(
+    setups.flatMap((setup) =>
+      setup.connectionId && !opened?.listed.has(setup.connectionId)
+        ? [setup.connectionId]
+        : []
+    )
+  )
+  const listed =
+    (agents.data?.connections.filter((item) => !settingUp.has(item.id))
+      .length ?? 0) > 0 ||
+    (agents.data?.grokBots?.length ?? 0) > 0 ||
+    agents.isError
 
   if (connectionQuery.isError && !connectionQuery.data) {
     return (
@@ -150,16 +184,17 @@ export function AgentsSection() {
   }
 
   const cloud = connectionQuery.data.mcpAuthMode === "oauth"
-  // What's connected leads once there is something; until then, connecting does.
-  // An empty list says nothing the tiles don't, so it waits for an agent.
-  const anyConnected =
-    (agents.data?.connections.length ?? 0) > 0 ||
-    (agents.data?.grokBots?.length ?? 0) > 0 ||
-    agents.isError
   return (
     <div className="flex flex-col gap-8">
-      {anyConnected ? <ConnectedAgentsGroup /> : null}
-      <ConnectAppGroup active={sectionActive} />
+      {leadWithAgents ? <ConnectedAgentsGroup settingUp={settingUp} /> : null}
+      <ConnectAppGroup
+        active={sectionActive}
+        setups={setups}
+        onSetupsChange={setSetups}
+      />
+      {leadWithAgents === false && listed ? (
+        <ConnectedAgentsGroup settingUp={settingUp} />
+      ) : null}
       <ManualSetupGroup connection={connectionQuery.data} />
       <DesktopAgentSkillsGroup enabled={sectionActive} />
       {cloud ? null : (
@@ -172,10 +207,16 @@ export function AgentsSection() {
 }
 
 /** The same choice as onboarding: the app, then its one best setup. */
-function ConnectAppGroup({ active }: { active: boolean }) {
-  // Agents connected here are listed under Connected Agents; this only
-  // marks the app on its tile until Settings closes.
-  const [setups, setSetups] = useState<SetupRecord[]>([])
+function ConnectAppGroup({
+  active,
+  setups,
+  onSetupsChange,
+}: {
+  active: boolean
+  /** Agents connected here whose card is still open. */
+  setups: SetupRecord[]
+  onSetupsChange: (setups: SetupRecord[]) => void
+}) {
   return (
     <section className="flex flex-col gap-3" aria-labelledby="connect-app">
       <h3 id="connect-app" className="text-sm font-medium text-foreground">
@@ -183,9 +224,10 @@ function ConnectAppGroup({ active }: { active: boolean }) {
       </h3>
       <AgentConnectOptions
         setups={setups}
-        onSetupsChange={setSetups}
+        onSetupsChange={onSetupsChange}
         active={active}
         compact
+        done
       />
     </section>
   )
@@ -201,17 +243,20 @@ function ManualRow({
   children: ReactNode
 }) {
   return (
-    <li className="flex min-h-14 items-center gap-3 px-4 py-3 not-first:border-t not-first:border-border/60">
-      <div className="min-w-0 flex-1">
+    <li className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 not-first:border-t not-first:border-border/60">
+      <div className="min-w-0 flex-1 basis-40">
         <div className="text-sm font-medium text-foreground">{title}</div>
-        <div className="truncate text-xs text-muted-foreground">{detail}</div>
+        <div className="text-xs wrap-anywhere text-muted-foreground">
+          {detail}
+        </div>
       </div>
-      <div className="flex shrink-0 items-center gap-3">{children}</div>
+      <div className="flex shrink-0 items-center gap-2">{children}</div>
     </li>
   )
 }
 
-const ROW_LINK = "text-sm font-medium text-primary-text hover:underline"
+// Through cn, so the outline border wins over the base transparent one.
+const ROW_ACTION = cn(buttonVariants({ variant: "outline", size: "sm" }))
 
 /**
  * Everything the setups above use, for doing it by hand: the plugin, the
@@ -229,35 +274,29 @@ function ManualSetupGroup({ connection }: { connection: ConnectionInfo }) {
         Manual Setup
       </h3>
       <ul className="rounded-xl card-surface">
-        <ManualRow title="Plugin" detail="Skills and the Cloud connection">
-          <a href={PLUGIN_DOWNLOAD} className={ROW_LINK}>
+        {/* The plugin signs in to Cloud, so off Cloud it works through Link. */}
+        <ManualRow
+          title="Plugin"
+          detail={
+            cloud
+              ? "Skills and the connection"
+              : "Skills and the connection, through Worktable Link"
+          }
+        >
+          <a href={PLUGIN_DOWNLOAD} className={ROW_ACTION}>
             Download
           </a>
-          <a
-            href={PLUGIN_REPOSITORY}
-            target="_blank"
-            rel="noreferrer"
-            className={ROW_LINK}
-          >
-            Open
-          </a>
+          <ExternalButton href={PLUGIN_REPOSITORY}>GitHub</ExternalButton>
         </ManualRow>
         <ManualRow title="Skills" detail="For agents without the plugin">
-          <a
-            href={SKILLS_GUIDE}
-            target="_blank"
-            rel="noreferrer"
-            className={ROW_LINK}
-          >
-            Open
-          </a>
+          <ExternalButton href={SKILLS_GUIDE}>Guide</ExternalButton>
         </ManualRow>
         {cloud ? null : (
           <ManualRow title="Desktop Extension" detail="Claude Desktop">
             <a
               href="/integrations/claude-desktop.mcpb"
               download="worktable-claude-desktop.mcpb"
-              className={ROW_LINK}
+              className={ROW_ACTION}
             >
               Download
             </a>
@@ -267,13 +306,13 @@ function ManualSetupGroup({ connection }: { connection: ConnectionInfo }) {
           title="MCP Address"
           detail={<span className="font-mono">{address}</span>}
         >
-          <button
-            type="button"
-            className={ROW_LINK}
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => void copy.copy(address)}
           >
             {copy.copied ? "Copied" : "Copy"}
-          </button>
+          </Button>
         </ManualRow>
       </ul>
     </section>
@@ -593,7 +632,12 @@ function agentConnectionName(connection: AgentConnection): string {
   )
 }
 
-export function ConnectedAgentsGroup() {
+export function ConnectedAgentsGroup({
+  settingUp,
+}: {
+  /** Agents still being set up in their card, listed once it's done. */
+  settingUp?: Set<string>
+} = {}) {
   const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
   const systemConnection = useQuery({
@@ -682,7 +726,9 @@ export function ConnectedAgentsGroup() {
   const [grokOpen, setGrokOpen] = useState(false)
   const [confirmingGrok, setConfirmingGrok] = useState(false)
   const appChoices = useAppChoices(sectionActive)
-  const connections = connectionsQuery.data?.connections ?? []
+  const connections = (connectionsQuery.data?.connections ?? []).filter(
+    (connection) => !settingUp?.has(connection.id)
+  )
   const grokBots = connectionsQuery.data?.grokBots ?? []
   const candidates = connectionsQuery.data?.grokBotCandidates ?? []
   const botForConnection = (connection: AgentConnection) =>
@@ -891,14 +937,13 @@ export function ConnectedAgentsGroup() {
           <ResponsiveDialogFooter>
             {/* Cloud holds a Link sign-in, so it's managed there. */}
             {editingConnection?.link && (
-              <a
+              <ExternalButton
                 href={editingConnection.link.manageUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm text-muted-foreground hover:text-foreground sm:mr-auto sm:self-center"
+                size="default"
+                className="sm:mr-auto"
               >
                 Manage in Cloud
-              </a>
+              </ExternalButton>
             )}
             {editingConnection &&
               !editingConnection.link &&

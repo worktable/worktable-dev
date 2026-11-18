@@ -302,7 +302,7 @@ export function DesktopAgentSkillsGroup({ enabled }: { enabled: boolean }) {
         {pendingPlan ? (
           <div className="flex flex-col gap-3 text-sm">
             {pendingPlan.preview.status.targetRoot ? (
-              <p className="font-mono text-xs break-all text-muted-foreground">
+              <p className="font-mono text-xs wrap-anywhere text-muted-foreground">
                 {pendingPlan.preview.status.targetRoot}
               </p>
             ) : null}

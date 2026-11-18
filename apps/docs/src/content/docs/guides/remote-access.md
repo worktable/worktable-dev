@@ -54,7 +54,7 @@ to connect your Cloud account to your member account.
 
 ## Connect a remote agent
 
-Open **Settings → Agents** and choose **Connect an agent**. On a Teams
+Open **Settings → Agents** and choose your app under **Connect App**. On a Teams
 Worktable, always use Settings so the connection belongs to the member who
 approves it.
 
@@ -99,10 +99,10 @@ for availability. A remote self-hosted installation needs an HTTPS address.
 1. Choose **Sign in** in **Settings → Remote** and complete browser sign-in.
 2. Choose a payer-owned **Worktable subscription** and turn on
    **Worktable Link**. Signing in alone does not enable access.
-3. For ChatGPT or Claude, choose **Set Up** in that app's steps in
-   **Settings → Agents → Chat apps**, then add the official Worktable app. If
-   the app already works in another Worktable, use **Move Here** in those
-   steps. For
+3. For ChatGPT or Claude, choose the app in **Settings → Agents → Connect
+   App**, choose **Set Up**, then add the official Worktable app. If the app
+   already works in another Worktable, use **Move Here** beside where it
+   works. For
    another AI app, open **Connect another app**, copy the device's
    **MCP URL** into its connector setup and choose OAuth.
 4. Sign in with the same Cloud account and approve the connection.
@@ -122,7 +122,7 @@ or expose the full local interface.
 Turn off **Worktable Link** to pause AI access and public sharing. Turning it
 on again restores the same MCP URL, share links and approved connections.
 **Manage devices** pauses, resumes or disconnects individual apps. Linked apps
-also appear under **Connected agents** in **Settings → Agents**.
+also appear under **Connected Agents** in **Settings → Agents**.
 
 **Unlink** ends the device's access. Linking the same Worktable again restores
 its MCP URL and approved AI apps, so disconnect any app you don't want back

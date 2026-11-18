@@ -1,49 +1,148 @@
 import { describe, expect, it } from "bun:test"
 import {
+  AGENT_APPS,
   appsFor,
   bringsSkills,
+  connectCommand,
+  placeOf,
   sharedAddressLandsHere,
   waysFor,
   type AppId,
   type Place,
+  type Way,
+  type Where,
 } from "./agent-app-steps"
+import type { ConnectionInfo } from "./system-api"
 
 const PLACES: Place[] = ["cloud", "computer", "server"]
+const at = (place: Place, sharedHere = true): Where => ({ place, sharedHere })
+const best = (app: AppId, where: Where): Way => waysFor(app, where)!.best
+
+const LOCAL: ConnectionInfo = {
+  mcpAuthMode: "local-token",
+  endpoint: "http://127.0.0.1:7480/mcp",
+  remoteMcpUrl: "http://127.0.0.1:7480/mcp",
+  reachable: false,
+  authRequired: false,
+  mcpTokenRequired: false,
+  origin: "http://127.0.0.1:7480",
+  originSource: "fallback",
+  originConfigured: false,
+}
 
 describe("agent app ways", () => {
   it("leads with the plugin or official app wherever it works", () => {
-    expect(waysFor("claude", "cloud").best).toEqual({ kind: "claude-plugin", link: false })
-    expect(waysFor("chatgpt", "cloud").best).toEqual({ kind: "chatgpt-app", link: false })
-    expect(waysFor("claude-code", "cloud").best).toEqual({ kind: "coding-plugin", client: "claude-code" })
-    expect(waysFor("codex", "cloud").best).toEqual({ kind: "coding-plugin", client: "codex" })
+    expect(best("claude", at("cloud"))).toMatchObject({
+      kind: "claude-plugin",
+      link: false,
+    })
+    expect(best("chatgpt", at("cloud"))).toMatchObject({
+      kind: "chatgpt-app",
+      link: false,
+    })
+    expect(best("claude-code", at("cloud"))).toMatchObject({
+      kind: "coding-plugin",
+    })
+    expect(best("codex", at("cloud"))).toMatchObject({ kind: "coding-plugin" })
     // Outside Cloud, Claude's and ChatGPT's plugins reach it through Link,
     // and Claude Desktop's extension stays one step away.
-    expect(waysFor("claude", "computer").best).toEqual({ kind: "claude-plugin", link: true })
-    expect(waysFor("claude", "computer").others).toEqual([{ kind: "extension" }])
-    expect(waysFor("chatgpt", "server").best).toEqual({ kind: "chatgpt-app", link: true })
+    expect(best("claude", at("computer"))).toMatchObject({
+      kind: "claude-plugin",
+      link: true,
+    })
+    expect(
+      waysFor("claude", at("computer"))!.others.map((way) => way.kind)
+    ).toEqual(["extension"])
+    expect(best("chatgpt", at("server"))).toMatchObject({
+      kind: "chatgpt-app",
+      link: true,
+    })
+    // On Cloud, the connector for Claude's Free plan is the first other way.
+    expect(waysFor("claude", at("cloud"))!.others[0]!.kind).toBe(
+      "claude-connector"
+    )
     for (const place of PLACES) {
-      expect(waysFor("openclaw", place).best.kind).toBe("always-on")
-      expect(waysFor("hermes", place).best.kind).toBe("always-on")
+      expect(best("openclaw", at(place)).kind).toBe("always-on")
+      expect(best("hermes", at(place)).kind).toBe("always-on")
+    }
+  })
+
+  it("gives coding agents this Worktable's own command when the shared address lands elsewhere", () => {
+    for (const app of ["claude-code", "codex"] as const) {
+      const ways = waysFor(app, at("cloud", false))!
+      expect(ways.best).toMatchObject({ kind: "cloud-command", client: app })
+      expect(bringsSkills(ways.best)).toBe(true)
+      expect(ways.others.map((way) => way.kind)).toEqual(["coding-plugin"])
     }
   })
 
   it("connects coding agents directly outside Cloud, with skills only where they install", () => {
     for (const place of ["computer", "server"] as const) {
-      const claudeCode = waysFor("claude-code", place).best
-      expect(claudeCode).toEqual({ kind: "pairing", client: "claude-code", skills: "claude" })
+      const claudeCode = best("claude-code", at(place))
+      expect(claudeCode).toMatchObject({
+        kind: "pairing",
+        skills: { via: "url", target: "claude" },
+      })
       expect(bringsSkills(claudeCode)).toBe(true)
-      expect(waysFor("codex", place).best).toMatchObject({ skills: "agents" })
+      expect(best("codex", at(place)).skills).toEqual({
+        via: "url",
+        target: "agents",
+      })
       // Not claimed for an agent whose skills folder isn't one we install to.
-      expect(bringsSkills(waysFor("cursor", place).best)).toBe(false)
+      expect(bringsSkills(best("cursor", at(place)))).toBe(false)
     }
-    // An address alone is tools without skills, and says so.
-    expect(bringsSkills(waysFor("gemini", "cloud").best)).toBe(false)
+    // An address alone is tools without skills; the Gemini app takes a file.
+    expect(best("gemini", at("cloud")).skills.via).toBe("files")
+    expect(bringsSkills(best("other", at("cloud")))).toBe(false)
   })
 
-  it("offers apps that connect from their own servers only on Cloud", () => {
+  it("runs one command that installs skills only after the connection works", () => {
+    const pairing = best("claude-code", at("computer"))
+    if (pairing.kind !== "pairing") throw new Error("expected a pairing")
+    expect(
+      connectCommand(pairing, {
+        connectScript: "http://127.0.0.1:7480/connect.sh",
+        code: "ABCDE-FGHJK",
+      })
+    ).toBe(
+      "curl -fsSL http://127.0.0.1:7480/connect.sh | sh -s -- ABCDE-FGHJK --client claude-code && curl -fsSL https://worktable.dev/install-skills | sh -s -- --target claude"
+    )
+    const cloud = best("codex", at("cloud", false))
+    if (cloud.kind !== "cloud-command") throw new Error("expected a command")
+    const command = connectCommand(cloud, {
+      mcpUrl: "https://app.worktable.cloud/api/mcp/w/wt_123",
+    })
+    expect(command).toContain(
+      "--mcp-url 'https://app.worktable.cloud/api/mcp/w/wt_123'"
+    )
+    expect(command).toEndWith(
+      " && curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents"
+    )
+    // Without skills, the command is the connection alone.
+    const cursor = best("cursor", at("server"))
+    if (cursor.kind !== "pairing") throw new Error("expected a pairing")
+    expect(
+      connectCommand(cursor, {
+        connectScript: "https://w.example/connect.sh",
+        code: "X",
+      })
+    ).not.toContain("&&")
+  })
+
+  it("shows every app at once, in order, where its setup works", () => {
     const ids = (place: Place): AppId[] => appsFor(place).map((app) => app.id)
-    expect(ids("cloud")).toContain("perplexity")
-    expect(ids("cloud")).toContain("gemini")
+    expect(ids("cloud")).toEqual(AGENT_APPS.map((app) => app.id))
+    expect(ids("cloud").slice(0, 8)).toEqual([
+      "claude",
+      "chatgpt",
+      "claude-code",
+      "codex",
+      "openclaw",
+      "hermes",
+      "grok-bot",
+      "cursor",
+    ])
+    expect(ids("cloud").at(-1)).toBe("other")
     for (const place of ["computer", "server"] as const) {
       expect(ids(place)).not.toContain("perplexity")
       expect(ids(place)).not.toContain("gemini")
@@ -51,8 +150,40 @@ describe("agent app ways", () => {
     }
   })
 
+  it("says On this computer only when the page is", () => {
+    const page = (hostname: string, desktop = false) => ({ hostname, desktop })
+    expect(placeOf(LOCAL, page("127.0.0.1"))).toBe("computer")
+    expect(placeOf(LOCAL, page("localhost"))).toBe("computer")
+    // A password on a local install doesn't make it a server.
+    const guarded = {
+      ...LOCAL,
+      reachable: true,
+      authRequired: true,
+      mcpTokenRequired: true,
+    }
+    expect(placeOf(guarded, page("127.0.0.1"))).toBe("computer")
+    // A server opened from another machine is a server, whatever it binds to.
+    expect(placeOf(LOCAL, page("192.168.1.20"))).toBe("server")
+    expect(placeOf(guarded, page("worktable.example.com"))).toBe("server")
+    // Desktop opens Worktables on this computer, unless one is public.
+    expect(placeOf(LOCAL, page("tauri.localhost", true))).toBe("computer")
+    expect(
+      placeOf(
+        { ...LOCAL, originConfigured: true },
+        page("worktable.example.com", true)
+      )
+    ).toBe("server")
+    expect(
+      placeOf({ ...LOCAL, mcpAuthMode: "oauth" }, page("app.worktable.cloud"))
+    ).toBe("cloud")
+  })
+
   it("knows Cloud's shared address lands in the default Worktable only", () => {
-    expect(sharedAddressLandsHere("https://app.worktable.cloud/api/mcp")).toBe(true)
-    expect(sharedAddressLandsHere("https://app.worktable.cloud/api/mcp/w/wt_123")).toBe(false)
+    expect(sharedAddressLandsHere("https://app.worktable.cloud/api/mcp")).toBe(
+      true
+    )
+    expect(
+      sharedAddressLandsHere("https://app.worktable.cloud/api/mcp/w/wt_123")
+    ).toBe(false)
   })
 })

@@ -150,7 +150,7 @@ export function CopyLine({ text, mono }: { text: string; mono?: boolean }) {
     <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-inset py-2.5 pr-2 pl-3">
       <p
         className={cn(
-          "min-w-0 flex-1 leading-5 break-words",
+          "min-w-0 flex-1 leading-5 wrap-anywhere",
           mono ? "font-mono text-xs" : "text-sm"
         )}
       >

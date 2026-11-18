@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Button } from "@worktable/ui/components/button"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
+import { ExternalButton } from "./setup-parts"
 import { useMoveHere, worktableLabel, type AppChoice } from "@/lib/app-choices"
 
 /**
@@ -50,14 +51,7 @@ export function WorksInSetting({ app }: { app: AppChoice }) {
         </p>
       </div>
       {here ? (
-        <a
-          href={app.changeUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          Change
-        </a>
+        <ExternalButton href={app.changeUrl}>Change</ExternalButton>
       ) : (
         <MoveHereButton app={app} />
       )}

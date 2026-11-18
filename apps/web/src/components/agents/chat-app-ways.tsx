@@ -1,13 +1,14 @@
 import { HelpIcon } from "@/components/help/help"
 import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Button, buttonVariants } from "@worktable/ui/components/button"
-import { appOfFamily, useAppChoices } from "@/lib/app-choices"
+import { Button } from "@worktable/ui/components/button"
+import { appOfFamily, useAppChoices, type AppChoice } from "@/lib/app-choices"
 import { listAgentConnections } from "@/lib/agent-connections-api"
 import { CLAUDE_MARKETPLACE } from "@/lib/agent-app-steps"
 import { fetchJSON } from "@/lib/http"
 import { getConnection } from "@/lib/system-api"
 import { AUTO_REPLY_PROMPT, CopyLine, WORK_CHAT_HINT } from "./auto-reply"
+import { ExternalButton, StatusLine } from "./setup-parts"
 import { SetupStep } from "./setup-step"
 
 export type ChatApp = "chatgpt" | "claude"
@@ -17,20 +18,32 @@ const ADD_APP: Record<ChatApp, string> = {
   claude: "Add the Worktable plugin in Claude",
 }
 
+const APP_NAME: Record<ChatApp, string> = {
+  chatgpt: "ChatGPT",
+  claude: "Claude",
+}
+
 const OPEN_APP: Record<ChatApp, { label: string; href: string }> = {
   chatgpt: { label: "Open ChatGPT", href: "https://chatgpt.com/" },
   claude: { label: "Open Claude", href: "https://claude.ai/" },
 }
 
-/** How to add the official app, with a link to open it. */
-export function AddOfficialApp({ app }: { app: ChatApp }) {
+/** How to add the official app, with a button that opens it. */
+export function AddOfficialApp({
+  app,
+  waiting = false,
+}: {
+  app: ChatApp
+  /** Shows that Worktable waits for the app to sign in. */
+  waiting?: boolean
+}) {
   return (
     <>
       {app === "claude" ? (
         <>
           <p className="text-sm text-muted-foreground">
-            In Claude, open Plugins, choose Add, then Add marketplace, and
-            paste this. Add Worktable and sign in on its Connectors tab.
+            In Claude, go to Plugins, Add, Add marketplace, and paste this. Then
+            add Worktable and sign in.
           </p>
           <CopyLine text={CLAUDE_MARKETPLACE} mono />
         </>
@@ -40,15 +53,15 @@ export function AddOfficialApp({ app }: { app: ChatApp }) {
         </p>
       )}
       <div>
-        <a
-          href={OPEN_APP[app].href}
-          target="_blank"
-          rel="noreferrer"
-          className={buttonVariants({ variant: "outline", size: "sm" })}
-        >
+        <ExternalButton href={OPEN_APP[app].href}>
           {OPEN_APP[app].label}
-        </a>
+        </ExternalButton>
       </div>
+      {waiting ? (
+        <StatusLine waiting className="mt-0">
+          Waiting for {APP_NAME[app]}
+        </StatusLine>
+      ) : null}
     </>
   )
 }
@@ -64,12 +77,15 @@ export function OfficialAppSteps({
   first,
   active = true,
   ready = true,
+  waiting = false,
 }: {
   app: ChatApp
   first: number
   active?: boolean
   /** False while an earlier step must come first: the steps wait, muted. */
   ready?: boolean
+  /** Shows that Worktable waits for the app while it isn't added. */
+  waiting?: boolean
 }) {
   const choices = useAppChoices(active)
   const official = appOfFamily(choices.data, app)
@@ -109,7 +125,9 @@ export function OfficialAppSteps({
         }
         complete={added}
       >
-        {added || !ready ? null : <AddOfficialApp app={app} />}
+        {added || !ready ? null : (
+          <AddOfficialApp app={app} waiting={waiting} />
+        )}
       </SetupStep>
       {app === "chatgpt" &&
         (autoReply?.state === "on" ? (
@@ -149,7 +167,7 @@ const WorktableLinkSetup = lazy(() =>
 )
 
 /** Worktable Link's status, shared with the Link settings, whose polling keeps it current. */
-export function useLinkOn(active: boolean) {
+function useLinkOn(active: boolean) {
   const link = useQuery({
     queryKey: ["linked"],
     queryFn: () =>
@@ -166,19 +184,34 @@ export function useLinkOn(active: boolean) {
 /**
  * A chat app on a Worktable outside Cloud: Worktable Link lets Cloud reach
  * it, then the app's official plugin works as it does on Cloud. Turning Link
- * on from here tells Cloud the app works in this Worktable.
+ * on from here tells Cloud the app works in this Worktable. Once Cloud says
+ * it does, the app is connected here.
  */
 export function LinkedAppSteps({
   app,
   active = true,
+  onConnected,
 }: {
   app: ChatApp
   /** Whether the surface is showing, so Worktable Link checks its status. */
   active?: boolean
+  /** Called once, when Cloud says the app works in this Worktable. */
+  onConnected?: (official: AppChoice) => void
 }) {
   const [linkSetup, setLinkSetup] = useState(false)
   const [linkStepOpen, setLinkStepOpen] = useState(false)
   const link = useLinkOn(active)
+  // Cloud's answer, which the app's own steps read too. It reads again when
+  // the person comes back from the app.
+  const choices = useAppChoices(active && link.on)
+  const official = appOfFamily(choices.data, app)
+  const here = link.on && official?.worktable?.here === true
+  const reported = useRef(false)
+  useEffect(() => {
+    if (!here || !official || reported.current) return
+    reported.current = true
+    onConnected?.(official)
+  }, [here, official, onConnected])
   // Turning Link on through Set Up here sends this app here on Cloud: the
   // one already connected and the next one added. Only a Set Up started
   // while Link was known to be off counts; viewing the steps, or opening
@@ -243,6 +276,7 @@ export function LinkedAppSteps({
         first={2}
         active={active && link.on}
         ready={link.on}
+        waiting={link.on}
       />
     </ol>
   )

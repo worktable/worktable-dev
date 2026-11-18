@@ -75,7 +75,6 @@ import {
   type AppChoice,
   type AppFamily,
 } from "@/lib/app-choices"
-import { insideDesktop } from "@/lib/desktop-connection"
 import { desktopAgentConnectionDetails } from "@/lib/desktop-agent-connection"
 import type { SetupRecord } from "@/lib/onboarding-setups"
 import {
@@ -129,7 +128,10 @@ const WAY_NAME: Record<Way["kind"], string> = {
 
 /** The page this setup is open in, which decides "On this computer". */
 function thisPage() {
-  return { hostname: window.location.hostname, desktop: insideDesktop() }
+  return {
+    hostname: window.location.hostname,
+    desktop: document.documentElement.hasAttribute("data-worktable-desktop"),
+  }
 }
 
 function shellLines(lines: Array<string | null | false>): string {

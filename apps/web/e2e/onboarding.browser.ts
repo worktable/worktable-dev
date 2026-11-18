@@ -522,6 +522,18 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
   await expect(
     page.getByRole("heading", { name: "Connect your agent" })
   ).toBeVisible()
+  await page.getByRole("button", { name: "Back", exact: true }).click()
+  for (const chosen of ["My Workspace", "Local Workspace"]) {
+    await page.getByLabel("Worktable name").fill(chosen)
+    await page.getByRole("button", { name: "Create Worktable" }).click()
+    await expect(page.getByRole("heading", { name: "Connect your agent" })).toBeVisible()
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await page.getByRole("button", { name: "Back", exact: true }).click()
+    await expect(page.getByLabel("Worktable name")).toHaveValue(chosen)
+  }
+  await page.getByLabel("Worktable name").fill("Alex Worktable")
+  await page.getByRole("button", { name: "Create Worktable" }).click()
+  await expect(page.getByRole("heading", { name: "Connect your agent" })).toBeVisible()
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(
     page.getByRole("heading", { name: "Connect your agent" })
@@ -557,7 +569,36 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     "I keep my work in Worktable."
   )
   await expect(page.getByText("~/.codex/AGENTS.md")).toBeVisible()
+  // Either failed write must leave confirmation available to retry.
+  let failedHelp = false
+  let failedSetup = false
+  await page.route("**/api/profile/help", async (route) => {
+    if (!failedHelp && route.request().postDataJSON()?.evidence === "rules-added") {
+      failedHelp = true
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Try again" }) })
+      return
+    }
+    await route.continue()
+  })
+  await page.route("**/api/profile/setup", async (route) => {
+    if (!failedSetup && route.request().postDataJSON()?.done === "agent-instructions") {
+      failedSetup = true
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Try again" }) })
+      return
+    }
+    await route.continue()
+  })
   await rules.getByRole("button", { name: "I Added It", exact: true }).click()
+  await expect.poll(() => failedHelp).toBe(true)
+  await expect(rules.getByRole("button", { name: "I Added It", exact: true })).toBeEnabled()
+  expect(failedSetup).toBe(false)
+  await rules.getByRole("button", { name: "I Added It", exact: true }).click()
+  await expect.poll(() => failedSetup).toBe(true)
+  await expect(rules.getByRole("button", { name: "I Added It", exact: true })).toBeEnabled()
+  await rules.getByRole("button", { name: "I Added It", exact: true }).click()
+  await expect(rules.getByRole("button", { name: "Added", exact: true })).toBeDisabled()
+  await page.unroute("**/api/profile/help")
+  await page.unroute("**/api/profile/setup")
   await waitForPairingCreate(page, () =>
     page.getByRole("button", { name: /Always-on agents/ }).click()
   )

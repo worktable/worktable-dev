@@ -35,8 +35,8 @@ export function AgentInstructions({ platforms, actionVariant = "default" }: { pl
   const added = Boolean(setup.items["agent-instructions"] && !setup.items["agent-instructions"].skipped)
   const save = useMutation({
     mutationFn: async () => {
-      await saveSetup(queryClient, { done: "agent-instructions" })
       await saveHelp(queryClient, { evidence: "rules-added" })
+      await saveSetup(queryClient, { done: "agent-instructions" })
     },
     onError: () => toast.error("Couldn’t save. Try again."),
   })

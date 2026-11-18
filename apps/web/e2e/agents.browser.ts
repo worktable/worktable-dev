@@ -840,8 +840,22 @@ test("an agent connected from its card is named and narrowed there, keeps its lo
     const card = await pick(page, app)
     const createdResponse = await response
     expect(createdResponse.status()).toBe(201)
-    const created = await createdResponse.json()
+    let created = await createdResponse.json()
     expect(created.client).toBe(app === "Other" ? null : client)
+    if (app === "Codex") {
+      // Access chosen before the command exists is the access it carries.
+      const remade = page.waitForResponse(
+        (item) =>
+          item.request().method() === "POST" &&
+          new URL(item.url()).pathname === "/api/pairing"
+      )
+      await card.getByRole("button", { name: "Edit", exact: true }).click()
+      const again = await remade
+      expect(again.request().postDataJSON()).toMatchObject({
+        access: { threads: true, read: true, edit: false },
+      })
+      created = await again.json()
+    }
     const before = (await card.boundingBox())?.y
     await completePairing(created.code, { client, hostname: "avatar-review" })
 
@@ -867,6 +881,19 @@ test("an agent connected from its card is named and narrowed there, keeps its lo
     }
     await card.getByRole("button", { name: "Done", exact: true }).click()
     await expect(apps(page)).toBeVisible()
+    if (app === "Codex")
+      expect(
+        await fetch(`${harness.apiUrl}/api/agent-connections`).then((res) =>
+          res.json()
+        )
+      ).toMatchObject({
+        connections: expect.arrayContaining([
+          expect.objectContaining({
+            displayName: "Codex CLI",
+            access: { threads: true, read: true, edit: false },
+          }),
+        ]),
+      })
     if (renamed) {
       expect((await renamed).ok()).toBe(true)
       expect(

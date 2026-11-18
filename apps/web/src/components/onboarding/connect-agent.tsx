@@ -44,7 +44,10 @@ import { Input } from "@worktable/ui/components/input"
 import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
 
-import { AgentAccessFields } from "@/components/agents/agent-access-fields"
+import {
+  AccessPills,
+  AgentAccessFields,
+} from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
 import { AutoReplySetting } from "@/components/agents/auto-reply"
 import {
@@ -247,11 +250,15 @@ function PairingPanel({
   pairings,
   onPairing,
   active,
+  another,
 }: PanelProps) {
   const queryClient = useQueryClient()
   const cloud = connection.mcpAuthMode === "oauth"
   const key = `${app.id}:${way.kind}`
   const pairing = pairings[key]
+  // Where another agent is added, its access is chosen before the command is
+  // made; a new choice makes a new command.
+  const [access, setAccess] = useState(DEFAULT_AGENT_ACCESS)
   const agent = way.kind === "always-on" ? ALWAYS_ON[way.adapter] : null
   const client = way.kind === "pairing" ? way.client : null
   const create = useMutation({
@@ -263,10 +270,10 @@ function PairingPanel({
               adapter: agent.adapter,
               participantName: agentName(app),
             },
-            access: DEFAULT_AGENT_ACCESS,
+            access,
           })
         : // Worktable names the agent, and tells two on one Worktable apart.
-          createPairing({ client, access: DEFAULT_AGENT_ACCESS }),
+          createPairing({ client, access }),
     onSuccess: (created) => onPairing(key, created),
   })
   // The command is ready when the app is chosen. One request per command: a
@@ -344,6 +351,20 @@ function PairingPanel({
             ? "Run this in your terminal."
             : "Run this in your terminal. It adds Worktable to the agents it finds, such as OpenCode and VS Code."}
       </Instruction>
+      {another ? (
+        <div className="mb-3">
+          <AccessPills
+            value={access}
+            alwaysOn={Boolean(agent)}
+            // Once its code is used, the command's access is settled.
+            disabled={!pairing || session?.status === "redeemed"}
+            onChange={(next) => {
+              setAccess(next)
+              newCommand()
+            }}
+          />
+        </div>
+      ) : null}
       <CommandBlock value={command} pending={!pairing} />
       {create.isError ? (
         <Callout variant="danger" className="mt-3">
@@ -428,6 +449,7 @@ function TokenPanel({
   tokens: made,
   onToken,
   active,
+  another,
 }: PanelProps) {
   const queryClient = useQueryClient()
   const key = `${app.id}:${way.kind}`
@@ -443,12 +465,15 @@ function TokenPanel({
   const name =
     existing.data?.connection?.displayName ??
     (label ? AGENT_PLATFORMS[platformForClient(label)].name : agentName(app))
+  const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
+  const access =
+    chosenAccess ?? existing.data?.connection?.access ?? DEFAULT_AGENT_ACCESS
   const mint = useMutation({
     mutationFn: () =>
       connectAgentApp({
         client: label,
         displayName: name,
-        access: existing.data?.connection?.access ?? DEFAULT_AGENT_ACCESS,
+        access,
       }),
     onSuccess: ({ token: value, connection: agent }) => {
       const id = tokenId(value)
@@ -496,6 +521,15 @@ function TokenPanel({
           access token.
         </Instruction>
       )}
+      {another && !token ? (
+        <div className="mb-3">
+          <AccessPills
+            value={access}
+            disabled={mint.isPending}
+            onChange={setAccess}
+          />
+        </div>
+      ) : null}
       <div className="space-y-2">
         <CommandBlock value={endpoint} />
         {token && !connected ? (

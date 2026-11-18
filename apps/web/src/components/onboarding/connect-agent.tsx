@@ -204,6 +204,10 @@ interface PanelProps {
   active: boolean
   /** The best way waits for the agent; the others only show how. */
   primary: boolean
+  /** The card adds another agent: one connected before it opened isn't this one. */
+  another: boolean
+  /** Counts each pick of an app, so a panel that keeps its own setup starts over. */
+  pick: number
 }
 
 function sourceOf(app: AgentApp): string {
@@ -761,8 +765,10 @@ function WayPanel(props: PanelProps) {
     case "grok":
       return (
         <GrokBotSetupPanel
+          key={props.pick}
           connection={connection}
           open={props.active}
+          newAccountOnly={props.another}
           onConnected={(candidate, saved) => {
             if (!props.connected)
               props.onConnected(
@@ -1197,6 +1203,7 @@ export function AgentConnectOptions({
   done?: boolean
 }) {
   const [selected, setSelected] = useState<AppId | null>(null)
+  const [pick, setPick] = useState(0)
   // The card keeps its app while it folds away.
   const [shown, setShown] = useState<AppId | null>(null)
   if (selected && selected !== shown) setShown(selected)
@@ -1289,6 +1296,8 @@ export function AgentConnectOptions({
       ? loaded?.filter((item) => !setups.some((setup) => setup.id === item.id))
       : undefined,
     baseline: baseline ?? new Set<string>(),
+    another: done,
+    pick,
     active,
     primary,
   })
@@ -1311,7 +1320,10 @@ export function AgentConnectOptions({
                 app={item}
                 connected={setupOf(item) !== undefined}
                 compact={compact}
-                onSelect={() => setSelected(item.id)}
+                onSelect={() => {
+                  setSelected(item.id)
+                  setPick((count) => count + 1)
+                }}
               />
             ))}
           </div>

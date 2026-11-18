@@ -7,9 +7,20 @@ import {
 import { Input } from "@worktable/ui/components/input"
 import { cn } from "@worktable/ui/lib/utils"
 
-import { IconSearchGrid } from "@/components/icon-search-grid"
+import {
+  IconSearchGrid,
+  type IconSearchMark,
+} from "@/components/icon-search-grid"
+import { AGENT_LOGOS } from "@/lib/agent-logos"
 import { AgentAccessFields } from "./agent-access-fields"
 import { AgentAvatar, agentLogoUrl } from "./agent-avatar"
+
+const LOGO_MARKS: IconSearchMark[] = AGENT_LOGOS.map((logo) => ({
+  key: logo.key,
+  label: logo.name,
+  keywords: `${logo.name} ${logo.aliases ?? ""}`.toLowerCase(),
+  node: <AgentAvatar name={logo.name} icon={logo.key} className="size-6" />,
+}))
 
 /** An agent's name, icon, and access, as its owner sets them. */
 export function AgentFields({
@@ -62,6 +73,7 @@ export function AgentFields({
           onSelect={onIconChange}
           columns={9}
           className="max-h-40"
+          marks={LOGO_MARKS}
           leading={
             <button
               type="button"

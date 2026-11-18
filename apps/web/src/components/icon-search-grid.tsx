@@ -8,6 +8,15 @@ import { loadIconCatalog, NamedIcon, POPULAR_ICONS } from "@/lib/icons"
 const GRID_COLUMNS = { 8: "grid-cols-8", 9: "grid-cols-9" } as const
 const CELL_SIZE = { 8: "size-9", 9: "size-8" } as const
 
+/** A picture offered alongside the library icons, such as an agent's logo. */
+export interface IconSearchMark {
+  key: string
+  label: string
+  /** Lowercase words a search matches. */
+  keywords: string
+  node: ReactNode
+}
+
 /** Search the Lucide icon library and pick one, as Spaces and agents do. */
 export function IconSearchGrid({
   selected,
@@ -16,6 +25,7 @@ export function IconSearchGrid({
   className,
   autoFocus,
   leading,
+  marks = [],
 }: {
   selected?: string | null
   onSelect: (icon: string) => void
@@ -25,6 +35,8 @@ export function IconSearchGrid({
   autoFocus?: boolean
   /** A first cell offered before the library icons, shown until a search. */
   leading?: ReactNode
+  /** Offered before the library icons, and searched with them. */
+  marks?: readonly IconSearchMark[]
 }) {
   const [query, setQuery] = useState("")
   // Popular icons render at once; searching needs every name, so fetch the
@@ -48,6 +60,9 @@ export function IconSearchGrid({
   const icons = trimmed
     ? (allNames ?? []).filter((name) => name.includes(trimmed)).slice(0, 80)
     : POPULAR_ICONS
+  const shownMarks = trimmed
+    ? marks.filter((mark) => mark.keywords.includes(trimmed))
+    : marks
 
   return (
     <div>
@@ -68,6 +83,23 @@ export function IconSearchGrid({
         style={{ "--sf-size": "20px" } as CSSProperties}
       >
         {trimmed ? null : leading}
+        {shownMarks.map((mark) => (
+          <button
+            key={mark.key}
+            type="button"
+            onClick={() => onSelect(mark.key)}
+            title={mark.label}
+            aria-label={mark.label}
+            aria-pressed={selected === mark.key}
+            className={cn(
+              "flex items-center justify-center rounded-md transition-colors duration-150",
+              CELL_SIZE[columns],
+              selected === mark.key ? "bg-surface-selected" : "hover:bg-accent"
+            )}
+          >
+            {mark.node}
+          </button>
+        ))}
         {icons.map((iconKey) => (
           <button
             key={iconKey}
@@ -87,7 +119,10 @@ export function IconSearchGrid({
             <NamedIcon name={iconKey} className="size-4" />
           </button>
         ))}
-        {icons.length === 0 && trimmed && allNames ? (
+        {icons.length === 0 &&
+        shownMarks.length === 0 &&
+        trimmed &&
+        allNames ? (
           <p className="col-span-full py-2 text-center text-xs text-muted-foreground">
             No icons matching &ldquo;{trimmed}&rdquo;
           </p>

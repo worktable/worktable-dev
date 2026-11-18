@@ -21,6 +21,7 @@ infrastructure and personal context out of release notes.
 ### Fixed
 
 - **Agent logos:** Repeat visits reuse cached logos without downloading them again.
+- **Agent avatars:** An agent named with its app, like "Ada (Claude)" or "codex@laptop", shows that app's logo, and initials skip brackets.
 
 ## [0.1.51] - 2026-11-17
 

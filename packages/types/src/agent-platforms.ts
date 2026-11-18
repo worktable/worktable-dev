@@ -281,19 +281,31 @@ export function defaultAgentNameForLabel(label: string | null): string | null {
 
 /**
  * The platform an app's name points to, for sign-ins that carry only a name
- * (Worktable Cloud's OAuth apps: "Claude", "ChatGPT", "Claude Code").
+ * (Worktable Cloud's OAuth apps: "Claude", "ChatGPT", "Claude Code"), or for
+ * a name that says its app in brackets, such as "Ada (Claude)", or its
+ * token label, such as "codex@laptop".
  */
 export function platformForName(
   name: string | null | undefined
 ): AgentPlatformId {
   if (!name) return "other"
+  const app = /\(([^()]+)\)\s*$/.exec(name)?.[1]
+  if (app) {
+    const platform = platformForName(app)
+    if (platform !== "other") return platform
+  }
+  // An agent still named by its token label, such as "codex@laptop".
+  const labelled = clientIdForAgentLabel(name.trim())
+  if (labelled) return platformForClient(labelled)
   const slug = name.trim().toLowerCase().replace(/\s+/g, "-")
   const client = clientPlatform(slug)
   if (client) return client
   // "Hermes Agent", "OpenClaw Studio": a platform's id followed by more words.
-  return (
-    AGENT_PLATFORM_IDS.find(
-      (id) => id !== "other" && (slug === id || slug.startsWith(`${id}-`))
-    ) ?? "other"
-  )
+  // The longest id wins, so "Claude Code Agent" is Claude Code, not Claude.
+  let found: AgentPlatformId | null = null
+  for (const id of AGENT_PLATFORM_IDS) {
+    if (id === "other" || (found && id.length <= found.length)) continue
+    if (slug === id || slug.startsWith(`${id}-`)) found = id
+  }
+  return found ?? "other"
 }

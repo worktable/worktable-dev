@@ -38,9 +38,13 @@ export function recognitionChip(color: RecognitionColor): CSSProperties {
 
 /** Initials used by person and agent avatars without loading Thread schemas. */
 export function participantInitials(name: string): string {
-  const words = name.trim().split(/\s+/)
+  // Each word's first letter or digit, so "Ada (Claude)" is AC, not A(.
+  const letters = name
+    .trim()
+    .split(/\s+/)
+    .flatMap((word) => word.match(/[\p{L}\p{N}]/u) ?? [])
   return (
-    (words[0]?.[0] ?? "") + (words.length > 1 ? (words.at(-1)?.[0] ?? "") : "")
+    (letters[0] ?? "") + (letters.length > 1 ? (letters.at(-1) ?? "") : "")
   ).toUpperCase()
 }
 

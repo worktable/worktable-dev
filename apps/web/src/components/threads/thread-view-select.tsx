@@ -6,7 +6,10 @@ import {
   SelectValue,
 } from "@worktable/ui/components/select"
 
-import { parseThreadListView, type ThreadListView } from "@/lib/thread-lifetime"
+import {
+  parseThreadListView,
+  type ThreadListView,
+} from "@/lib/thread-list-view"
 
 const VIEWS: Record<ThreadListView, string> = {
   mine: "Mine",

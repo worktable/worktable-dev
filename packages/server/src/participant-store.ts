@@ -134,7 +134,8 @@ export function connectionIdForIdentity(
     .digest("base64url")}`
 }
 
-function participantIdentityFingerprint(
+/** What ties a portable thread member to the identity that acts as it. */
+export function participantIdentityFingerprint(
   identity: Pick<TokenIdentity, "agent" | "principal">
 ): string {
   return `pid_${createHash("sha256")

@@ -6,32 +6,11 @@ import {
   type Thread,
   type ThreadLifetimeChoice,
   type ThreadLifetimeState,
-  type ThreadListItem,
   type ThreadLocation,
   type ThreadReadResult,
 } from "@worktable/types"
 import { setThreadLifetime } from "./threads-api"
 import { threadQueryKeys } from "./threads-queries"
-
-/** Which threads a list shows: the reader's, everyone's, or the archive. */
-export type ThreadListView = "mine" | "all" | "archived"
-
-export function parseThreadListView(value: unknown): ThreadListView {
-  return value === "all" || value === "archived" ? value : "mine"
-}
-
-/** The threads a view shows, from the list it reads. */
-export function threadsInView(
-  threads: ThreadListItem[],
-  view: ThreadListView,
-  viewerMemberId: string | undefined
-): ThreadListItem[] {
-  return view === "mine"
-    ? threads.filter((thread) =>
-        thread.members.some((member) => member.id === viewerMemberId)
-      )
-    : threads
-}
 
 /** Where an open thread stands: kept, archived, or neither. */
 export function threadLifetime(

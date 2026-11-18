@@ -3,7 +3,10 @@ import { useCallback } from "react"
 import type { ThreadLocation } from "@worktable/types"
 import { ThreadViewSelect } from "@/components/threads/thread-view-select"
 import { ThreadsView } from "@/components/threads/threads-view"
-import { parseThreadListView, type ThreadListView } from "@/lib/thread-lifetime"
+import {
+  parseThreadListView,
+  type ThreadListView,
+} from "@/lib/thread-list-view"
 import { preloadThread, threadsQueryOptions } from "@/lib/threads-queries"
 
 interface SpaceThreadsSearch {

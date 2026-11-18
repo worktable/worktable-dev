@@ -10,7 +10,10 @@ import {
 } from "@worktable/ui/components/select"
 import { ThreadViewSelect } from "@/components/threads/thread-view-select"
 import { ThreadsView } from "@/components/threads/threads-view"
-import { parseThreadListView, type ThreadListView } from "@/lib/thread-lifetime"
+import {
+  parseThreadListView,
+  type ThreadListView,
+} from "@/lib/thread-list-view"
 import { useSpaces } from "@/lib/queries"
 import { threadScopeContains, type ThreadListScope } from "@/lib/threads-api"
 import { preloadThread, threadsQueryOptions } from "@/lib/threads-queries"

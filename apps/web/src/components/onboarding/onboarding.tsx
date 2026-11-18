@@ -99,6 +99,11 @@ function initialWorktableName(workspace: WorkspaceInfo): string {
     : workspace.name
 }
 
+function suggestedWorktableName(name: string): string {
+  const first = name.trim().split(/\s+/)[0] ?? ""
+  return first && first.length <= 60 ? `${first}'s Worktable` : "My Worktable"
+}
+
 function ErrorNote({ error }: { error: unknown }) {
   if (!error) return null
   return (
@@ -144,11 +149,12 @@ function CreateStep({
   const profile = useQuery({ queryKey: ["profile"], queryFn: getUserProfile })
   const [typedName, setTypedName] = useState<string | null>(null)
   const [email, setEmail] = useState("")
-  const [worktableName, setWorktableName] = useState(() =>
-    initialWorktableName(workspace)
-  )
+  const [typedWorktableName, setTypedWorktableName] = useState<string | null>(null)
   const name =
     typedName ?? usefulName(profile.data?.name ?? getCurrentUser().name)
+  const worktableName =
+    typedWorktableName ??
+    (initialWorktableName(workspace) || suggestedWorktableName(name))
 
   const save = useMutation({
     mutationFn: async () => {
@@ -210,7 +216,7 @@ function CreateStep({
             value={worktableName}
             maxLength={200}
             placeholder="Northwind"
-            onChange={(event) => setWorktableName(event.target.value)}
+            onChange={(event) => setTypedWorktableName(event.target.value)}
           />
         </Field>
       </div>

@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig, type Plugin } from "vite"
 import { precompressAssets } from "./precompress-assets"
+import { agentLogoAssets } from "./agent-logo-assets"
 import { sharedIconChunk } from "./shared-icon-chunk"
 import { helpChunk } from "./help-chunk"
 import { blocknoteHoverRule } from "./blocknote-hover-rule"
@@ -131,6 +132,7 @@ export default defineConfig({
     tailwindcss(),
     browserNotices(),
     buildIdFile(),
+    agentLogoAssets(),
     webAppManifest(),
     precompressAssets(),
   ],

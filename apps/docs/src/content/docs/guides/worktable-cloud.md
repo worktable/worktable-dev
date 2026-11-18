@@ -17,6 +17,9 @@ To run Worktable on your own computer or server instead, use
 3. Open your Worktable and complete onboarding. In Desktop, choose the
    Worktable after signing in; Desktop remembers it.
 
+When you create one, the name is prefilled from your first name and remains
+editable. If you need to choose another plan, the form keeps the name you typed.
+
 Invite people from **Settings → Team**:
 
 - Only an account with the invited email address can accept.

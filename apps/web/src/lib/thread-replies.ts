@@ -6,7 +6,7 @@ export function availableParticipantSelection(
 ): string {
   return participants.some((participant) => participant.id === selectedId)
     ? selectedId
-    : (participants[0]?.id ?? "")
+    : ""
 }
 
 export function pendingHumanReplyTarget(

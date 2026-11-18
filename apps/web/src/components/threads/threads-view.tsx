@@ -405,14 +405,18 @@ function ThreadDetail({
   const directAgentResponse = directAgentResponseFor(participants)
   const directAgent = directAgentResponse.identity
   const directAgentResponseIsImplicit = directAgentResponse.implicit
-  const effectiveResponseIdentityId = directAgentResponse.responseIdentityId
+  const effectiveResponseIdentityId = threadId
+    ? directAgentResponse.responseIdentityId
+    : targetIdentities.find((identity) => identity.memberId === selectedRecipient)?.id
   const fingerprint = buildSubmissionFingerprint({
     location: draftLocation,
     threadId,
     body: draft.trim(),
     recipientId: threadId ? undefined : selectedRecipient,
     notifyIdentityIds,
-    responseIdentityId: effectiveResponseIdentityId,
+    // New threads already fingerprint the selected responder as recipientId.
+    // Keep the key compatible with drafts saved before explicit response IDs.
+    responseIdentityId: threadId ? effectiveResponseIdentityId : undefined,
     inReplyTo: replyTo,
     responseTo,
   })
@@ -503,13 +507,17 @@ function ThreadDetail({
   const submit = async () => {
     const body = draft.trim()
     if (!body) return
-    if (!threadId && !selectedRecipient) return
 
     setSendFailure(undefined)
     let submissionResponseIdentityId = effectiveResponseIdentityId
     let submissionFingerprint = fingerprint
 
     try {
+      if (!threadId && activeDraft.recipientId && !selectedRecipient) {
+        throw new Error(
+          "That participant is unavailable. Choose another participant or No one."
+        )
+      }
       if (
         threadId &&
         (!participantsQuery.data ||
@@ -565,7 +573,9 @@ function ThreadDetail({
         })
       } else {
         const result = await createMutations.create.mutateAsync({
-          to: selectedRecipient,
+          ...(selectedRecipient ? { to: selectedRecipient } : {}),
+          notifyIdentityIds,
+          responseIdentityId: submissionResponseIdentityId ?? null,
           body,
           idempotencyKey: submission.idempotencyKey,
         })
@@ -869,10 +879,17 @@ function ThreadDetail({
     )
   ) : (
     <NewThreadPanel
+      mentionTargets={otherIdentities.map((identity) => ({
+        id: identity.id,
+        name: identity.name,
+        participant: identityParticipant(identity, targetMembers),
+        description: conversationIdentityDescription(identity, targetMembers, targetIdentities),
+      }))}
+      mentionIdentityIds={draftMentionIdentityIds}
+      onMentionIdentityIdsChange={changeMentionIdentityIds}
       participants={participants}
-      participantsLoading={participantsQuery.isLoading}
       participantsError={participantsQuery.isError}
-      recipient={selectedRecipient}
+      recipient={activeDraft.recipientId ?? ""}
       onRecipientChange={setRecipient}
       draft={draft}
       onDraftChange={setDraft}

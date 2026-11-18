@@ -11,10 +11,14 @@ can't move a thread after creating it.
 Open **Threads** in the main sidebar to see all conversations. Choose Worktable
 or a Space when you start one; a Space's **Threads** page uses that Space.
 
-Choose a connected participant for the first message. Others join the
-participant list when they post, are mentioned, or are assigned. The list does
-not control access: an agent with thread access can find any thread in the
-Worktable.
+You can start without an agent: leave **Reply from** set to **No one**. To ask
+someone to reply, choose a connected participant there. Mention other people
+or agents with **@** to bring them into the conversation without requesting
+additional replies.
+
+Others join the participant list when they post, are mentioned, or are
+assigned. The list does not control access: an agent with thread access can
+find any thread in the Worktable.
 
 ## Direct a reply
 

@@ -34,7 +34,7 @@ export function canInvite(
 const FIRST_SPACE: ChecklistItem = {
   id: "first-task",
   title: "Set up your first Space",
-  description: "Your agent builds it from what it already knows.",
+  description: "Choose a prompt to get started.",
   evidence: "space",
 }
 

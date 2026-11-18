@@ -500,7 +500,11 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     page.getByRole("heading", { name: "Create your Worktable" })
   ).toBeVisible()
   await page.getByLabel("Your name").fill("Alex")
+  await expect(page.getByLabel("Worktable name")).toHaveValue("Alex's Worktable")
   await page.getByLabel("Worktable name").fill("Alex Worktable")
+  await page.getByLabel("Your name").fill("Alex Smith")
+  await expect(page.getByLabel("Worktable name")).toHaveValue("Alex Worktable")
+  await page.getByLabel("Your name").fill("Alex")
   await page.getByRole("button", { name: "Create Worktable" }).click()
 
   // The welcome opens over Connect Your Agent once, and closing it lands there.
@@ -541,6 +545,19 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     timeout: 10_000,
   })
 
+  const rules = page.getByRole("region", { name: "Agent rules", exact: true })
+  await expect(rules.getByText("~/.codex/AGENTS.md")).toBeVisible()
+  await expect(rules.getByText("~/.claude/CLAUDE.md")).toHaveCount(0)
+  // Copying does not complete the task; the owner confirms they added the rules.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: new URL(page.url()).origin,
+  })
+  await rules.getByRole("button", { name: "Copy", exact: true }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+    "I keep my work in Worktable."
+  )
+  await expect(page.getByText("~/.codex/AGENTS.md")).toBeVisible()
+  await rules.getByRole("button", { name: "I Added It", exact: true }).click()
   await waitForPairingCreate(page, () =>
     page.getByRole("button", { name: /Always-on agents/ }).click()
   )
@@ -564,26 +581,9 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     page.getByRole("heading", { name: "Getting Started" })
   ).toBeVisible()
   await expect(
-    page.getByRole("link", { name: /Getting Started\s*1\/3/ })
-  ).toBeVisible()
-
-  // Copying the instructions doesn't add them anywhere: the step finishes
-  // when the owner says they added them, and the next step opens.
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: new URL(page.url()).origin,
-  })
-  await page.getByRole("button", { name: "Copy", exact: true }).click()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
-    "I keep my work in Worktable."
-  )
-  await expect(page.getByText("~/.codex/AGENTS.md")).toBeVisible()
-  await expect(
-    page.getByRole("link", { name: /Getting Started\s*1\/3/ })
-  ).toBeVisible()
-  await page.getByRole("button", { name: "I Added It", exact: true }).click()
-  await expect(
     page.getByRole("link", { name: /Getting Started\s*2\/3/ })
   ).toBeVisible()
+
   await expect(
     page.getByText(/^Research \[topic\] and set up a Space in Worktable/)
   ).toBeVisible()

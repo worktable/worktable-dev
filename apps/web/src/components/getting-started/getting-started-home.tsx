@@ -9,7 +9,6 @@ import {
   CollapsibleTrigger,
 } from "@worktable/ui/components/collapsible"
 import { toast } from "@worktable/ui/components/sonner"
-import { useCopy } from "@worktable/ui/hooks/use-copy"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
 import { PageWithActivity } from "@/components/home/page-with-activity"
@@ -36,10 +35,11 @@ import {
   type SetupEvidence,
   type SetupItemId,
 } from "@/lib/setup"
-import { saveHelp } from "@/lib/help/state"
 import { getTeamInvitations } from "@/lib/team-api"
 import { humanizeSegment } from "@/lib/tree"
 import { ProgressRing } from "./progress-ring"
+import { Prompt } from "./prompt"
+import { AgentInstructions } from "@/components/agent-instructions"
 
 const GUIDES = [
   {
@@ -93,29 +93,12 @@ function taskPrompts(joinedSpaceName: string | undefined): string[] {
     ]
   }
   return [
-    "Set up a Space in Worktable for the project we're working on, with these docs: Overview, Architecture, Current Work and Open Questions. Where you're unsure, make your best guess and add it to Open Questions.",
-    "Create a personal Space for me in Worktable from what you know about me, with these docs: About Me, Current Work, Working Style and Notes for Agents. If you don't know me yet, ask me first.",
-    "Set up a Space in Worktable for what I'm working on this week, with these docs: Plan, Task Board and Notes. Put my tasks on the board and what we've discussed recently in Notes.",
+    "Ask me about my project, then create a Worktable Space with Overview, Current Work and Open Questions.",
+    "Ask me about my work, then create a personal Space in Worktable with About Me, Current Work and Working Style.",
+    "Ask what I need to do this week, then create a Worktable Space with a Plan, Task Board and Notes.",
     "Start a Space in Worktable for [project]. In it, help me decide [decision]: the question, the options with their trade-offs, and your recommendation.",
     "Research [topic] and set up a Space in Worktable with these docs: Summary, Sources and Open Questions.",
   ]
-}
-
-function Prompt({ text }: { text: string }) {
-  const copy = useCopy()
-  return (
-    <li className="flex items-start gap-3 rounded-lg border border-border bg-surface-inset py-2 pr-2 pl-3 text-sm leading-6 text-foreground">
-      <span className="min-w-0 flex-1">{text}</span>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7 shrink-0 px-2.5 text-xs"
-        onClick={() => void copy.copy(text)}
-      >
-        {copy.copied ? "Copied" : "Copy"}
-      </Button>
-    </li>
-  )
 }
 
 /** What finishes a step, under what the step asks for. */
@@ -126,6 +109,10 @@ function DoneWhen({ children }: { children: React.ReactNode }) {
 function TaskBody({ joinedSpaceName }: { joinedSpaceName?: string }) {
   return (
     <>
+      <p className="mb-3 text-sm text-foreground/80">
+        Copy one prompt into your connected agent’s chat to{" "}
+        {joinedSpaceName ? "start working in your Space." : "create your first Space."}
+      </p>
       <ul className="space-y-2">
         {taskPrompts(joinedSpaceName).map((text) => (
           <Prompt key={text} text={text} />
@@ -133,60 +120,6 @@ function TaskBody({ joinedSpaceName }: { joinedSpaceName?: string }) {
       </ul>
       <div className="mt-3">
         <DoneWhen>Done when your agent adds a Doc to a Space.</DoneWhen>
-      </div>
-    </>
-  )
-}
-
-/** A line for the agent's own instructions, read in every conversation. */
-const AGENT_INSTRUCTIONS =
-  "I keep my work in Worktable. When I ask you to write, plan, research or track something, save it in Worktable without me saying so, and look there for context before asking me."
-
-/** Where each agent keeps the rules it reads in every chat and project. */
-const INSTRUCTION_PLACES: { agent: string; file?: string; place?: string }[] = [
-  { agent: "Claude Code", file: "~/.claude/CLAUDE.md" },
-  { agent: "Codex", file: "~/.codex/AGENTS.md" },
-  { agent: "OpenCode", file: "~/.config/opencode/AGENTS.md" },
-  { agent: "Cursor", place: "Cursor Settings → Rules → User Rules" },
-  { agent: "Claude", place: "Settings → Your Claude → Instructions" },
-  {
-    agent: "ChatGPT",
-    place: "Settings → Personalization → Custom instructions",
-  },
-  { agent: "Other agents", place: "Their global rules or custom instructions" },
-]
-
-function InstructionsBody({
-  onAdded,
-  adding,
-}: {
-  onAdded: () => void
-  adding: boolean
-}) {
-  return (
-    <>
-      <ul>
-        <Prompt text={AGENT_INSTRUCTIONS} />
-      </ul>
-      <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-        {INSTRUCTION_PLACES.map(({ agent, file, place }) => (
-          <div key={agent} className="contents">
-            <dt className="text-muted-foreground">{agent}</dt>
-            <dd className="text-foreground/80">
-              {file ? (
-                <code className="inline-code-accent font-mono">{file}</code>
-              ) : (
-                place
-              )}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <DoneWhen>Done when you tick it.</DoneWhen>
-        <Button size="sm" disabled={adding} onClick={onAdded}>
-          I Added It
-        </Button>
       </div>
     </>
   )
@@ -487,14 +420,6 @@ export function GettingStartedHome() {
     mutationFn: () => saveSetup(queryClient, { hidden: true }),
     onError: () => toast.error("Couldn’t save. Try again."),
   })
-  // Copying alone doesn't add the rules; the person says when they have.
-  const rulesAdded = useMutation({
-    mutationFn: async () => {
-      await saveSetup(queryClient, { done: "agent-instructions" })
-      await saveHelp(queryClient, { evidence: "rules-added" })
-    },
-    onError: () => toast.error("Couldn’t save. Try again."),
-  })
   const skip = useMutation({
     mutationFn: () => saveSetup(queryClient, { skip: "invite-team" }),
     onError: () => toast.error("Couldn’t save. Try again."),
@@ -508,10 +433,7 @@ export function GettingStartedHome() {
         return <ConnectBody />
       case "agent-instructions":
         return (
-          <InstructionsBody
-            onAdded={() => rulesAdded.mutate()}
-            adding={rulesAdded.isPending}
-          />
+          <AgentInstructions />
         )
       case "first-task":
         return <TaskBody joinedSpaceName={joinedSpaceName} />

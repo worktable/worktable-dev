@@ -185,6 +185,72 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
+test("starts a thread without connected agents and recovers an unaddressed send", async ({ page }) => {
+  const empty = await startWebHarness("threads-without-agents")
+  try {
+    const participants = await fetch(`${empty.apiUrl}/api/threads/participants`)
+    expect((await participants.json()).participants).toEqual([])
+    await page.route("**/api/threads/participants", (route) => route.fulfill({ status: 503, json: { error: "Participants temporarily unavailable" } }))
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(new URL("/threads/", empty.webUrl).href)
+    await page.getByRole("banner").getByRole("button", { name: "New thread", exact: true }).click()
+    const composer = page.getByPlaceholder("Start a thread…")
+    await expect(composer).toBeVisible()
+    await expect(page.getByRole("combobox", { name: "Reply from" })).toContainText("No one")
+    let dropCreateResponse = true
+    await page.route("**/api/threads", async (route) => {
+      if (route.request().method() === "POST" && dropCreateResponse) {
+        dropCreateResponse = false
+        expect(route.request().postDataJSON().to).toBeUndefined()
+        await route.fetch()
+        await route.abort("failed")
+      } else {
+        await route.continue()
+      }
+    })
+    await composer.fill("Notes before connecting an agent")
+    await page.getByRole("button", { name: "Send message" }).click()
+    await expect(page.getByRole("alert")).toBeVisible()
+    await page.getByRole("button", { name: "Try sending again" }).click()
+    await expect(page).toHaveURL(/\/threads\/worktable\/thr_/)
+    await page.unroute("**/api/threads/participants")
+    await page.reload()
+    await expect(page.getByLabel("Thread conversation", { exact: true }).getByText("Notes before connecting an agent", { exact: true })).toBeVisible()
+    const listed = await fetch(`${empty.apiUrl}/api/threads`)
+    const { threads } = await listed.json()
+    expect(threads).toHaveLength(1)
+    const stored = await fetch(`${empty.apiUrl}/api/threads/${threads[0].id}`)
+    const saved = await stored.json()
+    expect(saved.thread.members).toHaveLength(1)
+    expect(saved.messages[0].responseRequest).toBeUndefined()
+    expect(saved.activities).toEqual([])
+  } finally {
+    await empty.stop()
+  }
+})
+
+test("starts with multiple mentions and a separately chosen responder", async ({ page }) => {
+  await page.goto(appUrl("/threads/"))
+  const composer = page.getByPlaceholder("Start a thread…")
+  await composer.fill("@Fi")
+  await page.getByRole("option", { name: "Finn", exact: true }).click()
+  await composer.fill(`${await composer.inputValue()}and @At`)
+  await page.getByRole("option", { name: "Atlas", exact: true }).click()
+  await expect(page.getByRole("combobox", { name: "Reply from" })).toContainText("No one")
+  await chooseOption(page, "Reply from", "Atlas")
+  const addressedComposer = page.getByPlaceholder("Message Atlas…")
+  await addressedComposer.fill(`${await addressedComposer.inputValue()}review the plan.`)
+  await page.getByRole("button", { name: "Send message" }).click()
+  await expect(page).toHaveURL(/\/threads\/worktable\/thr_/)
+  const threadId = new URL(page.url()).pathname.split("/").at(-1)
+  const stored = await fetch(`${harness.apiUrl}/api/threads/${threadId}`)
+  const saved = await stored.json()
+  const names = new Map(saved.thread.identities.map((identity: {id: string; name: string}) => [identity.id, identity.name]))
+  expect(saved.messages[0].notifyIdentityIds.map((id: string) => names.get(id))).toEqual(["Finn"])
+  expect(names.get(saved.messages[0].responseRequest.identityId)).toBe("Atlas")
+  expect(saved.activities).toHaveLength(1)
+})
+
 test("recovers committed creation and direct replies after participant refresh failure", async ({
   page,
 }) => {
@@ -196,7 +262,8 @@ test("recovers committed creation and direct replies after participant refresh f
   await page.goto(appUrl("/threads/"), { waitUntil: "domcontentloaded" })
   await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
 
-  await chooseOption(page, "Thread participant", "Atlas")
+  await expect(page.getByRole("combobox", { name: "Reply from" })).toContainText("No one")
+  await chooseOption(page, "Reply from", "Atlas")
   let dropCreateResponse = true
   await page.route("**/api/threads", async (route) => {
     if (route.request().method() === "POST" && dropCreateResponse) {

@@ -840,7 +840,7 @@ export interface ThreadCreationRetryInput extends Omit<
   AppendThreadMessageInput,
   "recipient"
 > {
-  to: string
+  to?: string
 }
 
 export interface ThreadAppendRetryInput extends Omit<
@@ -880,7 +880,7 @@ export function findThreadAppendRetry(
         (recipient.id === input.to ||
           recipient.name.toLocaleLowerCase() === recipientNeedle)
       : thread.members.filter((member) => member.id !== input.author.id)
-          .length === 1
+          .length <= 1
 
   if (
     !intendedRecipient ||
@@ -900,16 +900,16 @@ export async function findThreadCreationRetry(
 ): Promise<{
   thread: Thread
   message: ThreadMessage
-  recipient: ParticipantRef
+  recipient?: ParticipantRef
   created: false
 } | null> {
   const matches: Array<{
     thread: Thread
     message: ThreadMessage
-    recipient: ParticipantRef
+    recipient?: ParticipantRef
     created: false
   }> = []
-  const recipientNeedle = input.to.trim().toLocaleLowerCase()
+  const recipientNeedle = input.to?.trim().toLocaleLowerCase()
   for (const thread of await threadsWithIdempotencyKey(
     location,
     input.author.id,
@@ -921,15 +921,16 @@ export async function findThreadCreationRetry(
         message.idempotencyKey === input.idempotencyKey
     )
     if (!existing) continue
-    const recipient = messageRecipientForRetry(
-      thread,
-      existing,
-      input.author.id
-    )
+    // An unaddressed creation stays unaddressed on retry, even after
+    // someone else has joined the conversation.
+    const recipient = input.to
+      ? thread.members.find((member) => member.id === input.to || member.name.toLocaleLowerCase() === recipientNeedle)
+      : undefined
     if (
-      !recipient ||
-      (recipient.id !== input.to &&
-        recipient.name.toLocaleLowerCase() !== recipientNeedle) ||
+      (input.to &&
+        (!recipient ||
+          (recipient.id !== input.to &&
+            recipient.name.toLocaleLowerCase() !== recipientNeedle))) ||
       !sameMessageIntent(thread, existing, { ...input, recipient })
     ) {
       throw new ThreadError(
@@ -959,12 +960,6 @@ export async function createThread(
     )
   }
   const location = normalizeThreadLocation(locationInput)
-  if (!input.recipient) {
-    throw new ThreadError(
-      "FORBIDDEN",
-      "A new thread requires at least one conversation member"
-    )
-  }
   const recipient = input.recipient
   return withAdmittedRoom((admit) => withThreadMutationLock({ kind: "worktable" }, "create", async () => {
     if (location.kind === "space") assertSpaceAccess(location.spaceId, "edit");
@@ -995,7 +990,7 @@ export async function createThread(
       }
     }
     const memberRefs = new Map(
-      [input.author, recipient].map((member) => [member.id, member])
+      [input.author, ...(recipient ? [recipient] : []), ...(input.participants ?? [])].map((member) => [member.id, member])
     )
     const members: Thread["members"] = [...memberRefs.values()].map(
       (member) => ({
@@ -1003,13 +998,23 @@ export async function createThread(
         addedAt: now,
       })
     )
-    const identityNames = uniqueConversationIdentityNames(
-      members.map((member) => member.name)
+    const prospective = new Map(
+      prospectiveDefaultConversationIdentities([], input.availableParticipants ?? [])
+        .map((identity) => [identity.memberId, identity.name])
     )
-    const identities: Thread["identities"] = members.map((member, index) => ({
+    // Keep the aliases the composer offered, including an unselected namesake.
+    // Reserve target names before naming the author of a new conversation.
+    const namingOrder = prospective.size
+      ? [...members.filter((member) => member.id !== input.author.id), members.find((member) => member.id === input.author.id)!]
+      : members
+    const identityNames = uniqueConversationIdentityNames(
+      namingOrder.map((member) => prospective.get(member.id) ?? member.name)
+    )
+    const namesByMember = new Map(namingOrder.map((member, index) => [member.id, identityNames[index]!]))
+    const identities: Thread["identities"] = members.map((member) => ({
       id: `idt_${member.id.replace(/^ptc_/, "")}`,
       memberId: member.id,
-      name: identityNames[index]!,
+      name: namesByMember.get(member.id)!,
       default: true,
       status: "active",
       createdAt: now,
@@ -1019,8 +1024,8 @@ export async function createThread(
       (identity) => identity.memberId === input.author.id
     )!
     const recipientIdentity = identities.find(
-      (identity) => identity.memberId === recipient.id
-    )!
+      (identity) => identity.memberId === recipient?.id
+    )
     if (
       input.authorIdentityId &&
       input.authorIdentityId !== authorIdentity.id
@@ -1036,19 +1041,19 @@ export async function createThread(
     ]
     if (
       requestedIdentityIds.some(
-        (identityId) => identityId !== recipientIdentity.id
+        (identityId) => !identities.some((identity) => identity.id === identityId)
       )
     ) {
       throw new ThreadError(
         "FORBIDDEN",
-        "A new thread can direct attention only to its recipient"
+        "A new thread can direct attention only to its members"
       )
     }
     const responseIdentityId =
       input.responseIdentityId === null
         ? undefined
         : (input.responseIdentityId ??
-          ((input.expectsReply ?? true) ? recipientIdentity.id : undefined))
+          ((input.expectsReply ?? true) ? recipientIdentity?.id : undefined))
     const notifyIdentityIds = [
       ...new Set(input.notifyIdentityIds ?? []),
     ].filter((identityId) => identityId !== responseIdentityId)

@@ -1,3 +1,4 @@
+import { AgentInstructions } from "@/components/agent-instructions"
 import {
   APP_STEPS,
   CLAUDE_MARKETPLACE,
@@ -676,7 +677,7 @@ function SignInPanel({
 
   return (
     <>
-      <Instruction>{instruction}</Instruction>
+      <Instruction>{instruction}{connected ? null : " Then return to Worktable."}</Instruction>
       <CommandBlock value={value} />
       {option.kind === "chat" && option.app === "claude" && reaches ? (
         <p className="mt-2 text-xs text-muted-foreground">
@@ -962,6 +963,15 @@ export function ConnectAgentStep({
       <div className="mt-7">
         <AgentConnectOptions setups={setups} onSetupsChange={onSetupsChange} />
       </div>
+      {setups.some((entry) => entry.verified) ? (
+        <section aria-label="Agent rules" className="mt-6 space-y-3 border-t border-border pt-5">
+          <div>
+            <h2 className="text-sm font-medium">Add Worktable to your agent’s rules</h2>
+            <p className="text-xs text-muted-foreground">So your agents save here without being asked.</p>
+          </div>
+          <AgentInstructions actionVariant="outline" platforms={setups.filter((entry) => entry.verified).map((entry) => entry.platform ?? "other")} />
+        </section>
+      ) : null}
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
         {onBack ? (
           <Button variant="ghost" onClick={onBack}>

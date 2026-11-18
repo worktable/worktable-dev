@@ -9,6 +9,15 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Getting Started:** Creation prefills an editable name, setup shows agent rules while connecting, and shorter starter prompts gather context before creating your first Space.
+- **Thread creation:** Start without a responder, mention several participants, and independently choose one to reply, with saved drafts and safe send retries.
+
+### Fixed
+
+- **Agent logos:** Repeat visits reuse cached logos without downloading them again.
+
 ## [0.1.51] - 2026-11-17
 
 ### Added

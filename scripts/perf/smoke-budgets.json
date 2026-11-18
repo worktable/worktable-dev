@@ -638,8 +638,8 @@
       "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
     },
     "dom, first, open Settings Help": {
-      "max": 3093,
-      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+      "max": 3437,
+      "why": "The perf fixture's owner is now the person who opens it (#535), so Home lists the requests waiting on them: 37 to 46 more elements on Home and on each screen that keeps it underneath, Settings among them. The Space the quick click opens also varies with the fixture build, by 45 elements between two runs of this branch. CI run 44401972507 measured 3124 against 3042 and 3090 on main; the budget is that plus the metric's headroom."
     },
     "requests, first, open Settings System": {
       "max": 3,
@@ -650,8 +650,8 @@
       "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
     },
     "dom, first, open Settings System": {
-      "max": 3145,
-      "why": "New journey: a Space opened with a quick click, or Settings and its sections (experience harness)."
+      "max": 3490,
+      "why": "The perf fixture's owner is now the person who opens it (#535), so Home lists the requests waiting on them: 37 to 46 more elements on Home and on each screen that keeps it underneath, Settings among them. The Space the quick click opens also varies with the fixture build, by 45 elements between two runs of this branch. CI run 44401972507 measured 3172 against 3042 and 3090 on main; the budget is that plus the metric's headroom."
     },
     "popin, revisit, open a Space in the sidebar": {
       "max": 0

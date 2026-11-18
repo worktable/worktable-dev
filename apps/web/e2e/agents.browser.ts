@@ -695,7 +695,7 @@ test("an agent connected from its card is named and narrowed there, keeps its lo
   })
   for (const [app, client, label, logo] of [
     ["Claude Code", "claude-code", "Claude Code", "claude-code.svg"],
-    ["Codex", "codex", "Codex CLI", "openai.svg"],
+    ["Codex", "codex", "Codex CLI", "codex.svg"],
     ["Cursor", "cursor", "Cursor", "cursor.svg"],
     ["Other", "opencode", "opencode", "opencode.svg"],
     ["Other", "vscode", "VS Code", "vscode.svg"],

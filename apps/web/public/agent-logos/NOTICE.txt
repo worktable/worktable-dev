@@ -18,8 +18,8 @@ claude.svg    "Claude Spark - Clay" from Anthropic's press kit
 
 openai.svg    OpenAI Blossom (black) from OpenAI's brand page
               (https://openai.com/brand/), unmodified, used under OpenAI's
-              marks usage terms for ChatGPT and Codex. OpenAI, ChatGPT, and
-              the Blossom are trademarks of OpenAI.
+              marks usage terms for ChatGPT. OpenAI, ChatGPT, and the Blossom
+              are trademarks of OpenAI.
 
 grok-bot.svg  Official Grok Bot mark from https://x.ai/bot, preserving its
               head and eye paths, viewBox, and published light-theme fills.

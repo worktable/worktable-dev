@@ -845,9 +845,10 @@ function Destination({
         </span>
       ) : worksHere && name ? (
         <>
-          Works in <span className="text-foreground">{name}</span>{" "}
-          {/* The dot stays with what follows it, never alone at a line's end. */}
-          <span className="whitespace-nowrap">· {how}</span>
+          Works in <span className="text-foreground">{name}</span>
+          {/* On a phone the route takes its own line, with no dot to strand. */}
+          <span className="hidden sm:inline"> · </span>
+          <span className="block whitespace-nowrap sm:inline">{how}</span>
         </>
       ) : (
         how

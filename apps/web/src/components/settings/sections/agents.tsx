@@ -7,8 +7,6 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
-  Copy,
-  Download,
   Loader2,
   Plus,
   Trash2,
@@ -153,12 +151,15 @@ export function AgentsSection() {
 
   const cloud = connectionQuery.data.mcpAuthMode === "oauth"
   // What's connected leads once there is something; until then, connecting does.
-  const anyConnected = (agents.data?.connections.length ?? 0) > 0
+  // An empty list says nothing the tiles don't, so it waits for an agent.
+  const anyConnected =
+    (agents.data?.connections.length ?? 0) > 0 ||
+    (agents.data?.grokBots?.length ?? 0) > 0 ||
+    agents.isError
   return (
     <div className="flex flex-col gap-8">
       {anyConnected ? <ConnectedAgentsGroup /> : null}
       <ConnectAppGroup active={sectionActive} />
-      {anyConnected ? null : <ConnectedAgentsGroup />}
       <ManualSetupGroup connection={connectionQuery.data} />
       <DesktopAgentSkillsGroup enabled={sectionActive} />
       {cloud ? null : (
@@ -184,6 +185,7 @@ function ConnectAppGroup({ active }: { active: boolean }) {
         setups={setups}
         onSetupsChange={setSetups}
         active={active}
+        compact
       />
     </section>
   )

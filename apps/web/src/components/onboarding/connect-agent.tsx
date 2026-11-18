@@ -788,24 +788,20 @@ function Destination({
     !shared ||
     sharedAddressLandsHere(connection.remoteMcpUrl)
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+    <p className="text-xs leading-5 text-muted-foreground">
       {elsewhere ? (
-        <>
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span>Works in {worktableLabel(elsewhere)}</span>
           {known ? <MoveHereButton app={known} /> : null}
+        </span>
+      ) : worksHere && name ? (
+        <>
+          Works in <span className="text-foreground">{name}</span> · {how}
         </>
       ) : (
-        <>
-          {worksHere && name ? (
-            <span>
-              Works in <span className="text-foreground">{name}</span>
-            </span>
-          ) : null}
-          {worksHere && name ? <span aria-hidden>·</span> : null}
-          <span>{how}</span>
-        </>
+        how
       )}
-    </span>
+    </p>
   )
 }
 
@@ -850,11 +846,13 @@ function AppTile({
   app,
   selected,
   connected,
+  compact,
   onSelect,
 }: {
   app: AgentApp | null
   selected: boolean
   connected: boolean
+  compact: boolean
   onSelect: () => void
 }) {
   return (
@@ -863,7 +861,10 @@ function AppTile({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl px-1 py-3 text-center text-xs leading-tight text-foreground transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+        "flex rounded-xl text-foreground transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+        compact
+          ? "min-h-11 items-center gap-2.5 px-3 py-2 text-left text-sm"
+          : "min-h-20 flex-col items-center justify-center gap-2 px-1 py-3 text-center text-xs leading-tight",
         selected
           ? "border border-primary bg-surface-selected"
           : "card-surface card-surface-interactive"
@@ -874,10 +875,15 @@ function AppTile({
           <AgentAvatar
             name={app.name}
             platform={app.id === "other" ? undefined : app.platform}
-            className="size-7 rounded-lg"
+            className={cn("rounded-lg", compact ? "size-6" : "size-7")}
           />
         ) : (
-          <span className="grid size-7 place-items-center rounded-lg bg-surface-tint text-muted-foreground">
+          <span
+            className={cn(
+              "grid place-items-center rounded-lg bg-surface-tint text-muted-foreground",
+              compact ? "size-6" : "size-7"
+            )}
+          >
             ···
           </span>
         )}
@@ -887,7 +893,9 @@ function AppTile({
           </span>
         ) : null}
       </span>
-      <span>{app ? app.name : "More"}</span>
+      <span className={compact ? "min-w-0 truncate" : undefined}>
+        {app ? app.name : "More"}
+      </span>
     </button>
   )
 }
@@ -901,11 +909,14 @@ export function AgentConnectOptions({
   setups,
   onSetupsChange,
   active = true,
+  compact = false,
 }: {
   setups: SetupRecord[]
   onSetupsChange: (setups: SetupRecord[]) => void
   /** Whether the surface is showing. */
   active?: boolean
+  /** Row-sized app choices, for a page with other settings around them. */
+  compact?: boolean
 }) {
   const [selected, setSelected] = useState<AppId | null>(null)
   const [more, setMore] = useState(false)
@@ -1012,7 +1023,10 @@ export function AgentConnectOptions({
       <div
         role="group"
         aria-label="Apps"
-        className="grid grid-cols-4 gap-2"
+        className={cn(
+          "grid gap-2",
+          compact ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-4"
+        )}
       >
         {shown.map((item) => (
           <AppTile
@@ -1020,6 +1034,7 @@ export function AgentConnectOptions({
             app={item}
             selected={item.id === selected}
             connected={connectedApp(item)}
+            compact={compact}
             onSelect={() => setSelected(item.id === selected ? null : item.id)}
           />
         ))}
@@ -1028,6 +1043,7 @@ export function AgentConnectOptions({
             app={null}
             selected={false}
             connected={false}
+            compact={compact}
             onSelect={() => setMore(true)}
           />
         )}

@@ -63,10 +63,13 @@ export function OfficialAppSteps({
   app,
   first,
   active = true,
+  ready = true,
 }: {
   app: ChatApp
   first: number
   active?: boolean
+  /** False while an earlier step must come first: the steps wait, muted. */
+  ready?: boolean
 }) {
   const choices = useAppChoices(active)
   const official = appOfFamily(choices.data, app)
@@ -95,8 +98,18 @@ export function OfficialAppSteps({
       )?.autoReply
   return (
     <>
-      <SetupStep number={first} title={ADD_APP[app]} complete={added}>
-        {added ? null : <AddOfficialApp app={app} />}
+      <SetupStep
+        number={first}
+        title={
+          ready ? (
+            ADD_APP[app]
+          ) : (
+            <span className="text-muted-foreground">{ADD_APP[app]}</span>
+          )
+        }
+        complete={added}
+      >
+        {added || !ready ? null : <AddOfficialApp app={app} />}
       </SetupStep>
       {app === "chatgpt" &&
         (autoReply?.state === "on" ? (
@@ -213,6 +226,7 @@ export function LinkedAppSteps({
         ) : (
           <div>
             <Button
+              variant="outline"
               size="sm"
               onClick={() => {
                 if (link.data && !link.on) setUpFor.current = app
@@ -224,7 +238,12 @@ export function LinkedAppSteps({
           </div>
         )}
       </SetupStep>
-      <OfficialAppSteps app={app} first={2} active={active && link.on} />
+      <OfficialAppSteps
+        app={app}
+        first={2}
+        active={active && link.on}
+        ready={link.on}
+      />
     </ol>
   )
 }

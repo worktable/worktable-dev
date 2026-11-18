@@ -47,21 +47,18 @@ function steps(data: AppChoices | null, autoReply?: "on" | "off"): string {
   }
 }
 
-test("ChatGPT's steps say where it works, offer Move Here, and say where to paste the auto-reply line", () => {
-  // Working in another Worktable: Move Here is the one action, and the
-  // auto-reply step waits for it.
+test("ChatGPT's steps finish adding once Cloud knows it, and say where to paste the auto-reply line", () => {
+  // Working in another Worktable: adding is done, and the auto-reply step
+  // waits for Move Here, which the setup shows beside where it works.
   const elsewhere = steps(
     choices({ id: "wt_studio", name: "Studio", device: "office-mac", here: false })
   )
-  expect(elsewhere).toContain("ChatGPT works in Studio on office-mac.")
-  expect(elsewhere).toContain(">Move Here<")
+  expect(elsewhere).not.toContain("find Worktable in Apps")
   expect(elsewhere).not.toContain("Watch Worktable for comments")
-  expect(elsewhere).toContain('href="https://cloud.example/gateway/worktables/apps"')
 
-  // Working here: the line to paste, and where it works.
+  // Working here: the line to paste.
   const here = steps(choices({ id: "wl_notes", name: "Notes", here: true }), "off")
-  expect(here).toContain("ChatGPT works here")
-  expect(here).not.toContain(">Move Here<")
+  expect(here).not.toContain("find Worktable in Apps")
   expect(here).toContain("Watch Worktable for comments")
   expect(here).toContain("a Work chat on chatgpt.com")
 
@@ -75,9 +72,9 @@ test("ChatGPT's steps say where it works, offer Move Here, and say where to past
     "Auto-reply is on"
   )
 
-  // When Cloud can't say, the steps read as they did before.
+  // When Cloud can't say, the steps show how to add it.
   const unknown = steps(null)
-  expect(unknown).toContain("Add the official Worktable app in ChatGPT.")
-  expect(unknown).not.toContain(">Move Here<")
-  expect(unknown).not.toContain("All Apps")
+  expect(unknown).toContain("Add the Worktable app in ChatGPT")
+  expect(unknown).toContain("find Worktable in Apps")
+  expect(unknown).toContain('href="https://chatgpt.com/"')
 })

@@ -22,6 +22,9 @@ describe("agent platforms", () => {
     expect(platformForName("Robin (Claude Code)")).toBe("claude-code")
     expect(platformForName("Sam (my helper)")).toBe("other")
     expect(platformForName("codex@laptop")).toBe("codex")
+    expect(platformForName("Claude Code Agent")).toBe("claude-code")
+    expect(platformForName("Codex Agent")).toBe("codex")
+    expect(platformForName("Robin (Claude Code Agent)")).toBe("claude-code")
   })
 
   it("knows a sign-in's app from its signed client id, not its name", () => {

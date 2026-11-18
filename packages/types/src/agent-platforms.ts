@@ -301,9 +301,11 @@ export function platformForName(
   const client = clientPlatform(slug)
   if (client) return client
   // "Hermes Agent", "OpenClaw Studio": a platform's id followed by more words.
-  return (
-    AGENT_PLATFORM_IDS.find(
-      (id) => id !== "other" && (slug === id || slug.startsWith(`${id}-`))
-    ) ?? "other"
-  )
+  // The longest id wins, so "Claude Code Agent" is Claude Code, not Claude.
+  let found: AgentPlatformId | null = null
+  for (const id of AGENT_PLATFORM_IDS) {
+    if (id === "other" || (found && id.length <= found.length)) continue
+    if (slug === id || slug.startsWith(`${id}-`)) found = id
+  }
+  return found ?? "other"
 }

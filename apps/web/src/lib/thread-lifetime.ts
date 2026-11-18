@@ -5,12 +5,40 @@ import {
   threadLifetimeChoice,
   type Thread,
   type ThreadLifetimeChoice,
+  type ThreadLifetimeResult,
   type ThreadLifetimeState,
+  type ThreadListItem,
   type ThreadLocation,
   type ThreadReadResult,
 } from "@worktable/types"
-import { setThreadLifetime } from "./threads-api"
+import { fetchJSON } from "./http"
+import type { ThreadListView } from "./thread-list-view"
+import { threadBase } from "./threads-api"
 import { threadQueryKeys } from "./threads-queries"
+
+function setThreadLifetime(
+  location: ThreadLocation,
+  threadId: string,
+  state: ThreadLifetimeState
+): Promise<ThreadLifetimeResult> {
+  return fetchJSON(
+    `${threadBase(location)}/${encodeURIComponent(threadId)}/lifetime`,
+    { method: "PUT", body: JSON.stringify({ state }) }
+  )
+}
+
+/** The threads a view shows, from the list it reads. */
+export function threadsInView(
+  threads: ThreadListItem[],
+  view: ThreadListView,
+  viewerMemberId: string | undefined
+): ThreadListItem[] {
+  return view === "mine"
+    ? threads.filter((thread) =>
+        thread.members.some((member) => member.id === viewerMemberId)
+      )
+    : threads
+}
 
 /** Where an open thread stands: kept, archived, or neither. */
 export function threadLifetime(

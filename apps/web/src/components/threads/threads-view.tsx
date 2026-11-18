@@ -92,8 +92,12 @@ import {
   type ThreadDraftState,
 } from "@/lib/thread-submission"
 import { THREAD_TITLE_MAX_LENGTH } from "@worktable/types/constants"
-import { threadLifetime, useThreadLifetime } from "@/lib/thread-lifetime"
-import { threadsInView, type ThreadListView } from "@/lib/thread-list-view"
+import {
+  threadLifetime,
+  threadsInView,
+  useThreadLifetime,
+} from "@/lib/thread-lifetime"
+import type { ThreadListView } from "@/lib/thread-list-view"
 import { useThreadRename } from "@/lib/thread-naming"
 import { RenameDialog } from "@/components/docs/rename-dialog"
 import { NewThreadPanel } from "./new-thread-panel"

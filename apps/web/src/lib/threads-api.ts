@@ -5,8 +5,6 @@ import type {
   ThreadMessage,
   ThreadPostResponse,
   ThreadReadResult,
-  ThreadLifetimeResult,
-  ThreadLifetimeState,
   ThreadListResult,
   ThreadRenameResult,
   ThreadWaitResult,
@@ -32,7 +30,7 @@ export function threadScopeContains(
   return location.kind === "space" && scope.spaceId === location.spaceId
 }
 
-function threadBase(location: ThreadLocation): string {
+export function threadBase(location: ThreadLocation): string {
   return location.kind === "worktable"
     ? "/api/threads"
     : `/api/spaces/${encodeURIComponent(location.spaceId)}/threads`
@@ -82,16 +80,7 @@ export function listThreads(
   return fetchJSON(`${base}?${query}`, options)
 }
 
-export function setThreadLifetime(
-  location: ThreadLocation,
-  threadId: string,
-  state: ThreadLifetimeState
-): Promise<ThreadLifetimeResult> {
-  return fetchJSON(
-    `${threadBase(location)}/${encodeURIComponent(threadId)}/lifetime`,
-    { method: "PUT", body: JSON.stringify({ state }) }
-  )
-}
+
 
 export function readThread(
   location: ThreadLocation,

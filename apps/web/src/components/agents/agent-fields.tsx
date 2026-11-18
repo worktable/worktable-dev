@@ -11,14 +11,14 @@ import {
   IconSearchGrid,
   type IconSearchMark,
 } from "@/components/icon-search-grid"
-import { AGENT_LOGOS } from "@/lib/agent-logos"
+import { AGENT_LOGO_CHOICES } from "@/lib/agent-logo-choices"
 import { AgentAccessFields } from "./agent-access-fields"
 import { AgentAvatar, agentLogoUrl } from "./agent-avatar"
 
-const LOGO_MARKS: IconSearchMark[] = AGENT_LOGOS.map((logo) => ({
+const LOGO_MARKS: IconSearchMark[] = AGENT_LOGO_CHOICES.map((logo) => ({
   key: logo.key,
   label: logo.name,
-  keywords: `${logo.name} ${logo.aliases ?? ""}`.toLowerCase(),
+  keywords: logo.keywords,
   node: <AgentAvatar name={logo.name} icon={logo.key} className="size-6" />,
 }))
 

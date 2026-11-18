@@ -11,7 +11,7 @@ import {
 } from "@worktable/types/recognition"
 import { cn } from "@worktable/ui/lib/utils"
 import { NamedIcon, resolveIcon } from "@/lib/icons"
-import { agentLogoFit, agentLogoForIcon } from "@/lib/agent-logos"
+import { agentLogoFileForIcon, agentLogoFit } from "@/lib/agent-logos"
 import {
   agentLogoFileUrl,
   personPhotoUrl,
@@ -40,9 +40,9 @@ export function AgentAvatar({
   className?: string
 }) {
   // A chosen logo, else a chosen Lucide icon, else the platform's logo.
-  const chosenLogo = agentLogoForIcon(icon)
+  const chosenLogo = agentLogoFileForIcon(icon)
   const platformLogo = platform ? AGENT_PLATFORMS[platform]?.logo : null
-  const logoFile = chosenLogo?.file ?? (icon ? null : platformLogo)
+  const logoFile = chosenLogo ?? (icon ? null : platformLogo)
   const logo = logoFile ? agentLogoFileUrl(logoFile) : null
   const fit = logoFile ? agentLogoFit(logoFile) : null
   const initials = participantInitials(name)

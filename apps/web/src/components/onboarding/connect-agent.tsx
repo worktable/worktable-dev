@@ -295,7 +295,10 @@ function PairingPanel({
   useEffect(() => {
     if (session?.status !== "verified" || !pairing || connected) return
     if (session.connectionId) onPending(session.connectionId)
+    // A card that finished another way, or closed, takes nothing from this.
+    let current = true
     void currentConnections(queryClient, cloud).then((connections) => {
+      if (!current) return
       // The pairing names the agent it made or reconnected.
       const made = connections.find((item) => item.id === session.connectionId)
       onConnected(
@@ -308,6 +311,9 @@ function PairingPanel({
         )
       )
     })
+    return () => {
+      current = false
+    }
     // Only the verified transition adds the agent.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.status, pairing?.id])
@@ -1440,8 +1446,13 @@ export function AgentConnectOptions({
                           (setup) => setup.source !== sourceOf(card)
                         )
                       )
+                      // An agent another card found first is finished here too.
                       onPendingChange?.((current) =>
-                        current.filter((item) => item.source !== sourceOf(card))
+                        current.filter(
+                          (item) =>
+                            item.source !== sourceOf(card) &&
+                            !finished.includes(item.connectionId)
+                        )
                       )
                       setSelected(null)
                       // Gone at once: folding it would set the app up again.

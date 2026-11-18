@@ -6,6 +6,12 @@ import type { ThreadLocation } from "./threads"
 /** The longest chosen thread topic. */
 export const THREAD_TITLE_MAX_LENGTH = 160
 
+/**
+ * A thread leaves lists after this many days without a new message. The same
+ * period a temporary Doc gets (TEMPORARY_DOCUMENT_GRACE_DAYS).
+ */
+export const THREAD_QUIET_DAYS = 7
+
 /** A Space shows at most this many pinned starting points. */
 export const START_HERE_LIMIT = 7
 

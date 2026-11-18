@@ -302,6 +302,7 @@ export function applyThreadActivityToQueries(
       (current) =>
         current
           ? {
+              ...current,
               threads: current.threads.map((thread) =>
                 thread.id === threadId &&
                 threadLocationKey(thread.location) ===

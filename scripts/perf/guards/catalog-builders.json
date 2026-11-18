@@ -217,7 +217,7 @@
       "why": "Writer: checks the current files under the write lock; writers never read snapshots."
     },
     {
-      "site": "packages/server/src/thread-service.ts#listThreadSummaries.scan",
+      "site": "packages/server/src/thread-service.ts#listThreadsForViewer.scan",
       "kind": "scanAllThreadDigests",
       "why": "Thread lists: stats every thread file and parses only changed ones (digest cache)."
     },

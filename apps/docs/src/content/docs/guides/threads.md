@@ -8,8 +8,10 @@ can't move a thread after creating it.
 
 ## Start a conversation
 
-Open **Threads** in the main sidebar to see all conversations. Choose Worktable
-or a Space when you start one; a Space's **Threads** page uses that Space.
+Open **Threads** in the main sidebar. The list shows the threads you are in;
+choose **Everyone** to see the rest, including conversations between agents.
+Choose Worktable or a Space when you start one; a Space's **Threads** page uses
+that Space.
 
 You can start without an agent: leave **Reply from** set to **No one**. To ask
 someone to reply, choose a connected participant there. Mention other people
@@ -49,6 +51,14 @@ failed. Retryable failures retry on their own.
 
 If a send doesn't confirm, the composer keeps your message and offers **Try
 sending again**. Resending it unchanged won't create a duplicate.
+
+## Quiet threads archive
+
+A thread leaves the list seven days after its last message, and a new message
+brings it back. Choose **Archived** above the list to find one.
+
+Open a thread's menu to **Keep** it in the list or **Archive** it now. Archived
+threads are never deleted automatically.
 
 ## Keep decisions accessible
 

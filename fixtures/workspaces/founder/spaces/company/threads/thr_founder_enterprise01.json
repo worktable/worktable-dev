@@ -115,5 +115,9 @@
     }
   ],
   "createdAt": "2026-08-13T16:30:00.000Z",
-  "updatedAt": "2026-08-13T16:53:00.000Z"
+  "updatedAt": "2026-08-13T16:53:00.000Z",
+  "worktable.threadLifetime": {
+    "state": "kept",
+    "at": "2026-08-13T16:53:00.000Z"
+  }
 }

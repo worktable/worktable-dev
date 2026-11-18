@@ -6,6 +6,7 @@ import {
   useVirtualizer,
 } from "@tanstack/react-virtual"
 import {
+  ArchiveIcon,
   CircleAlertIcon,
   LoaderCircleIcon,
   MessageCircleIcon,
@@ -54,11 +55,16 @@ export type ThreadLinkTarget =
   | {
       to: "/threads/$"
       params: { _splat: string }
-      search: { location: "all" | "worktable" | "space"; spaceId?: string }
+      search: {
+        location: "all" | "worktable" | "space"
+        spaceId?: string
+        view?: "all" | "archived"
+      }
     }
   | {
       to: "/spaces/$spaceId/threads/$"
       params: { spaceId: string; _splat: string }
+      search: { view?: "all" | "archived" }
     }
 
 export type ThreadLink = (
@@ -68,6 +74,10 @@ export type ThreadLink = (
 
 interface ThreadListProps {
   threads: ThreadListItem[]
+  /** The list shows archived threads, so an empty one offers nothing to start. */
+  archive?: boolean
+  /** Set when the reader is in no thread here but other threads exist. */
+  onShowEveryone?: () => void
   activeThreadId: string
   activeLocation: ThreadLocation
   loading: boolean
@@ -89,6 +99,8 @@ function sameLocation(left: ThreadLocation, right: ThreadLocation): boolean {
 
 export function ThreadList({
   threads,
+  archive = false,
+  onShowEveryone,
   activeThreadId,
   activeLocation,
   loading,
@@ -170,18 +182,29 @@ export function ThreadList({
             threadLink={threadLink}
           />
         </TooltipProvider>
+      ) : archive ? (
+        <Empty className="min-h-72">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <ArchiveIcon />
+            </EmptyMedia>
+            <EmptyTitle>No archived threads</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <Empty className="min-h-72">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <MessageCircleIcon />
             </EmptyMedia>
-            <EmptyTitle>No threads yet</EmptyTitle>
-            <EmptyDescription>
-              Start a conversation here.
-            </EmptyDescription>
+            <EmptyTitle>
+              {onShowEveryone ? "You're not in any threads" : "No threads yet"}
+            </EmptyTitle>
+            {onShowEveryone ? null : (
+              <EmptyDescription>Start a conversation here.</EmptyDescription>
+            )}
           </EmptyHeader>
-          <EmptyContent>
+          <EmptyContent className="flex-row justify-center">
             <Button
               variant="outline"
               size="sm"
@@ -192,6 +215,11 @@ export function ThreadList({
               <PlusIcon />
               Thread
             </Button>
+            {onShowEveryone ? (
+              <Button variant="ghost" size="sm" onClick={onShowEveryone}>
+                Show Everyone
+              </Button>
+            ) : null}
           </EmptyContent>
         </Empty>
       )}

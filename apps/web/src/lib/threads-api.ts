@@ -5,8 +5,10 @@ import type {
   ThreadMessage,
   ThreadPostResponse,
   ThreadReadResult,
+  ThreadLifetimeResult,
+  ThreadLifetimeState,
+  ThreadListResult,
   ThreadRenameResult,
-  ThreadListItem,
   ThreadWaitResult,
 } from "@worktable/types"
 import { fetchJSON, type ReadOptions } from "./http"
@@ -68,15 +70,27 @@ export function listCommentRecipients(
   )
 }
 
+/** The threads in lists now, or only the archived ones. */
 export function listThreads(
   scope: ThreadListScope,
+  archived: "exclude" | "only",
   options?: ReadOptions
-): Promise<{ threads: ThreadListItem[] }> {
-  if (scope.kind === "all") return fetchJSON("/api/threads", options)
-  if (scope.kind === "worktable") {
-    return fetchJSON("/api/threads?location=worktable", options)
-  }
-  return fetchJSON(threadBase(scope), options)
+): Promise<ThreadListResult> {
+  const query = new URLSearchParams({ archived })
+  if (scope.kind === "worktable") query.set("location", "worktable")
+  const base = scope.kind === "space" ? threadBase(scope) : "/api/threads"
+  return fetchJSON(`${base}?${query}`, options)
+}
+
+export function setThreadLifetime(
+  location: ThreadLocation,
+  threadId: string,
+  state: ThreadLifetimeState
+): Promise<ThreadLifetimeResult> {
+  return fetchJSON(
+    `${threadBase(location)}/${encodeURIComponent(threadId)}/lifetime`,
+    { method: "PUT", body: JSON.stringify({ state }) }
+  )
 }
 
 export function readThread(

@@ -236,6 +236,73 @@ describe("thread REST routes", () => {
     expect(rootFile).not.toHaveProperty("spaceId")
   })
 
+  it("moves a quiet thread to the archive until it is kept or gets a message", async () => {
+    const created = await request("POST", "/api/threads", {
+      to: "Atlas",
+      body: "A question that was answered long ago.",
+      idempotencyKey: "route-lifetime-create",
+    })
+    const threadId = created.json.threadId as string
+    const listed = async (archived?: "exclude" | "only") => {
+      const list = await request(
+        "GET",
+        `/api/threads${archived ? `?archived=${archived}` : ""}`
+      )
+      expect(list.status).toBe(200)
+      return (list.json.threads as Array<{ id: string }>).map(
+        (thread) => thread.id
+      )
+    }
+    const choose = (state: string) =>
+      request("PUT", `/api/threads/${threadId}/lifetime`, { state })
+
+    expect(await listed("exclude")).toEqual([threadId])
+    expect(await listed("only")).toEqual([])
+
+    // Eight days pass without a message.
+    const path = join(workspaceDir, "threads", `${threadId}.json`)
+    const file = JSON.parse(await readFile(path, "utf8"))
+    const longAgo = new Date(Date.now() - 8 * 86_400_000).toISOString()
+    for (const message of file.messages) message.createdAt = longAgo
+    await writeFile(path, `${JSON.stringify(file, null, 2)}\n`, "utf8")
+
+    expect(await listed("exclude")).toEqual([])
+    expect(await listed("only")).toEqual([threadId])
+    // A list that names no filter still returns every thread.
+    expect(await listed()).toEqual([threadId])
+
+    const kept = await choose("kept")
+    expect(kept.status).toBe(200)
+    expect(kept.json).toMatchObject({
+      threadId,
+      lifetime: { state: "kept" },
+      archived: false,
+    })
+    expect(await listed("exclude")).toEqual([threadId])
+
+    // Giving up Keep starts the quiet period again rather than archiving at once.
+    expect((await choose("temporary")).json.archived).toBe(false)
+    expect(await listed("exclude")).toEqual([threadId])
+
+    expect((await choose("archived")).json.archived).toBe(true)
+    expect(await listed("exclude")).toEqual([])
+
+    const reply = await request("POST", `/api/threads/${threadId}/messages`, {
+      body: "One more thing.",
+      idempotencyKey: "route-lifetime-reply",
+    })
+    expect(reply.status).toBe(200)
+    expect(await listed("exclude")).toEqual([threadId])
+    expect(await listed("only")).toEqual([])
+
+    expect((await choose("gone")).status).toBe(400)
+    expect(
+      (await request("GET", "/api/threads?archived=sometimes")).status
+    ).toBe(400)
+    app = buildApp({ ...finn, scopes: ["threads:read"] })
+    expect((await choose("kept")).status).toBe(403)
+  })
+
   it("creates, persists, lists, reads, and follows up in one thread", async () => {
     const created = await request(
       "POST",

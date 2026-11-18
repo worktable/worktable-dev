@@ -33,6 +33,8 @@ export const threadQueryKeys = {
   root: ["threads"] as const,
   list: (scope: ThreadListScope) =>
     ["threads", "list", scopeKey(scope)] as const,
+  archivedList: (scope: ThreadListScope) =>
+    ["threads", "list", scopeKey(scope), "archived"] as const,
   detail: (location: ThreadLocation, threadId: string) =>
     ["threads", "detail", threadLocationKey(location), threadId] as const,
   participants: ["threads", "participants"] as const,
@@ -53,12 +55,23 @@ export const threadQueryKeys = {
       : (["threads", "participants"] as const),
 }
 
-export const threadsQueryOptions = (scope: ThreadListScope) =>
-  queryOptions({
-    queryKey: threadQueryKeys.list(scope),
-    queryFn: () => listThreads(scope),
+/**
+ * The threads in lists now, or the archived ones, which are read only when
+ * someone opens the Archived view.
+ */
+export const threadsQueryOptions = (
+  scope: ThreadListScope,
+  archived = false
+) => {
+  const queryKey: readonly string[] = archived
+    ? threadQueryKeys.archivedList(scope)
+    : threadQueryKeys.list(scope)
+  return queryOptions({
+    queryKey,
+    queryFn: () => listThreads(scope, archived ? "only" : "exclude"),
     staleTime: 15_000,
   })
+}
 
 export const threadQueryOptions = (
   location: ThreadLocation,
@@ -87,8 +100,8 @@ export function preloadThread(
   })
 }
 
-export function useThreads(scope: ThreadListScope) {
-  return useQuery(threadsQueryOptions(scope))
+export function useThreads(scope: ThreadListScope, archived = false) {
+  return useQuery(threadsQueryOptions(scope, archived))
 }
 
 export function useThread(location: ThreadLocation, threadId: string) {

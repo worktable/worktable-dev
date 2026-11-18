@@ -296,7 +296,8 @@ function PairingPanel({
           app,
           `pairing:${pairing.id}`,
           made?.displayName ?? agentName(app),
-          made?.id
+          // The pairing names its agent even when the list can't be read.
+          session.connectionId ?? made?.id
         )
       )
     })
@@ -326,6 +327,11 @@ function PairingPanel({
       : ""
   const ended = session?.status === "expired" || session?.status === "failed"
   const failure = session ? latestPairingFailure(session) : null
+  const newCommand = () => {
+    requested.current = false
+    onPairing(key, null)
+    create.reset()
+  }
 
   return (
     <>
@@ -358,17 +364,23 @@ function PairingPanel({
           <button
             type="button"
             className="font-medium underline underline-offset-2"
-            onClick={() => {
-              requested.current = false
-              onPairing(key, null)
-              create.reset()
-            }}
+            onClick={newCommand}
           >
             Make a new command
           </button>
         </Callout>
       ) : (
-        <StatusLine waiting>Waiting for {waitingFor(app)}</StatusLine>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <StatusLine waiting className="mt-0">
+            Waiting for {waitingFor(app)}
+          </StatusLine>
+          {/* A command that used its code and then stopped can't run again. */}
+          {session?.status === "redeemed" ? (
+            <Button variant="ghost" size="sm" onClick={newCommand}>
+              New Command
+            </Button>
+          ) : null}
+        </div>
       )}
     </>
   )

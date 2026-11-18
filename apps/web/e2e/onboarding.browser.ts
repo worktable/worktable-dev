@@ -492,6 +492,11 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
 test("a new owner creates their Worktable, connects agents and finishes their first steps in Getting Started", async ({
   page,
 }) => {
+  // Earlier journeys share this server; this one starts with an unnamed Worktable.
+  const reset = await page.request.put(`${harness.apiUrl}/api/workspace`, {
+    data: { name: "My Workspace" },
+  })
+  expect(reset.ok()).toBe(true)
   await setWelcomed(false)
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })

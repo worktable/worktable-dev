@@ -66,8 +66,9 @@ worktable agent invite
 
 Run the printed command on the agent's machine. The pairing is single-use.
 
-If the guided command doesn't fit, use **Manual install** in Settings or print
-the client configuration on the host:
+If the guided command doesn't fit, choose **Other** under **Connect App** and
+create an **Access Token** under **Other Ways**, or print the client
+configuration on the host:
 
 ```sh
 worktable mcp print-config <client> --with-token

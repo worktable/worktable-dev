@@ -85,6 +85,11 @@ In Perplexity, open **Plugins**, choose **Add custom**, then
 `https://github.com/worktable/worktable-plugin`. Perplexity keeps its own copy:
 for a newer version, remove the plugin and import it again.
 
+When the plugin would work in another of your Worktables, Settings shows this
+Worktable's own address for Antigravity, Gemini CLI and Perplexity instead.
+Add it as an MCP server or custom connector, then sign in. The plugin stays
+under **Other Ways**.
+
 An installed plugin is not proof of sign-in. Check access in the client before
 reading or writing workspace content.
 
@@ -191,7 +196,7 @@ Manage the connection:
 - **Pause** stops new claims; **Resume** accepts them again.
 - Rename the Bot under **Connection settings**. The connection and threads stay.
 - Each connection is one Grok account. To connect another, use
-  **Always-on agents → Grok Bot** again.
+  **Settings → Agents → Connect App → Grok Bot** again.
 - **Connection settings** also switches methods and reruns the check. Only the
   selected method sends wakes, so update the routine with the new instructions.
 - **Remove routine** deletes its notification settings and stops new claims.

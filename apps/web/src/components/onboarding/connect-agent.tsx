@@ -2,10 +2,12 @@ import { AgentInstructions } from "@/components/agent-instructions"
 import {
   APP_STEPS,
   CODING_PLUGIN_STEPS,
+  addressStep,
   appValue,
   appsFor,
   claudeConnectorLink,
   connectCommand,
+  isPluginApp,
   placeOf,
   sharedAddressLandsHere,
   waysFor,
@@ -114,7 +116,7 @@ const WAY_NAME: Record<Way["kind"], string> = {
   "chatgpt-app": "ChatGPT App",
   "coding-plugin": "Plugin",
   "app-plugin": "Plugin",
-  address: "Connector",
+  address: "MCP Address",
   "claude-connector": "Connector",
   "cloud-command": "Connect Command",
   pairing: "Connect Command",
@@ -173,6 +175,8 @@ interface PanelProps {
   /** The agent this app already connected, if it did. */
   connected: SetupRecord | undefined
   onConnected: (setup: SetupRecord) => void
+  /** An agent this card made that isn't set up yet, kept out of the list. */
+  onPending: (connectionId: string) => void
   /** Pairings made here, kept per way so switching back reuses one. */
   pairings: Record<string, PairingCreated>
   onPairing: (key: string, pairing: PairingCreated | null) => void
@@ -239,6 +243,7 @@ function PairingPanel({
   connection,
   connected,
   onConnected,
+  onPending,
   pairings,
   onPairing,
   active,
@@ -282,6 +287,7 @@ function PairingPanel({
   const session = status.data
   useEffect(() => {
     if (session?.status !== "verified" || !pairing || connected) return
+    if (session.connectionId) onPending(session.connectionId)
     void currentConnections(queryClient, cloud).then((connections) => {
       // The pairing names the agent it made or reconnected.
       const made = connections.find((item) => item.id === session.connectionId)
@@ -406,6 +412,7 @@ function TokenPanel({
   connection,
   connected,
   onConnected,
+  onPending,
   tokens: made,
   onToken,
   active,
@@ -434,6 +441,8 @@ function TokenPanel({
     onSuccess: ({ token: value, connection: agent }) => {
       const id = tokenId(value)
       if (id) onToken(key, { value, id, agent })
+      // The agent is listed once it connects and the card is done.
+      onPending(agent.id)
       void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
     },
   })
@@ -539,8 +548,8 @@ function signedInHere(
   return (
     app.id === "other" ||
     platform === app.platform ||
-    // These apps sign in under names we may not know yet.
-    (way.kind === "app-plugin" && platform === "other") ||
+    // These apps sign in under names we may not know yet, by plugin or address.
+    (isPluginApp(app.id) && platform === "other") ||
     // Codex CLI signs in as the Codex client, which ChatGPT Desktop shares.
     (app.id === "codex" && agentConnectionOnCodexHost(connection))
   )
@@ -567,13 +576,7 @@ function cloudStep(
         open: { label: "Add Connector", href: claudeConnectorLink(url) },
       }
     case "address":
-      return {
-        step:
-          app.id === "gemini"
-            ? "In Gemini, open Customize, then Connectors, and choose Custom. Paste this address and sign in."
-            : "Add this address as a custom connector or MCP server, then sign in.",
-        value: url,
-      }
+      return addressStep(app.id, url)
     case "cloud-command":
       return {
         step:
@@ -607,6 +610,7 @@ function useCloudArrival({
   way,
   connected,
   onConnected,
+  onPending,
   baseline,
   cloudConnections,
 }: PanelProps) {
@@ -633,8 +637,9 @@ function useCloudArrival({
   useEffect(() => {
     if (!arrived || connected || accepted.current === arrived.id) return
     accepted.current = arrived.id
+    onPending(arrived.id)
     accept.mutate(arrived)
-  }, [arrived, connected, accept])
+  }, [arrived, connected, accept, onPending])
   return { arrived, accept }
 }
 
@@ -1173,6 +1178,19 @@ export type SetupsUpdate = (
 ) => void
 
 /**
+ * An agent a card made before it connected, such as one whose token isn't
+ * used yet. Like a setup, it joins the agent list when its card is done.
+ */
+export interface PendingAgent {
+  source: string
+  connectionId: string
+}
+
+export type PendingUpdate = (
+  update: (current: PendingAgent[]) => PendingAgent[]
+) => void
+
+/**
  * Pick the app, then its one best setup for this Worktable. The apps fold
  * away into the setup's header, which changes the app. Each setup shows the
  * real command or address and waits for the agent; the other ways stay under
@@ -1182,12 +1200,15 @@ export type SetupsUpdate = (
 export function AgentConnectOptions({
   setups,
   onSetupsChange,
+  onPendingChange,
   active = true,
   compact = false,
   done = false,
 }: {
   setups: SetupRecord[]
   onSetupsChange: SetupsUpdate
+  /** For a page that lists agents, which leaves these out until Done. */
+  onPendingChange?: PendingUpdate
   /** Whether the surface is showing. */
   active?: boolean
   /** Row-sized app choices, for a page with other settings around them. */
@@ -1277,6 +1298,12 @@ export function AgentConnectOptions({
         ...current.filter((item) => item.id !== setup.id),
         setup,
       ]),
+    onPending: (connectionId) =>
+      onPendingChange?.((current) =>
+        current.some((item) => item.connectionId === connectionId)
+          ? current
+          : [...current, { source: sourceOf(card!), connectionId }]
+      ),
     pairings,
     onPairing: (key, pairing) =>
       setPairings((current) => {
@@ -1366,6 +1393,9 @@ export function AgentConnectOptions({
                         current.filter(
                           (setup) => setup.source !== sourceOf(card)
                         )
+                      )
+                      onPendingChange?.((current) =>
+                        current.filter((item) => item.source !== sourceOf(card))
                       )
                       setSelected(null)
                       // Gone at once: folding it would set the app up again.

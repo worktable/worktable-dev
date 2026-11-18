@@ -12,7 +12,8 @@
 // (or the account's default). So it reaches a Worktable on Cloud, and a
 // Worktable on a computer or server once Worktable Link is on. Claude updates
 // it from there, and so does Antigravity. Uploaded copies and Perplexity's
-// imports keep the version they started with.
+// imports keep the version they started with. On a Cloud Worktable the shared
+// address doesn't reach, an app leads with this Worktable's own address.
 
 import type {
   AgentPlatformId,
@@ -107,8 +108,14 @@ export function appsFor(place: Place): AgentApp[] {
   )
 }
 
+const PLUGIN_APPS = ["antigravity", "gemini-cli", "perplexity"] as const
+
 /** Apps whose plugin or app is added in the app itself, after a copy. */
-export type PluginApp = "antigravity" | "gemini-cli" | "perplexity"
+export type PluginApp = (typeof PLUGIN_APPS)[number]
+
+export function isPluginApp(app: AppId): app is PluginApp {
+  return (PLUGIN_APPS as readonly AppId[]).includes(app)
+}
 
 /** The Gemini app takes one skill folder. */
 export const GEMINI_SKILL_DOWNLOAD =
@@ -250,14 +257,19 @@ export function waysFor(app: AppId, where: Where): AppWays | null {
           }
         : null
     case "perplexity":
-      return cloud
-        ? { best: { kind: "app-plugin", app, skills: PLUGIN }, others: [] }
-        : null
     case "antigravity":
-    case "gemini-cli":
-      return cloud
-        ? { best: { kind: "app-plugin", app, skills: PLUGIN }, others: [] }
-        : { best: { kind: "token", skills: NONE }, others: [] }
+    case "gemini-cli": {
+      if (!cloud)
+        return app === "perplexity"
+          ? null
+          : { best: { kind: "token", skills: NONE }, others: [] }
+      const plugin: Way = { kind: "app-plugin", app, skills: PLUGIN }
+      // This Worktable's own address, for when the plugin's lands elsewhere.
+      const address: Way = { kind: "address", skills: NONE }
+      return where.sharedHere
+        ? { best: plugin, others: [address] }
+        : { best: address, others: [plugin] }
+    }
     case "other":
       return cloud
         ? {
@@ -317,6 +329,43 @@ export const APP_STEPS: Record<PluginApp, string> = {
     "Run this in your terminal. Then in Gemini CLI, run /mcp auth worktable and sign in.",
   perplexity:
     "In Perplexity, open Plugins, choose Add custom, then Import plugin from GitHub, and paste this. Then connect Worktable and sign in.",
+}
+
+/**
+ * How an app adds this Worktable's address and signs in, and what it has you
+ * paste or run.
+ */
+export function addressStep(
+  app: AppId,
+  mcpUrl: string
+): { step: string; value: string } {
+  switch (app) {
+    case "gemini":
+      return {
+        step: "In Gemini, open Customize, then Connectors, and choose Custom. Paste this address and sign in.",
+        value: mcpUrl,
+      }
+    case "gemini-cli":
+      return {
+        step: "Run this in your terminal. Then in Gemini CLI, run /mcp auth worktable and sign in.",
+        value: `gemini mcp add --scope user --transport http worktable ${mcpUrl}`,
+      }
+    case "antigravity":
+      return {
+        step: "In Antigravity, add an MCP server with this address, then sign in.",
+        value: mcpUrl,
+      }
+    case "perplexity":
+      return {
+        step: "In Perplexity, open Connectors and add a custom connector with this address, then sign in.",
+        value: mcpUrl,
+      }
+    default:
+      return {
+        step: "Add this address as a custom connector or MCP server, then sign in.",
+        value: mcpUrl,
+      }
+  }
 }
 
 /** What each app's step has you paste or run. */

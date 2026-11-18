@@ -674,7 +674,7 @@ test("local Desktop Settings manages the two skill targets from allowed operatio
   ).toBeVisible()
 })
 
-test("a one-time token made for an agent survives changing apps and settings sections, and its first use connects it", async ({
+test("a one-time token made for an agent survives changing apps and settings sections, its first use connects it, and it joins the list on Done", async ({
   page,
 }) => {
   // A loopback-only Worktable takes bare local calls, but the agent still
@@ -691,8 +691,36 @@ test("a one-time token made for an agent survives changing apps and settings sec
       }),
     })
   )
-  await page.route("**/api/agent-connections", (route) => {
+  // The agent exists from the moment its token is made.
+  const minted = {
+    id: "manual-fixture",
+    authKind: "local-token",
+    displayName: "My agent",
+    platform: "other",
+    icon: null,
+    access: { threads: true, read: true, edit: true },
+    target: { kind: "mcp-client", clientId: null },
+    mode: "on-demand",
+    participant: null,
+    machine: null,
+    scopes: ["*"],
+    connectedAt: null,
+    lastSeenAt: null,
+    permissionGroups: null,
+  }
+  let made = false
+  await page.route("**/api/agent-connections", async (route) => {
+    if (route.request().method() === "GET") {
+      if (!made) return route.continue()
+      const response = await route.fetch()
+      const listed = await response.json()
+      return route.fulfill({
+        response,
+        json: { ...listed, connections: [...listed.connections, minted] },
+      })
+    }
     if (route.request().method() !== "POST") return route.continue()
+    made = true
     const grant = route.request().postDataJSON()
     expect(grant.client).toBeNull()
     // It connects with the default access; narrowing comes once it's in.
@@ -701,7 +729,7 @@ test("a one-time token made for an agent survives changing apps and settings sec
       contentType: "application/json",
       body: JSON.stringify({
         token: "wt_123456789abc_manual-secret",
-        connection: { id: "manual-fixture", displayName: "My agent" },
+        connection: minted,
       }),
     })
   })
@@ -743,8 +771,21 @@ test("a one-time token made for an agent survives changing apps and settings sec
   await expect(
     token.getByText(connection.endpoint, { exact: true })
   ).toBeVisible()
+  const relisted = page.waitForResponse(
+    (item) =>
+      item.request().method() === "GET" &&
+      new URL(item.url()).pathname === "/api/agent-connections" &&
+      made
+  )
   await token.getByRole("button", { name: "Create Token" }).click()
   await expect(secret).toBeVisible()
+  // The list, read again with the new agent in it, stays as it was while the
+  // card is open.
+  await relisted
+  const listedAgent = dialog
+    .getByRole("region", { name: "Connected Agents", exact: true })
+    .getByText("My agent", { exact: true })
+  await expect(listedAgent).toHaveCount(0)
 
   await dialog.getByRole("button", { name: "Change", exact: true }).click()
   await expect(secret).toBeHidden()
@@ -767,6 +808,9 @@ test("a one-time token made for an agent survives changing apps and settings sec
     timeout: 10_000,
   })
   await expect(secret).toBeHidden()
+  await expect(listedAgent).toHaveCount(0)
+  await card.getByRole("button", { name: "Done", exact: true }).click()
+  await expect(listedAgent).toBeVisible()
 })
 
 test("an agent connected from its card is named and narrowed there, keeps its logo, and nothing moves", async ({

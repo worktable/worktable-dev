@@ -94,6 +94,8 @@ import {
 } from "@/lib/agent-app-steps"
 import {
   AgentConnectOptions,
+  type PendingAgent,
+  type PendingUpdate,
   type SetupsUpdate,
 } from "@/components/onboarding/connect-agent"
 import type { SetupRecord } from "@/lib/onboarding-setups"
@@ -145,15 +147,18 @@ export function AgentsSection() {
     })
   const leadWithAgents = opened?.leadWithAgents ?? null
   // A new agent connected here is set up in its card, and joins the list on
-  // Done, so the list doesn't grow under the card meanwhile. One listed
-  // already, reconnected, stays where it is.
+  // Done, so the list doesn't grow under the card meanwhile. So does one the
+  // card made that hasn't connected yet. One listed already, reconnected,
+  // stays where it is.
   const [setups, setSetups] = useState<SetupRecord[]>([])
+  const [pending, setPending] = useState<PendingAgent[]>([])
   const settingUp = new Set(
-    setups.flatMap((setup) =>
-      setup.connectionId && !opened?.listed.has(setup.connectionId)
-        ? [setup.connectionId]
-        : []
-    )
+    [
+      ...setups.flatMap((setup) =>
+        setup.connectionId ? [setup.connectionId] : []
+      ),
+      ...pending.map((item) => item.connectionId),
+    ].filter((id) => !opened?.listed.has(id))
   )
   const listed =
     (agents.data?.connections.filter((item) => !settingUp.has(item.id))
@@ -194,6 +199,7 @@ export function AgentsSection() {
         active={sectionActive}
         setups={setups}
         onSetupsChange={setSetups}
+        onPendingChange={setPending}
       />
       {leadWithAgents === false && listed ? (
         <ConnectedAgentsGroup settingUp={settingUp} />
@@ -214,11 +220,13 @@ function ConnectAppGroup({
   active,
   setups,
   onSetupsChange,
+  onPendingChange,
 }: {
   active: boolean
   /** Agents connected here whose card is still open. */
   setups: SetupRecord[]
   onSetupsChange: SetupsUpdate
+  onPendingChange: PendingUpdate
 }) {
   return (
     <section className="flex flex-col gap-3" aria-labelledby="connect-app">
@@ -228,6 +236,7 @@ function ConnectAppGroup({
       <AgentConnectOptions
         setups={setups}
         onSetupsChange={onSetupsChange}
+        onPendingChange={onPendingChange}
         active={active}
         compact
         done

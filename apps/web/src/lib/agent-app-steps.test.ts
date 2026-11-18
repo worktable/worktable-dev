@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import {
   AGENT_APPS,
+  addressStep,
   appsFor,
   bringsSkills,
   connectCommand,
@@ -67,12 +68,22 @@ describe("agent app ways", () => {
     }
   })
 
-  it("gives coding agents this Worktable's own command when the shared address lands elsewhere", () => {
+  it("leads with this Worktable's own address when the shared one lands elsewhere", () => {
     for (const app of ["claude-code", "codex"] as const) {
       const ways = waysFor(app, at("cloud", false))!
       expect(ways.best).toMatchObject({ kind: "cloud-command", client: app })
       expect(bringsSkills(ways.best)).toBe(true)
       expect(ways.others.map((way) => way.kind)).toEqual(["coding-plugin"])
+    }
+    const pinned = "https://app.worktable.cloud/api/mcp/w/wt_123"
+    for (const app of ["gemini-cli", "antigravity", "perplexity"] as const) {
+      expect(best(app, at("cloud"))).toMatchObject({ kind: "app-plugin", app })
+      const ways = waysFor(app, at("cloud", false))!
+      expect(ways.best.kind).toBe("address")
+      expect(ways.others).toEqual([
+        { kind: "app-plugin", app, skills: { via: "plugin" } },
+      ])
+      expect(addressStep(app, pinned).value).toContain(pinned)
     }
   })
 

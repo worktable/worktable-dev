@@ -144,11 +144,18 @@ function About({ connection }: { connection: AgentConnection }) {
 }
 
 /** A line to paste into an agent, with its Copy button. */
-export function CopyLine({ text }: { text: string }) {
+export function CopyLine({ text, mono }: { text: string; mono?: boolean }) {
   const copy = useCopy()
   return (
     <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-inset py-2.5 pr-2 pl-3">
-      <p className="flex-1 text-sm leading-5">{text}</p>
+      <p
+        className={cn(
+          "min-w-0 flex-1 leading-5 wrap-anywhere",
+          mono ? "font-mono text-xs" : "text-sm"
+        )}
+      >
+        {text}
+      </p>
       <Button
         variant="outline"
         size="sm"

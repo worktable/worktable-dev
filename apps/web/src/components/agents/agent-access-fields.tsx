@@ -1,6 +1,7 @@
 import { useId } from "react"
 import type { AgentAccess } from "@worktable/types"
 import { Checkbox } from "@worktable/ui/components/checkbox"
+import { Button } from "@worktable/ui/components/button"
 import { cn } from "@worktable/ui/lib/utils"
 
 const ACCESS_OPTIONS = [
@@ -76,5 +77,52 @@ export function AgentAccessFields({
         )
       })}
     </fieldset>
+  )
+}
+
+const PILLS = [
+  { key: "threads", label: "Threads" },
+  { key: "read", label: "Read" },
+  { key: "edit", label: "Edit" },
+] as const
+
+/**
+ * The same choice as AgentAccessFields, as a row of pills, for setting an
+ * agent's access before its command or token is made.
+ */
+export function AccessPills({
+  value,
+  onChange,
+  alwaysOn,
+  disabled,
+}: {
+  value: AgentAccess
+  onChange: (access: AgentAccess) => void
+  alwaysOn?: boolean
+  disabled?: boolean
+}) {
+  function set(key: keyof AgentAccess, pressed: boolean) {
+    const next = { ...value, [key]: pressed }
+    if (key === "edit" && pressed) next.read = true
+    if (key === "read" && !pressed) next.edit = false
+    onChange(next)
+  }
+  return (
+    <div role="group" aria-label="Access" className="flex flex-wrap gap-1.5">
+      {PILLS.map((pill) => (
+        <Button
+          key={pill.key}
+          type="button"
+          variant="outline"
+          size="sm"
+          className="rounded-full px-3 aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary-text"
+          aria-pressed={value[pill.key]}
+          disabled={disabled || (pill.key === "threads" && alwaysOn)}
+          onClick={() => set(pill.key, !value[pill.key])}
+        >
+          {pill.label}
+        </Button>
+      ))}
+    </div>
   )
 }

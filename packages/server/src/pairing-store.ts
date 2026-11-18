@@ -117,6 +117,8 @@ interface StoredPairingSession {
   tokenId: string | null;
   /** Durable rollback custody for the credential created during redemption. */
   teamBinding?: { agentId: string; createdAgent: boolean; credentialKey: string };
+  /** The agent connection this pairing made or updated, once verified. */
+  connectionId?: string;
   outcome: "verified" | "failed" | null;
   events: PairingEvent[];
 }
@@ -411,7 +413,8 @@ export async function attachPairingToken(
 export async function completePairingSession(
   rawCode: string,
   tokenId: string,
-  beforeCommit?: (session: PairingSessionView) => Promise<void>
+  /** Durable side effects; resolves to the agent connection they recorded. */
+  beforeCommit?: (session: PairingSessionView) => Promise<string | null>
 ): Promise<PairingCompletionResult> {
   return serialized(async () => {
     const sessions = await loadSessions();
@@ -429,7 +432,8 @@ export async function completePairingSession(
 
     // Bearer-authenticated completion writes its terminal status only after
     // these durable side effects. The callback is idempotent.
-    await beforeCommit?.(toView(session));
+    const connectionId = await beforeCommit?.(toView(session));
+    if (connectionId) session.connectionId = connectionId;
 
     const at = new Date().toISOString();
     if (session.outcome !== "verified" && session.events.length < MAX_EVENTS) {

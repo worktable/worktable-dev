@@ -18,11 +18,13 @@ infrastructure and personal context out of release notes.
 - **Getting Started:** Creation prefills an editable name, setup shows agent rules while connecting, and shorter starter prompts gather context before creating your first Space.
 - **Thread creation:** Start without a responder, mention several participants, and independently choose one to reply, with saved drafts and safe send retries.
 - **Next Steps:** Home shows your next steps as one row of tiles, in order, with a progress bar. Steps you finished before leave the row, and later ones scroll into view.
+- **Connect an agent:** Pick your app from one set of tiles, and its setup says which Worktable it works in and how. Once the agent connects, name it and set its access in the same place. Claude Code and Codex get Worktable's skills from the same command.
 
 ### Fixed
 
 - **Agent logos:** Repeat visits reuse cached logos without downloading them again.
 - **Agent avatars:** An agent named with its app, like "Ada (Claude)" or "codex@laptop", shows that app's logo, and initials skip brackets.
+- **Agent setup:** Claude and ChatGPT added through Worktable Link count as connected, coding agents in a second Cloud Worktable connect to it rather than another one, and commands wrap between words on phones.
 
 ## [0.1.51] - 2026-11-17
 

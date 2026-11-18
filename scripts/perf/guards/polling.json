@@ -34,10 +34,6 @@
       "why": "Quick connect: follows a pairing code every 2 s until it is verified, failed or expired."
     },
     {
-      "site": "apps/web/src/components/settings/sections/agents.tsx#AlwaysOnSetupPanel.statusQuery",
-      "why": "Always-on setup: follows a pairing code every 2 s until it is verified, failed or expired."
-    },
-    {
       "site": "apps/web/src/components/settings/sections/backups.tsx#BackupsSection.history",
       "why": "Cloud backup history while Settings shows it: 5 s during a backup or restore, 30 s otherwise; the control plane has no socket."
     },

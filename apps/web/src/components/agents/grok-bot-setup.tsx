@@ -45,10 +45,16 @@ export function GrokBotSetupPanel({
   onConnected,
   connectionId,
   onRemoved,
+  newAccountOnly = false,
 }: {
   connection: ConnectionInfo
   open: boolean
   onConnected?: (candidate: GrokBotCandidate, saved: GrokBotConnection) => void
+  /**
+   * Set up another account: accounts connected before this opened stay out,
+   * while one connected here stays to show it worked.
+   */
+  newAccountOnly?: boolean
   connectionId?: string
   onRemoved?: () => void
 }) {
@@ -63,13 +69,27 @@ export function GrokBotSetupPanel({
   const [selected, setSelected] = useState("")
   const [step, setStep] = useState<number | null>(null)
   const [linkSetup, setLinkSetup] = useState(false)
-  const candidates = (inventory.data?.grokBotCandidates ?? []).filter((item) =>
-    connectionId
-      ? item.id === connectionId
-      : onConnected ||
-        !inventory.data?.grokBots?.some(
-          (bot) => bot.connectionId === item.id && bot.verifiedAt
-        )
+  // Accounts connected when this opened, kept out when adding another.
+  const [connectedBefore, setConnectedBefore] = useState<Set<string> | null>(
+    null
+  )
+  if (connectedBefore === null && inventory.data)
+    setConnectedBefore(
+      new Set(
+        (inventory.data.grokBots ?? [])
+          .filter((bot) => bot.verifiedAt)
+          .map((bot) => bot.connectionId)
+      )
+    )
+  const candidates = (inventory.data?.grokBotCandidates ?? []).filter(
+    (item) => {
+      if (connectionId) return item.id === connectionId
+      if (newAccountOnly) return !connectedBefore?.has(item.id)
+      if (onConnected) return true
+      return !inventory.data?.grokBots?.some(
+        (bot) => bot.connectionId === item.id && bot.verifiedAt
+      )
+    }
   )
   const candidate =
     candidates.find((item) => item.id === selected) ?? candidates[0]

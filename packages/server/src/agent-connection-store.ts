@@ -203,6 +203,15 @@ function connectionId(
     .slice(0, 20)}`
 }
 
+/** The id of the connection `upsertAgentConnection` records for these inputs. */
+export function agentConnectionIdFor(
+  target: AgentConnectionTarget,
+  machine: string | null,
+  credentialId: string
+): string {
+  return connectionId(target, machine, getWorkspaceRoot(), credentialId)
+}
+
 export async function upsertAgentConnection(input: {
   target: AgentConnectionTarget
   mode: AgentConnection["mode"]

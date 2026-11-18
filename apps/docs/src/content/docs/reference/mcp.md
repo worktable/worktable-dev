@@ -191,7 +191,7 @@ Support maturity and configuration method are separate:
 `worktable mcp setup`, detection, status, repair, removal, and pairing accept
 only connector-installable IDs. `worktable mcp print-config goose` produces the
 manual Goose configuration. Claude Desktop is installed from the MCPB in
-**Settings → Agents → Chat apps**; Worktable does not emit a fake CLI snippet
+**Settings → Agents → Manual Setup**; Worktable does not emit a fake CLI snippet
 for it.
 
 OpenClaw and Hermes are not accepted by `worktable mcp setup`. Install their

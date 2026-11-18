@@ -1,42 +1,380 @@
-// How apps that take the Worktable plugin, or a custom app with Worktable
-// Cloud's address, connect. Onboarding and Settings show the same steps.
+// Which apps connect to Worktable, and the one best way for each, by where
+// this Worktable runs. Onboarding, Getting Started and Settings show the same.
 //
-// The plugin comes from worktable/worktable-plugin. Claude updates it from
-// there (Check for updates, or Sync automatically once the Claude GitHub App
-// has access) and so does Antigravity. Uploaded copies and Perplexity's
-// imports keep the version they started with.
+// `waysFor` is the only place that decides an app's best way and the others.
+// The best way gives the agent both the connection and Worktable's skills
+// when anything can: a plugin, or a command that adds the skills too. Each
+// way says how its skills arrive, so a new way to deliver them changes this
+// table and `connectCommand`, not the screens.
+//
+// The plugin comes from worktable/worktable-plugin and points at Worktable
+// Cloud's shared address, which works in the Worktable chosen for that app
+// (or the account's default). So it reaches a Worktable on Cloud, and a
+// Worktable on a computer or server once Worktable Link is on. Claude updates
+// it from there, and so does Antigravity. Uploaded copies and Perplexity's
+// imports keep the version they started with. On a Cloud Worktable the shared
+// address doesn't reach, an app leads with this Worktable's own address.
 
-/** Apps that take the plugin or a custom app, besides Claude and ChatGPT. */
-export type PluginApp = "antigravity" | "gemini" | "gemini-cli" | "perplexity"
+import type {
+  AgentPlatformId,
+  ConnectorInstallableMcpClientId,
+} from "@worktable/types"
+import { cloudConnectorCommand } from "./always-on-agents"
+import type { ConnectionInfo } from "./system-api"
+import { isLoopbackHost } from "./worktable-menu"
+
+/** Where this Worktable runs, which decides how an app reaches it. */
+export type Place = "cloud" | "computer" | "server"
+
+/** The page this setup is open in. */
+export interface Page {
+  hostname: string
+  /** Inside Worktable Desktop. */
+  desktop: boolean
+}
+
+/**
+ * A Worktable is on this computer when the page is: opened on loopback, or
+ * in Desktop with a Worktable that isn't public. A server opened from another
+ * machine is a server, whatever it binds to; a local install with a password,
+ * opened on loopback, is still this computer.
+ */
+export function placeOf(connection: ConnectionInfo, page: Page): Place {
+  if (connection.mcpAuthMode === "oauth") return "cloud"
+  if (isLoopbackHost(page.hostname)) return "computer"
+  const exposed = connection.reachable || connection.originConfigured
+  return page.desktop && !exposed ? "computer" : "server"
+}
+
+/** Where an app would work, for choosing its way. */
+export interface Where {
+  place: Place
+  /**
+   * On Cloud, whether the shared address the plugins use lands in this
+   * Worktable for the app: Cloud says so, or this is the account's default
+   * Worktable and Cloud says nothing else.
+   */
+  sharedHere: boolean
+}
+
+export type AppId =
+  | "claude"
+  | "chatgpt"
+  | "claude-code"
+  | "codex"
+  | "openclaw"
+  | "hermes"
+  | "grok-bot"
+  | "cursor"
+  | "gemini"
+  | "gemini-cli"
+  | "antigravity"
+  | "perplexity"
+  | "other"
+
+export interface AgentApp {
+  id: AppId
+  name: string
+  platform: AgentPlatformId
+  /** Apps that answer threads on their own. */
+  alwaysOn?: boolean
+}
+
+/**
+ * Every app, in the order the picker shows them. An app shows only where
+ * `waysFor` has a way that works, so a new client can be added here before
+ * its setup works anywhere.
+ */
+export const AGENT_APPS: AgentApp[] = [
+  { id: "claude", name: "Claude", platform: "claude" },
+  { id: "chatgpt", name: "ChatGPT", platform: "chatgpt" },
+  { id: "claude-code", name: "Claude Code", platform: "claude-code" },
+  { id: "codex", name: "Codex", platform: "codex" },
+  { id: "openclaw", name: "OpenClaw", platform: "openclaw", alwaysOn: true },
+  { id: "hermes", name: "Hermes", platform: "hermes", alwaysOn: true },
+  { id: "grok-bot", name: "Grok Bot", platform: "grok-bot", alwaysOn: true },
+  { id: "cursor", name: "Cursor", platform: "cursor" },
+  { id: "gemini", name: "Gemini", platform: "gemini" },
+  { id: "gemini-cli", name: "Gemini CLI", platform: "gemini-cli" },
+  { id: "antigravity", name: "Antigravity", platform: "antigravity" },
+  { id: "perplexity", name: "Perplexity", platform: "perplexity" },
+  { id: "other", name: "Other", platform: "other" },
+]
+
+/** The apps that can connect here. */
+export function appsFor(place: Place): AgentApp[] {
+  return AGENT_APPS.filter(
+    (app) => waysFor(app.id, { place, sharedHere: true }) !== null
+  )
+}
+
+const PLUGIN_APPS = ["antigravity", "gemini-cli", "perplexity"] as const
+
+/** Apps whose plugin or app is added in the app itself, after a copy. */
+export type PluginApp = (typeof PLUGIN_APPS)[number]
+
+export function isPluginApp(app: AppId): app is PluginApp {
+  return (PLUGIN_APPS as readonly AppId[]).includes(app)
+}
+
+/** The Gemini app takes one skill folder. */
+export const GEMINI_SKILL_DOWNLOAD =
+  "https://docs.worktable.dev/downloads/skills/gemini/worktable.tar"
+
+/**
+ * How Worktable's skills reach the agent on a way. Release 2 adds the
+ * connect command installing a skills-only plugin here, beside "url".
+ */
+export type Skills =
+  /** The plugin carries them and keeps them current. */
+  | { via: "plugin" }
+  /** The connect command adds them from Worktable's installer. */
+  | { via: "url"; target: "claude" | "agents" }
+  /** A skill file to upload in the app. */
+  | { via: "files"; href: string }
+  | { via: "none" }
+
+const PLUGIN: Skills = { via: "plugin" }
+const NONE: Skills = { via: "none" }
+
+/** One way to connect an app, and how its skills arrive. */
+export type Way =
+  /** The Worktable plugin in Claude. `link` when it reaches this Worktable through Link. */
+  (| { kind: "claude-plugin"; link: boolean }
+    /** The official Worktable app in ChatGPT. */
+    | { kind: "chatgpt-app"; link: boolean }
+    /** A coding agent's plugin, installed from the terminal. */
+    | { kind: "coding-plugin"; client: "claude-code" | "codex" }
+    /** A plugin added in the app from our repository. */
+    | { kind: "app-plugin"; app: PluginApp }
+    /** Worktable Cloud's address as a custom connector, with a sign-in. */
+    | { kind: "address" }
+    /** Claude's Add custom connector dialog, filled in. */
+    | { kind: "claude-connector" }
+    /** The connect command that signs in to Cloud with this Worktable's own address. */
+    | { kind: "cloud-command"; client: ConnectorInstallableMcpClientId | null }
+    /** The connect command with a one-use code, straight to this Worktable. */
+    | { kind: "pairing"; client: ConnectorInstallableMcpClientId | null }
+    /** OpenClaw or Hermes, with their own Worktable plugin. */
+    | { kind: "always-on"; adapter: "openclaw" | "hermes" }
+    | { kind: "grok" }
+    /** Claude Desktop's extension, on this computer. */
+    | { kind: "extension" }
+    /** ChatGPT's desktop app, in Local chats on this computer. */
+    | { kind: "chatgpt-local" }
+    /** This Worktable's address and an access token. */
+    | { kind: "token" }
+  ) & { skills: Skills }
+
+export interface AppWays {
+  best: Way
+  others: Way[]
+}
+
+/** Coding agents read skills from Claude's folder or the shared agents one. */
+function codingSkills(app: "claude-code" | "codex"): Skills {
+  return { via: "url", target: app === "claude-code" ? "claude" : "agents" }
+}
+
+/**
+ * The best way to connect an app here, then the others that work. Null
+ * where none works: the app isn't offered there.
+ */
+export function waysFor(app: AppId, where: Where): AppWays | null {
+  const { place } = where
+  const cloud = place === "cloud"
+  switch (app) {
+    case "claude":
+      return cloud
+        ? {
+            best: { kind: "claude-plugin", link: false, skills: PLUGIN },
+            others: [{ kind: "claude-connector", skills: NONE }],
+          }
+        : {
+            best: { kind: "claude-plugin", link: true, skills: PLUGIN },
+            others:
+              place === "computer" ? [{ kind: "extension", skills: NONE }] : [],
+          }
+    case "chatgpt":
+      return cloud
+        ? {
+            best: { kind: "chatgpt-app", link: false, skills: PLUGIN },
+            others: [],
+          }
+        : {
+            best: { kind: "chatgpt-app", link: true, skills: PLUGIN },
+            others:
+              place === "computer"
+                ? [{ kind: "chatgpt-local", skills: NONE }]
+                : [],
+          }
+    case "claude-code":
+    case "codex": {
+      if (!cloud)
+        return {
+          best: { kind: "pairing", client: app, skills: codingSkills(app) },
+          others: [],
+        }
+      const plugin: Way = { kind: "coding-plugin", client: app, skills: PLUGIN }
+      // This Worktable's own address, so it works here whichever Worktable
+      // the shared address picks.
+      const command: Way = {
+        kind: "cloud-command",
+        client: app,
+        skills: codingSkills(app),
+      }
+      return where.sharedHere
+        ? { best: plugin, others: [command] }
+        : { best: command, others: [plugin] }
+    }
+    case "cursor":
+      return cloud
+        ? {
+            best: { kind: "cloud-command", client: "cursor", skills: NONE },
+            others: [],
+          }
+        : {
+            best: { kind: "pairing", client: "cursor", skills: NONE },
+            others: [],
+          }
+    case "openclaw":
+    case "hermes":
+      return {
+        best: { kind: "always-on", adapter: app, skills: PLUGIN },
+        others: [],
+      }
+    case "grok-bot":
+      return { best: { kind: "grok", skills: NONE }, others: [] }
+    // The Gemini app and Perplexity connect from their own servers: Cloud only.
+    case "gemini":
+      return cloud
+        ? {
+            best: {
+              kind: "address",
+              skills: { via: "files", href: GEMINI_SKILL_DOWNLOAD },
+            },
+            others: [],
+          }
+        : null
+    case "perplexity":
+    case "antigravity":
+    case "gemini-cli": {
+      if (!cloud)
+        return app === "perplexity"
+          ? null
+          : { best: { kind: "token", skills: NONE }, others: [] }
+      const plugin: Way = { kind: "app-plugin", app, skills: PLUGIN }
+      // This Worktable's own address, for when the plugin's lands elsewhere.
+      const address: Way = { kind: "address", skills: NONE }
+      return where.sharedHere
+        ? { best: plugin, others: [address] }
+        : { best: address, others: [plugin] }
+    }
+    case "other":
+      return cloud
+        ? {
+            best: { kind: "address", skills: NONE },
+            others: [{ kind: "cloud-command", client: null, skills: NONE }],
+          }
+        : {
+            best: { kind: "pairing", client: null, skills: NONE },
+            others: [{ kind: "token", skills: NONE }],
+          }
+  }
+}
+
+/** Whether a way brings Worktable's skills along with the connection. */
+export function bringsSkills(way: Way): boolean {
+  return way.skills.via !== "none"
+}
+
+/** Installs only the skills, where an agent reads them. */
+export function skillsCommand(target: "claude" | "agents"): string {
+  return `curl -fsSL https://worktable.dev/install-skills | sh -s -- --target ${target}`
+}
+
+/** What the connect command adds after the connection, if anything. */
+function skillsStep(skills: Skills): string | null {
+  return skills.via === "url" ? skillsCommand(skills.target) : null
+}
+
+/**
+ * The one command a way runs in the terminal: connect, then the skills, which
+ * install only once the connection worked. Straight to this Worktable with a
+ * one-use code, or through Cloud with this Worktable's address.
+ */
+export function connectCommand(
+  way: Extract<Way, { kind: "pairing" | "cloud-command" }>,
+  to: { connectScript: string; code: string } | { mcpUrl: string }
+): string {
+  const connect =
+    "code" in to
+      ? `curl -fsSL ${to.connectScript} | sh -s -- ${to.code}${way.client ? ` --client ${way.client}` : ""}`
+      : cloudConnectorCommand(to.mcpUrl, way.client ?? "auto")
+  const skills = skillsStep(way.skills)
+  return skills ? `${connect} && ${skills}` : connect
+}
 
 export const PLUGIN_REPOSITORY = "https://github.com/worktable/worktable-plugin"
 
 /** What Claude's Add marketplace takes. */
 export const CLAUDE_MARKETPLACE = "worktable/worktable-plugin"
 
-export const CLAUDE_PLUGIN_STEP =
-  "In Claude, open Plugins, choose Add, then Add marketplace, and paste this. Add Worktable, then connect it on its Connectors tab and sign in."
+export const SKILLS_GUIDE = "https://docs.worktable.dev/agents/skills/"
 
 export const APP_STEPS: Record<PluginApp, string> = {
   antigravity:
     "In Antigravity, install Worktable from Plugins, or run this. Then open /plugin, expand Worktable and sign in.",
-  gemini:
-    "In Gemini, open Customize, then Connectors, and choose Custom. Paste this address and sign in.",
   "gemini-cli":
     "Run this in your terminal. Then in Gemini CLI, run /mcp auth worktable and sign in.",
   perplexity:
     "In Perplexity, open Plugins, choose Add custom, then Import plugin from GitHub, and paste this. Then connect Worktable and sign in.",
 }
 
+/**
+ * How an app adds this Worktable's address and signs in, and what it has you
+ * paste or run.
+ */
+export function addressStep(
+  app: AppId,
+  mcpUrl: string
+): { step: string; value: string } {
+  switch (app) {
+    case "gemini":
+      return {
+        step: "In Gemini, open Customize, then Connectors, and choose Custom. Paste this address and sign in.",
+        value: mcpUrl,
+      }
+    case "gemini-cli":
+      return {
+        step: "Run this in your terminal. Then in Gemini CLI, run /mcp auth worktable and sign in.",
+        value: `gemini mcp add --scope user --transport http worktable ${mcpUrl}`,
+      }
+    case "antigravity":
+      return {
+        step: "In Antigravity, add an MCP server with this address, then sign in.",
+        value: mcpUrl,
+      }
+    case "perplexity":
+      return {
+        step: "In Perplexity, open Connectors and add a custom connector with this address, then sign in.",
+        value: mcpUrl,
+      }
+    default:
+      return {
+        step: "Add this address as a custom connector or MCP server, then sign in.",
+        value: mcpUrl,
+      }
+  }
+}
+
 /** What each app's step has you paste or run. */
-export function appValue(app: PluginApp, mcpUrl: string): string {
+export function appValue(app: PluginApp): string {
   switch (app) {
     case "antigravity":
       return `agy plugin install ${PLUGIN_REPOSITORY}`
     case "perplexity":
       return PLUGIN_REPOSITORY
-    case "gemini":
-      return mcpUrl
     case "gemini-cli":
       return `gemini extensions install ${PLUGIN_REPOSITORY} --auto-update`
   }
@@ -50,21 +388,14 @@ export function appValue(app: PluginApp, mcpUrl: string): string {
 export const CODING_PLUGIN_STEPS = {
   "claude-code": {
     step: "Run this in your terminal. Then in Claude Code, run /reload-plugins and /mcp, and sign in to Worktable.",
-    command: "claude plugin marketplace add worktable/worktable-plugin\nclaude plugin install worktable@worktable",
+    command:
+      "claude plugin marketplace add worktable/worktable-plugin\nclaude plugin install worktable@worktable",
   },
   codex: {
     step: "Run this in your terminal, then open Codex and sign in to Worktable when it asks.",
     command: "codex plugin add worktable@openai-curated-remote",
   },
 } as const satisfies Record<string, { step: string; command: string }>
-
-export function codingPluginStep(
-  client: string | null
-): { step: string; command: string } | null {
-  return client && Object.hasOwn(CODING_PLUGIN_STEPS, client)
-    ? CODING_PLUGIN_STEPS[client as keyof typeof CODING_PLUGIN_STEPS]
-    : null
-}
 
 /** Claude's Add custom connector dialog, filled in with this address. */
 export function claudeConnectorLink(mcpUrl: string): string {
@@ -77,12 +408,12 @@ export function claudeConnectorLink(mcpUrl: string): string {
 }
 
 /**
- * Whether the plugin reaches this Worktable. Every plugin uses Worktable
- * Cloud's shared address, which signs in to the account's default Worktable;
- * another Worktable has its own address (/api/mcp/w/<id>), so its agents add
- * that address instead, without the plugin's skills.
+ * Whether Cloud's shared address lands in this Worktable for an app that
+ * hasn't chosen one: it does in the account's default Worktable, which is
+ * the one Cloud gives the shared address. Another Worktable has its own
+ * (/api/mcp/w/<id>), and an app is moved there after it signs in.
  */
-export function pluginReaches(mcpUrl: string): boolean {
+export function sharedAddressLandsHere(mcpUrl: string): boolean {
   try {
     return new URL(mcpUrl).pathname.replace(/\/+$/, "") === "/api/mcp"
   } catch {
@@ -90,9 +421,5 @@ export function pluginReaches(mcpUrl: string): boolean {
   }
 }
 
-/** Claude's step when the plugin can't reach this Worktable. */
-export const CLAUDE_CONNECTOR_STEP =
-  "In Claude, open Settings, then Connectors, and add a custom connector. Paste this address and sign in."
-
-/** Any app's step when the plugin can't reach this Worktable. */
-export const ADDRESS_STEP = "Add this address as a custom connector or MCP server, then sign in."
+/** The plugin as a file, for apps that take an upload. An uploaded copy never updates. */
+export const PLUGIN_DOWNLOAD = `${PLUGIN_REPOSITORY}/archive/refs/heads/main.zip`

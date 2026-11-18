@@ -22,6 +22,7 @@ import {
 } from "@worktable/ui/components/tooltip"
 import { fetchJSON, HttpError } from "@/lib/http"
 import { queryKeys } from "@/lib/queries"
+import { ExternalButton } from "@/components/agents/setup-parts"
 import { SettingsGroup } from "../settings-group"
 import { useSettingsSectionActive } from "../settings-dialog"
 
@@ -290,14 +291,9 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
                 {signIn.isPending ? "Opening sign-in" : "Sign in"}
               </Button>
               {signInUrl && data.account.signingIn && (
-                <a
-                  className="w-full text-sm text-primary-text underline underline-offset-4"
-                  href={signInUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <ExternalButton href={signInUrl}>
                   Continue sign-in
-                </a>
+                </ExternalButton>
               )}
             </div>
           )}
@@ -350,14 +346,9 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
                 </Button>
               )}
               {subscriptions.data?.worktables.length === 0 && (
-                <a
-                  className="text-sm text-primary-text underline underline-offset-4"
-                  href={data.cloudOrigin}
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <ExternalButton href={data.cloudOrigin}>
                   Create a Cloud Worktable
-                </a>
+                </ExternalButton>
               )}
             </div>
           )}
@@ -415,29 +406,21 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
             </Disclosure>
           )}
           {subscriptionRequired && (
-            <a
-              className="text-sm text-primary-text underline underline-offset-4"
+            <ExternalButton
               href={
                 selectedSubscription
                   ? `${data.cloudOrigin}/t/${encodeURIComponent(selectedSubscription)}/signup`
                   : data.cloudOrigin
               }
-              target="_blank"
-              rel="noreferrer"
             >
               Manage subscription
-            </a>
+            </ExternalButton>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-4">
-          <a
-            className="text-sm text-primary-text underline underline-offset-4"
-            href={`${data.cloudOrigin}/linked`}
-            target="_blank"
-            rel="noreferrer"
-          >
+          <ExternalButton href={`${data.cloudOrigin}/linked`}>
             Manage devices
-          </a>
+          </ExternalButton>
           {(linked ||
             data.state === "awaiting_approval" ||
             data.state === "revoked") && (

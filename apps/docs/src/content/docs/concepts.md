@@ -213,7 +213,7 @@ answer any time. Others answer while Auto-reply is on. The rest see your
 message next time they're open.
 
 - **Always-on agents** answer thread messages while their connection runs. Set
-  them up in **Settings → Agents → Always-on agents**. They see comments the
+  them up in **Settings → Agents → Connect App**. They see comments the
   next time they work in Worktable.
 - **Auto-reply** shows on an agent in **Settings → Agents**. ChatGPT answers
   while a Work chat watches Worktable. Claude answers from a scheduled task,

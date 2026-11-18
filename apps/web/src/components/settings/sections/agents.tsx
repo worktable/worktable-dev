@@ -1,4 +1,3 @@
-import { cloudConnectorCommand } from "@/lib/always-on-agents"
 import { fetchJSON } from "@/lib/http"
 import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
@@ -8,8 +7,6 @@ import {
   Check,
   ChevronDown,
   CircleAlert,
-  Copy,
-  Download,
   Loader2,
   Plus,
   Trash2,
@@ -24,14 +21,13 @@ import {
   type ConnectorInstallableMcpClientId,
 } from "@worktable/types"
 import { Button, buttonVariants } from "@worktable/ui/components/button"
+import { ExternalButton } from "@/components/agents/setup-parts"
 import { Badge } from "@worktable/ui/components/badge"
 import { Callout } from "@worktable/ui/components/callout"
 import { Card, CardContent } from "@worktable/ui/components/card"
 import { SettingRow } from "@worktable/ui/components/setting-row"
 import { Switch } from "@worktable/ui/components/switch"
 import { useServerSettings } from "@/hooks/use-server-settings"
-import { useHelpEnabled } from "@/hooks/use-deployment-info"
-import { HelpIcon } from "@/components/help/help"
 import { useSettingsPatch } from "../use-settings-patch"
 import { Checkbox } from "@worktable/ui/components/checkbox"
 import {
@@ -39,7 +35,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@worktable/ui/components/collapsible"
-import { CopyField } from "@worktable/ui/components/copy-field"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { Input } from "@worktable/ui/components/input"
 import {
@@ -89,23 +84,21 @@ import {
 } from "@/lib/tokens-api"
 import {
   agentConnectionPlatform,
-  connectAgentApp,
-  getAppAgent,
   disconnectAgentConnection,
   listAgentConnections,
 } from "@/lib/agent-connections-api"
-import { ALWAYS_ON_AGENTS, type AlwaysOnAgent } from "@/lib/always-on-agents"
 import {
-  APP_STEPS,
-  CLAUDE_MARKETPLACE,
-  CLAUDE_PLUGIN_STEP,
-  appValue,
-  claudeConnectorLink,
-  codingPluginStep,
-  ADDRESS_STEP,
-  CLAUDE_CONNECTOR_STEP,
-  pluginReaches,
+  PLUGIN_DOWNLOAD,
+  PLUGIN_REPOSITORY,
+  SKILLS_GUIDE,
 } from "@/lib/agent-app-steps"
+import {
+  AgentConnectOptions,
+  type PendingAgent,
+  type PendingUpdate,
+  type SetupsUpdate,
+} from "@/components/onboarding/connect-agent"
+import type { SetupRecord } from "@/lib/onboarding-setups"
 import { timeAgo } from "@/lib/time"
 import { AgentAccessFields } from "@/components/agents/agent-access-fields"
 import { AgentAvatar } from "@/components/agents/agent-avatar"
@@ -113,20 +106,9 @@ import { AgentEditDialog } from "@/components/agents/agent-edit-dialog"
 import { AutoReplyDot } from "@/components/agents/auto-reply"
 import { DesktopAgentSkillsGroup } from "./desktop-agent-skills"
 import { GrokBotSetupPanel } from "@/components/agents/grok-bot-setup"
-import {
-  ChatAppWays,
-  LocalChatSteps,
-  OfficialAppSteps,
-} from "@/components/agents/chat-app-ways"
 import { appForClient, useAppChoices, worktableLabel } from "@/lib/app-choices"
 import { WorksInSetting } from "@/components/agents/works-in"
 import { GROK_BOT_STATUS_LABELS, grokAutoReply } from "@/lib/grok-bot-status"
-import {
-  AGENT_SETUP_CATEGORIES,
-  CHAT_APP_OPTIONS,
-  AgentSetupCategory,
-  AgentSetupTabs,
-} from "@/components/agents/agent-setup-category"
 import { useSettingsSectionActive } from "../settings-dialog"
 
 // The nav rail / tab strip already names the section, so no repeated heading —
@@ -139,6 +121,50 @@ export function AgentsSection() {
     enabled: sectionActive,
     staleTime: 30_000,
   })
+  // The list Connected Agents shows, read once for both.
+  const agentsOnCloud = connectionQuery.data?.mcpAuthMode === "oauth"
+  const agents = useQuery({
+    queryKey: ["agent-connections", agentsOnCloud],
+    queryFn: () =>
+      listAgentConnections({ workspaceAgentsOnCloud: agentsOnCloud }),
+    enabled: sectionActive && connectionQuery.isFetched,
+  })
+  // What's connected leads once there is something; until then, connecting
+  // does, and an empty list waits below it for an agent. Decided once, when
+  // the section opens, so connecting an agent moves nothing on the page.
+  const anyConnected =
+    (agents.data?.connections.length ?? 0) > 0 ||
+    (agents.data?.grokBots?.length ?? 0) > 0 ||
+    agents.isError
+  const [opened, setOpened] = useState<{
+    leadWithAgents: boolean
+    listed: Set<string>
+  } | null>(null)
+  if (!opened && (agents.isSuccess || agents.isError))
+    setOpened({
+      leadWithAgents: anyConnected,
+      listed: new Set(agents.data?.connections.map((item) => item.id)),
+    })
+  const leadWithAgents = opened?.leadWithAgents ?? null
+  // A new agent connected here is set up in its card, and joins the list on
+  // Done, so the list doesn't grow under the card meanwhile. So does one the
+  // card made that hasn't connected yet. One listed already, reconnected,
+  // stays where it is.
+  const [setups, setSetups] = useState<SetupRecord[]>([])
+  const [pending, setPending] = useState<PendingAgent[]>([])
+  const settingUp = new Set(
+    [
+      ...setups.flatMap((setup) =>
+        setup.connectionId ? [setup.connectionId] : []
+      ),
+      ...pending.map((item) => item.connectionId),
+    ].filter((id) => !opened?.listed.has(id))
+  )
+  const listed =
+    (agents.data?.connections.filter((item) => !settingUp.has(item.id))
+      .length ?? 0) > 0 ||
+    (agents.data?.grokBots?.length ?? 0) > 0 ||
+    agents.isError
 
   if (connectionQuery.isError && !connectionQuery.data) {
     return (
@@ -165,25 +191,143 @@ export function AgentsSection() {
     )
   }
 
-  if (connectionQuery.data.mcpAuthMode === "oauth") {
-    return (
-      <div className="flex flex-col gap-6">
-        <AgentSetupGroup connection={connectionQuery.data} />
-        <ConnectedAgentsGroup />
-        <DesktopAgentSkillsGroup enabled={sectionActive} />
-      </div>
-    )
-  }
-
+  const cloud = connectionQuery.data.mcpAuthMode === "oauth"
   return (
-    <div className="flex flex-col gap-6">
-      <AgentSetupGroup connection={connectionQuery.data} />
-      <ConnectedAgentsGroup />
+    <div className="flex flex-col gap-8">
+      {leadWithAgents ? <ConnectedAgentsGroup settingUp={settingUp} /> : null}
+      <ConnectAppGroup
+        active={sectionActive}
+        setups={setups}
+        onSetupsChange={setSetups}
+        onPendingChange={setPending}
+      />
+      {leadWithAgents === false && listed ? (
+        <ConnectedAgentsGroup settingUp={settingUp} />
+      ) : null}
+      <ManualSetupGroup connection={connectionQuery.data} />
       <DesktopAgentSkillsGroup enabled={sectionActive} />
-      <AccessTokensGroup>
-        <PreviewToolsRow />
-      </AccessTokensGroup>
+      {cloud ? null : (
+        <AccessTokensGroup>
+          <PreviewToolsRow />
+        </AccessTokensGroup>
+      )}
     </div>
+  )
+}
+
+/** The same choice as onboarding: the app, then its one best setup. */
+function ConnectAppGroup({
+  active,
+  setups,
+  onSetupsChange,
+  onPendingChange,
+}: {
+  active: boolean
+  /** Agents connected here whose card is still open. */
+  setups: SetupRecord[]
+  onSetupsChange: SetupsUpdate
+  onPendingChange: PendingUpdate
+}) {
+  return (
+    <section className="flex flex-col gap-3" aria-labelledby="connect-app">
+      <h3 id="connect-app" className="text-sm font-medium text-foreground">
+        Connect App
+      </h3>
+      <AgentConnectOptions
+        setups={setups}
+        onSetupsChange={onSetupsChange}
+        onPendingChange={onPendingChange}
+        active={active}
+        compact
+        done
+      />
+    </section>
+  )
+}
+
+function ManualRow({
+  title,
+  detail,
+  children,
+}: {
+  title: string
+  detail: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <li className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 not-first:border-t not-first:border-border/60">
+      <div className="min-w-0 flex-1 basis-40">
+        <div className="text-sm font-medium text-foreground">{title}</div>
+        <div className="text-xs wrap-anywhere text-muted-foreground">
+          {detail}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">{children}</div>
+    </li>
+  )
+}
+
+// Through cn, so the outline border wins over the base transparent one.
+const ROW_ACTION = cn(buttonVariants({ variant: "outline", size: "sm" }))
+
+/**
+ * Everything the setups above use, for doing it by hand: the plugin, the
+ * skills, Claude Desktop's extension and this Worktable's address.
+ */
+function ManualSetupGroup({ connection }: { connection: ConnectionInfo }) {
+  const cloud = connection.mcpAuthMode === "oauth"
+  const address = cloud
+    ? connection.remoteMcpUrl
+    : desktopAgentConnectionDetails(connection).endpoint
+  const copy = useCopy(() => toast.success("Copied"))
+  return (
+    <section className="flex flex-col gap-3" aria-labelledby="manual-setup">
+      <h3 id="manual-setup" className="text-sm font-medium text-foreground">
+        Manual Setup
+      </h3>
+      <ul className="rounded-xl card-surface">
+        {/* The plugin signs in to Cloud, so off Cloud it works through Link. */}
+        <ManualRow
+          title="Plugin"
+          detail={
+            cloud
+              ? "Skills and the connection"
+              : "Skills and the connection, through Worktable Link"
+          }
+        >
+          <a href={PLUGIN_DOWNLOAD} className={ROW_ACTION}>
+            Download
+          </a>
+          <ExternalButton href={PLUGIN_REPOSITORY}>GitHub</ExternalButton>
+        </ManualRow>
+        <ManualRow title="Skills" detail="For agents without the plugin">
+          <ExternalButton href={SKILLS_GUIDE}>Guide</ExternalButton>
+        </ManualRow>
+        {cloud ? null : (
+          <ManualRow title="Desktop Extension" detail="Claude Desktop">
+            <a
+              href="/integrations/claude-desktop.mcpb"
+              download="worktable-claude-desktop.mcpb"
+              className={ROW_ACTION}
+            >
+              Download
+            </a>
+          </ManualRow>
+        )}
+        <ManualRow
+          title="MCP Address"
+          detail={<span className="font-mono">{address}</span>}
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void copy.copy(address)}
+          >
+            {copy.copied ? "Copied" : "Copy"}
+          </Button>
+        </ManualRow>
+      </ul>
+    </section>
   )
 }
 
@@ -211,315 +355,6 @@ function PreviewToolsRow() {
         />
       </SettingRow>
     </div>
-  )
-}
-
-function CloudQuickConnectPanel({
-  connection,
-}: {
-  connection: ConnectionInfo
-}) {
-  const [clientChoice, setClientChoice] = useState<
-    RemoteClientChoice | "antigravity" | "gemini-cli"
-  >("auto")
-  // Agents with a plugin install it: it carries Worktable's skills too. The
-  // plugins sign in to the account's default Worktable, so another
-  // Worktable's agents add its own address instead.
-  const url = connection.remoteMcpUrl
-  const reaches = pluginReaches(url)
-  const app =
-    clientChoice === "antigravity" || clientChoice === "gemini-cli"
-      ? clientChoice
-      : null
-  const plugin = app || !reaches ? null : codingPluginStep(clientChoice)
-  const step = app ? (reaches ? APP_STEPS[app] : ADDRESS_STEP) : plugin?.step
-  const command = app
-    ? reaches
-      ? appValue(app, url)
-      : url
-    : (plugin?.command ?? cloudConnectorCommand(url, clientChoice))
-  return (
-    <div className="flex flex-col gap-4">
-      <Select
-        value={clientChoice}
-        onValueChange={(value) =>
-          setClientChoice(
-            value as RemoteClientChoice | "antigravity" | "gemini-cli"
-          )
-        }
-      >
-        <SelectTrigger
-          aria-label="Cloud quick connect agent"
-          className="w-full sm:w-64"
-        >
-          <SelectValue>
-            {clientChoice === "auto"
-              ? "Detect installed agents"
-              : clientChoice === "antigravity" || clientChoice === "gemini-cli"
-                ? AGENT_PLATFORMS[clientChoice].name
-                : MCP_CLIENTS[clientChoice].label}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="auto">Detect installed agents</SelectItem>
-          {REMOTE_CLIENT_OPTIONS.map((client) => (
-            <SelectItem key={client.id} value={client.id}>
-              {client.label}
-            </SelectItem>
-          ))}
-          {(["antigravity", "gemini-cli"] as const).map((id) => (
-            <SelectItem key={id} value={id}>
-              {AGENT_PLATFORMS[id].name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {step ? <p className="text-sm text-muted-foreground">{step}</p> : null}
-      <Snippet code={command} onCopied={() => toast.success("Copied")} />
-    </div>
-  )
-}
-
-function CloudAlwaysOnPanel({
-  connection,
-  agent,
-}: {
-  connection: ConnectionInfo
-  agent: AlwaysOnAgent
-}) {
-  const connect = agent.cloudConnectCommand(connection.remoteMcpUrl)
-  const installCopy = useCopy(() => toast.success("Copied"))
-  const connectCopy = useCopy(() => toast.success("Copied"))
-  return (
-    <div className="flex flex-col gap-4">
-      <AlwaysOnSteps
-        agent={agent}
-        connectInstruction="Select Connect, then run the copied command."
-      />
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          onClick={() => void installCopy.copy(agent.installCommand)}
-        >
-          <Copy className="size-4" aria-hidden />
-          {installCopy.copied ? "Copied" : "Install"}
-        </Button>
-        <Button onClick={() => void connectCopy.copy(connect)}>
-          <Copy className="size-4" aria-hidden />
-          {connectCopy.copied ? "Copied" : "Connect"}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function CloudNativeAppsPanel({
-  connection,
-  active,
-}: {
-  connection: ConnectionInfo
-  active: boolean
-}) {
-  const [app, setApp] = useState<
-    "claude" | "chatgpt" | "grok-bot" | "gemini" | "perplexity"
-  >("claude")
-  const copied = () => toast.success("Copied")
-  return (
-    <div className="flex flex-col gap-3">
-      <AgentSetupTabs
-        value={app}
-        onValueChange={setApp}
-        options={CLOUD_CHAT_APP_OPTIONS}
-      />
-      {app === "grok-bot" ? (
-        <GrokBotSetupPanel connection={connection} open={active} />
-      ) : app === "chatgpt" ? (
-        <ol className="space-y-1">
-          <OfficialAppSteps app="chatgpt" first={1} active={active} offerOpen />
-        </ol>
-      ) : app !== "gemini" && !pluginReaches(connection.remoteMcpUrl) ? (
-        <>
-          <p className="text-sm text-muted-foreground">
-            {app === "claude" ? CLAUDE_CONNECTOR_STEP : ADDRESS_STEP}
-          </p>
-          <CopyField
-            label="MCP endpoint"
-            value={connection.remoteMcpUrl}
-            onCopied={copied}
-          />
-        </>
-      ) : app === "claude" ? (
-        <>
-          <p className="text-sm text-muted-foreground">{CLAUDE_PLUGIN_STEP}</p>
-          <CopyField
-            label="Marketplace"
-            value={CLAUDE_MARKETPLACE}
-            onCopied={copied}
-          />
-          <p className="text-xs text-muted-foreground">
-            On Claude’s Free plan,{" "}
-            <a
-              href={claudeConnectorLink(connection.remoteMcpUrl)}
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-primary-text hover:underline"
-            >
-              add Worktable as a connector
-            </a>{" "}
-            instead.
-          </p>
-        </>
-      ) : (
-        <>
-          <p className="text-sm text-muted-foreground">{APP_STEPS[app]}</p>
-          <CopyField
-            label={app === "gemini" ? "MCP endpoint" : "Plugin"}
-            value={appValue(app, connection.remoteMcpUrl)}
-            onCopied={copied}
-          />
-        </>
-      )}
-    </div>
-  )
-}
-
-/** On Cloud, Gemini and Perplexity join, before Grok Bot. */
-const CLOUD_CHAT_APP_OPTIONS = [
-  ...CHAT_APP_OPTIONS.filter((option) => option.value !== "grok-bot"),
-  ...(["gemini", "perplexity"] as const).map((platform) => ({
-    value: platform,
-    label: AGENT_PLATFORMS[platform].name,
-    platform,
-  })),
-  ...CHAT_APP_OPTIONS.filter((option) => option.value === "grok-bot"),
-]
-
-function CloudManualInstallPanel({
-  connection,
-}: {
-  connection: ConnectionInfo
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        Add this address as a custom connector or MCP server, then sign in.
-      </p>
-      <CopyField
-        label="MCP endpoint"
-        value={connection.remoteMcpUrl}
-        onCopied={() => toast.success("Copied")}
-      />
-    </div>
-  )
-}
-
-// ── Local/self-hosted setup disclosures ─────────────────────────────────────
-
-type AgentSetupCategoryId = keyof typeof AGENT_SETUP_CATEGORIES | "manual"
-type AlwaysOnChoice = AlwaysOnAgent["adapter"] | "grok-bot"
-
-function AgentSetupGroup({ connection }: { connection: ConnectionInfo }) {
-  const active = useSettingsSectionActive()
-  const helpEnabled = useHelpEnabled()
-  const cloud = connection.mcpAuthMode === "oauth"
-  const [open, setOpen] = useState<AgentSetupCategoryId | null>(null)
-  const [provider, setProvider] = useState<AlwaysOnChoice>("openclaw")
-  const [visited, setVisited] = useState<AlwaysOnChoice[]>(["openclaw"])
-  const categoryProps = (id: keyof typeof AGENT_SETUP_CATEGORIES) => ({
-    ...AGENT_SETUP_CATEGORIES[id],
-    open: open === id,
-    onOpenChange: (next: boolean) => setOpen(next ? id : null),
-    keepMounted: true,
-  })
-  return (
-    <section aria-label="Agent connections">
-      <div className="overflow-hidden rounded-xl card-surface">
-        <AgentSetupCategory {...categoryProps("code")}>
-          {cloud ? (
-            <CloudQuickConnectPanel connection={connection} />
-          ) : (
-            <QuickConnectPanel connection={connection} />
-          )}
-        </AgentSetupCategory>
-        <AgentSetupCategory {...categoryProps("chat")}>
-          {cloud ? (
-            <CloudNativeAppsPanel
-              connection={connection}
-              active={active && open === "chat"}
-            />
-          ) : (
-            <DesktopAppsPanel
-              connection={connection}
-              active={active && open === "chat"}
-            />
-          )}
-        </AgentSetupCategory>
-        <AgentSetupCategory
-          {...categoryProps("always")}
-          help={
-            helpEnabled ? (
-              <HelpIcon entry="alwaysOn" label="About Agent Replies" />
-            ) : undefined
-          }
-        >
-          <AgentSetupTabs
-            value={provider}
-            onValueChange={(value) => {
-              setProvider(value)
-              setVisited((previous) =>
-                previous.includes(value) ? previous : [...previous, value]
-              )
-            }}
-            options={AGENT_SETUP_CATEGORIES.always.platforms.map(
-              (platform) => ({
-                value: platform as AlwaysOnChoice,
-                label: AGENT_PLATFORMS[platform].name,
-                platform,
-              })
-            )}
-          />
-          {visited.map((value) => (
-            <div key={value} hidden={provider !== value}>
-              {value === "grok-bot" ? (
-                <GrokBotSetupPanel
-                  connection={connection}
-                  open={active && open === "always" && provider === value}
-                />
-              ) : (
-                (() => {
-                  const agent = ALWAYS_ON_AGENTS.find(
-                    (agent) => agent.adapter === value
-                  )!
-                  return cloud && !connection.agentPairing ? (
-                    <CloudAlwaysOnPanel connection={connection} agent={agent} />
-                  ) : (
-                    <AlwaysOnSetupPanel connection={connection} agent={agent} />
-                  )
-                })()
-              )}
-            </div>
-          ))}
-        </AgentSetupCategory>
-      </div>
-      <Collapsible
-        open={open === "manual"}
-        onOpenChange={(next) => setOpen(next ? "manual" : null)}
-      >
-        <CollapsibleTrigger className="mt-5 text-sm text-muted-foreground hover:text-foreground">
-          Using something else?{" "}
-          <span className="text-primary-text">Connect any MCP agent</span>
-        </CollapsibleTrigger>
-        <CollapsibleContent keepMounted>
-          <div className="pt-4">
-            {cloud ? (
-              <CloudManualInstallPanel connection={connection} />
-            ) : (
-              <ManualInstallPanel connection={connection} />
-            )}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    </section>
   )
 }
 
@@ -798,537 +633,6 @@ function PairingStatus({ session }: { session: PairingSession | undefined }) {
   )
 }
 
-function AlwaysOnSetupPanel({
-  connection,
-  agent,
-}: {
-  connection: ConnectionInfo
-  agent: AlwaysOnAgent
-}) {
-  const sectionActive = useSettingsSectionActive()
-  const queryClient = useQueryClient()
-  const [participantName, setParticipantName] = useState(agent.name)
-  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
-  const [pairing, setPairing] = useState<PairingCreated | null>(null)
-  const installCopy = useCopy(() => toast.success("Copied"))
-
-  const create = useMutation({
-    mutationFn: () =>
-      createPairing({
-        target: {
-          kind: "agent-adapter",
-          adapter: agent.adapter,
-          participantName: participantName.trim(),
-        },
-        access,
-      }),
-    onSuccess: setPairing,
-    onError: (error) =>
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : `Couldn’t create a ${agent.name} pairing.`
-      ),
-  })
-
-  const statusQuery = useQuery({
-    queryKey: ["pairing", pairing?.id],
-    queryFn: () => getPairing(pairing!.id),
-    enabled: sectionActive && pairing !== null,
-    refetchInterval: (query) =>
-      shouldPollPairing(query.state.data) ? 2_000 : false,
-  })
-  const session = statusQuery.data
-  useEffect(() => {
-    if (!session?.tokenId) return
-    void queryClient.invalidateQueries({ queryKey: ["tokens"] })
-    void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
-  }, [session?.tokenId, session?.status, queryClient])
-
-  const command = pairing
-    ? agent.localConnectCommand(pairing.serverOrigin, pairing.code)
-    : null
-
-  return (
-    <div className="flex flex-col gap-4">
-      <AlwaysOnSteps
-        agent={agent}
-        connectInstruction="Select Connect, then run the generated command."
-      />
-
-      <div className="max-w-sm">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">
-            Agent name
-          </span>
-          <Input
-            value={participantName}
-            maxLength={100}
-            onChange={(event) => {
-              setParticipantName(event.target.value)
-              setPairing(null)
-            }}
-            placeholder={agent.name}
-            disabled={create.isPending}
-          />
-        </label>
-      </div>
-
-      <AgentAccessFields
-        value={access}
-        onChange={(next) => {
-          setAccess(next)
-          setPairing(null)
-        }}
-        alwaysOn
-        disabled={create.isPending}
-      />
-
-      <RemoteAgentOriginWarning connection={connection} />
-
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          onClick={() => void installCopy.copy(agent.installCommand)}
-        >
-          <Copy className="size-4" aria-hidden />
-          {installCopy.copied ? "Copied" : "Install"}
-        </Button>
-        {!pairing ? (
-          <Button
-            onClick={() => create.mutate()}
-            disabled={create.isPending || !participantName.trim()}
-          >
-            {create.isPending ? "Connecting…" : "Connect"}
-          </Button>
-        ) : null}
-      </div>
-
-      {pairing ? (
-        <>
-          {command && (
-            <Snippet code={command} onCopied={() => toast.success("Copied")} />
-          )}
-          <p className="text-sm leading-5 text-muted-foreground">
-            One use. Expires in 15 minutes.
-          </p>
-          <AlwaysOnPairingStatus agent={agent} session={session} />
-          <div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => create.mutate()}
-              disabled={create.isPending}
-            >
-              New command
-            </Button>
-          </div>
-        </>
-      ) : null}
-    </div>
-  )
-}
-
-function AlwaysOnSteps({
-  agent,
-  connectInstruction,
-}: {
-  agent: AlwaysOnAgent
-  connectInstruction: string
-}) {
-  const restart = (
-    <li>
-      Restart the Gateway
-      {agent.restartBeforeConnect ? " if it doesn’t restart automatically" : ""}
-      :{" "}
-      <code className="inline-code-accent font-mono">
-        {agent.restartCommand}
-      </code>
-      .
-    </li>
-  )
-  return (
-    <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-foreground/60">
-      <li>Select Install, then run the copied command.</li>
-      {agent.restartBeforeConnect ? restart : null}
-      <li>{connectInstruction}</li>
-      {agent.restartBeforeConnect ? null : restart}
-    </ol>
-  )
-}
-
-function AlwaysOnPairingStatus({
-  agent,
-  session,
-}: {
-  agent: AlwaysOnAgent
-  session: PairingSession | undefined
-}) {
-  if (!session || session.status === "pending") {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" aria-hidden />
-        Waiting for {agent.name}…
-      </div>
-    )
-  }
-  if (session.status === "expired") {
-    return (
-      <Callout variant="warning">
-        This code expired before {agent.name} redeemed it.
-      </Callout>
-    )
-  }
-  if (session.status === "verified") {
-    return (
-      <Callout variant="success">
-        Connected
-        {session.redeemedBy?.hostname
-          ? ` on ${session.redeemedBy.hostname}`
-          : ""}
-        .
-      </Callout>
-    )
-  }
-  const failure = latestPairingFailure(session)
-  if (failure) {
-    return (
-      <Callout variant="danger">
-        {agent.name} setup failed
-        {failure.detail ? `: ${failure.detail}` : "."}
-      </Callout>
-    )
-  }
-  return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-      <Loader2 className="size-4 animate-spin" aria-hidden />
-      Finishing the connection…
-    </div>
-  )
-}
-
-// ── Desktop apps ------------------------------------------------------------
-
-type DesktopAppChoice = "claude-desktop" | "chatgpt-desktop" | "grok-bot"
-
-function DesktopAppsPanel({
-  connection,
-  active,
-}: {
-  connection: ConnectionInfo
-  active: boolean
-}) {
-  const sectionActive = useSettingsSectionActive()
-  const queryClient = useQueryClient()
-  const [app, setApp] = useState<DesktopAppChoice>("claude-desktop")
-  const [claudeToken, setClaudeToken] = useState<string | null>(null)
-  const [chatGptToken, setChatGptToken] = useState<string | null>(null)
-  const [chosenAccess, setAccess] = useState<AgentAccess | null>(null)
-
-  const { endpoint, needsToken } = desktopAgentConnectionDetails(connection)
-  const desktopApp = app === "grok-bot" ? null : app
-  // Connecting an app again is the same agent: start from its access.
-  const existing = useQuery({
-    queryKey: ["agent-connections", "app", app],
-    queryFn: () => getAppAgent(desktopApp!),
-    enabled: needsToken && desktopApp !== null,
-  })
-  const existingAgent = existing.data?.connection ?? null
-  // Until it is known whether the app is already an agent, its access is not:
-  // generating then could widen an agent its owner had limited.
-  const appKnown = existing.isSuccess
-  const access = chosenAccess ?? existingAgent?.access ?? DEFAULT_AGENT_ACCESS
-
-  const afterMint = () => {
-    void queryClient.invalidateQueries({ queryKey: ["tokens"] })
-    void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
-  }
-  const mintClaude = useMutation({
-    mutationFn: () => connectAgentApp({ client: "claude-desktop", access }),
-    onSuccess: (result) => {
-      setClaudeToken(result.token)
-      afterMint()
-    },
-    onError: (error) =>
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Couldn’t generate the Claude Desktop token."
-      ),
-  })
-  const mintChatGpt = useMutation({
-    mutationFn: () => connectAgentApp({ client: "chatgpt-desktop", access }),
-    onSuccess: (result) => {
-      setChatGptToken(result.token)
-      afterMint()
-    },
-    onError: (error) =>
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Couldn’t generate the ChatGPT token."
-      ),
-  })
-  const copied = () => toast.success("Copied")
-
-  const tabs = (
-    <AgentSetupTabs
-      value={app}
-      onValueChange={(value) => {
-        setApp(value)
-        setAccess(null)
-      }}
-      options={CHAT_APP_OPTIONS.map((option) => ({
-        ...option,
-        value:
-          option.value === "grok-bot"
-            ? option.value
-            : (`${option.value}-desktop` as const),
-      }))}
-    />
-  )
-  if (app === "grok-bot")
-    return (
-      <div className="flex flex-col gap-4">
-        {tabs}
-        <GrokBotSetupPanel connection={connection} open={active} />
-      </div>
-    )
-
-  return (
-    <div className="flex flex-col gap-4">
-      {tabs}
-
-      <ChatAppWays
-        app={app === "claude-desktop" ? "claude" : "chatgpt"}
-        active={sectionActive}
-        local={
-          app === "claude-desktop" ? (
-            <article className="flex flex-col gap-4">
-              <div>
-                <a
-                  href="/integrations/claude-desktop.mcpb"
-                  download="worktable-claude-desktop.mcpb"
-                  className={buttonVariants()}
-                >
-                  <Download className="size-4" aria-hidden />
-                  Download extension
-                </a>
-              </div>
-
-              <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-foreground/60">
-                <li>
-                  Download and open the extension, then approve installation.
-                </li>
-                <li>Paste the MCP endpoint shown below.</li>
-                <li>
-                  {needsToken
-                    ? "Generate an access token and paste it into the extension."
-                    : "Leave the optional access token blank for this same-machine connection."}
-                </li>
-                <li>
-                  Restart Claude, then ask it to list the Worktable tools.
-                </li>
-              </ol>
-
-              <CopyField
-                label="MCP endpoint"
-                value={endpoint}
-                onCopied={copied}
-              />
-
-              {needsToken ? (
-                claudeToken ? (
-                  <div className="flex flex-col gap-2">
-                    <SecretReveal secret={claudeToken} onCopied={copied} />
-                    <Callout variant="info">
-                      This token is shown once. Updating or revoking it requires
-                      replacing the value in Claude Desktop.
-                    </Callout>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    <AgentAccessFields
-                      value={access}
-                      onChange={setAccess}
-                      disabled={mintClaude.isPending || !appKnown}
-                    />
-                    {existing.isError ? (
-                      <Callout variant="danger">
-                        Couldn’t check whether this app is already connected.{" "}
-                        <button
-                          type="button"
-                          className="font-medium underline underline-offset-2"
-                          onClick={() => void existing.refetch()}
-                        >
-                          Try again
-                        </button>
-                      </Callout>
-                    ) : null}
-                    {existingAgent ? (
-                      <p className="text-xs text-muted-foreground">
-                        Already connected as {existingAgent.displayName}. A new
-                        token joins it.
-                      </p>
-                    ) : null}
-                    <div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => mintClaude.mutate()}
-                        disabled={
-                          mintClaude.isPending ||
-                          !appKnown ||
-                          !(access.threads || access.read || access.edit)
-                        }
-                      >
-                        {mintClaude.isPending
-                          ? "Generating…"
-                          : "Create Access Token"}
-                      </Button>
-                    </div>
-                  </div>
-                )
-              ) : null}
-            </article>
-          ) : (
-            <article className="flex flex-col gap-4">
-              <LocalChatSteps app="chatgpt" token={needsToken} />
-
-              <CopyField
-                label="MCP endpoint"
-                value={endpoint}
-                onCopied={copied}
-              />
-
-              {needsToken ? (
-                chatGptToken ? (
-                  <div className="flex flex-col gap-2">
-                    <SecretReveal secret={chatGptToken} onCopied={copied} />
-                    <Callout variant="info">
-                      This token is shown once. Revoke it under Connections and
-                      replace it in ChatGPT when needed.
-                    </Callout>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    <AgentAccessFields
-                      value={access}
-                      onChange={setAccess}
-                      disabled={mintChatGpt.isPending || !appKnown}
-                    />
-                    {existing.isError ? (
-                      <Callout variant="danger">
-                        Couldn’t check whether this app is already connected.{" "}
-                        <button
-                          type="button"
-                          className="font-medium underline underline-offset-2"
-                          onClick={() => void existing.refetch()}
-                        >
-                          Try again
-                        </button>
-                      </Callout>
-                    ) : null}
-                    {existingAgent ? (
-                      <p className="text-xs text-muted-foreground">
-                        Already connected as {existingAgent.displayName}. A new
-                        token joins it.
-                      </p>
-                    ) : null}
-                    <div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => mintChatGpt.mutate()}
-                        disabled={
-                          mintChatGpt.isPending ||
-                          !appKnown ||
-                          !(access.threads || access.read || access.edit)
-                        }
-                      >
-                        {mintChatGpt.isPending
-                          ? "Generating…"
-                          : "Create Access Token"}
-                      </Button>
-                    </div>
-                  </div>
-                )
-              ) : null}
-
-              <Callout variant="info">
-                Codex and ChatGPT share MCP settings. Already connected in
-                Codex? Restart ChatGPT.
-              </Callout>
-            </article>
-          )
-        }
-      />
-    </div>
-  )
-}
-
-// ── Manual setup (fallback for locked-down machines) ─────────────────────────
-
-function ManualInstallPanel({ connection }: { connection: ConnectionInfo }) {
-  const queryClient = useQueryClient()
-  const [access, setAccess] = useState<AgentAccess>(DEFAULT_AGENT_ACCESS)
-  // Keep the one-time secret in this mounted panel, never in persisted state.
-  const [token, setToken] = useState<string | null>(null)
-  const mint = useMutation({
-    mutationFn: () =>
-      connectAgentApp({ client: null, displayName: "My agent", access }),
-    onSuccess: (result) => {
-      setToken(result.token)
-      void queryClient.invalidateQueries({ queryKey: ["tokens"] })
-      void queryClient.invalidateQueries({ queryKey: ["agent-connections"] })
-    },
-    onError: (error) =>
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Couldn’t create an access token."
-      ),
-  })
-  const endpoint = desktopAgentConnectionDetails(connection).endpoint
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">
-        Add Worktable to your agent as an MCP server with this address and an
-        access token.
-      </p>
-      <CopyField label="MCP endpoint" value={endpoint} />
-      {token ? (
-        <>
-          <Callout variant="info">
-            Copy the token now. It isn’t shown again.
-          </Callout>
-          <CopyField label="Access token" value={token} />
-        </>
-      ) : (
-        <>
-          <AgentAccessFields
-            value={access}
-            onChange={setAccess}
-            disabled={mint.isPending}
-          />
-          <div>
-            <Button
-              variant="outline"
-              disabled={
-                mint.isPending ||
-                !(access.threads || access.read || access.edit)
-              }
-              onClick={() => mint.mutate()}
-            >
-              {mint.isPending ? "Creating…" : "Create access token"}
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
-
 // ── Connected agents ---------------------------------------------------------
 
 /** The agent's one name; Cloud's inventory still reports it beside a platform label. */
@@ -1340,7 +644,12 @@ function agentConnectionName(connection: AgentConnection): string {
   )
 }
 
-export function ConnectedAgentsGroup() {
+export function ConnectedAgentsGroup({
+  settingUp,
+}: {
+  /** Agents still being set up in their card, listed once it's done. */
+  settingUp?: Set<string>
+} = {}) {
   const sectionActive = useSettingsSectionActive()
   const queryClient = useQueryClient()
   const systemConnection = useQuery({
@@ -1429,7 +738,9 @@ export function ConnectedAgentsGroup() {
   const [grokOpen, setGrokOpen] = useState(false)
   const [confirmingGrok, setConfirmingGrok] = useState(false)
   const appChoices = useAppChoices(sectionActive)
-  const connections = connectionsQuery.data?.connections ?? []
+  const connections = (connectionsQuery.data?.connections ?? []).filter(
+    (connection) => !settingUp?.has(connection.id)
+  )
   const grokBots = connectionsQuery.data?.grokBots ?? []
   const candidates = connectionsQuery.data?.grokBotCandidates ?? []
   const botForConnection = (connection: AgentConnection) =>
@@ -1472,7 +783,7 @@ export function ConnectedAgentsGroup() {
   return (
     <section className="flex flex-col gap-3" aria-labelledby="connected-agents">
       <h3 id="connected-agents" className="text-sm font-medium text-foreground">
-        Connected agents
+        Connected Agents
       </h3>
       <Card>
         <CardContent>
@@ -1638,14 +949,13 @@ export function ConnectedAgentsGroup() {
           <ResponsiveDialogFooter>
             {/* Cloud holds a Link sign-in, so it's managed there. */}
             {editingConnection?.link && (
-              <a
+              <ExternalButton
                 href={editingConnection.link.manageUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm text-muted-foreground hover:text-foreground sm:mr-auto sm:self-center"
+                size="default"
+                className="sm:mr-auto"
               >
                 Manage in Cloud
-              </a>
+              </ExternalButton>
             )}
             {editingConnection &&
               !editingConnection.link &&

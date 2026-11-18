@@ -56,6 +56,21 @@ export const threadQueryKeys = {
 }
 
 /**
+ * Every list a thread at this location can be in: here and workspace-wide,
+ * in the lists or in the archive. A message or a Keep or Archive choice can
+ * move it from one to another.
+ */
+export function threadListKeys(
+  location: ThreadLocation
+): Array<readonly string[]> {
+  const scopes: ThreadListScope[] = [{ kind: "all" }, location]
+  return scopes.flatMap((scope) => [
+    threadQueryKeys.list(scope),
+    threadQueryKeys.archivedList(scope),
+  ])
+}
+
+/**
  * The threads in lists now, or the archived ones, which are read only when
  * someone opens the Archived view.
  */
@@ -198,8 +213,7 @@ export function useThreadMutations(location: ThreadLocation) {
   const refresh = (target: ThreadLocation, threadId?: string) => {
     if (threadChangesLive(target)) return
     for (const queryKey of [
-      threadQueryKeys.list({ kind: "all" }),
-      threadQueryKeys.list(target),
+      ...threadListKeys(target),
       ...(threadId ? [threadQueryKeys.detail(target, threadId)] : []),
     ]) {
       void queryClient.invalidateQueries({ queryKey, exact: true })

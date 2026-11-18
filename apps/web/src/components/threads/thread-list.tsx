@@ -377,7 +377,12 @@ function threadLinkElement(target: ThreadLinkTarget, active: boolean) {
       aria-current={current}
     />
   ) : (
-    <Link to={target.to} params={target.params} aria-current={current} />
+    <Link
+      to={target.to}
+      params={target.params}
+      search={target.search}
+      aria-current={current}
+    />
   )
 }
 

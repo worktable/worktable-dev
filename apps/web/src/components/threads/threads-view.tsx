@@ -616,13 +616,22 @@ function ThreadDetail({
           idempotencyKey: submission.idempotencyKey,
         })
         const target = threadLink(result.location, result.threadId)
+        // A thread just started is not in the archive, so leave that view.
+        const { view, ...rest } = target.search
+        const leavingArchive = view === "archived"
         void (target.to === "/threads/$"
           ? navigate({
               to: target.to,
               params: target.params,
-              search: target.search,
+              search: leavingArchive
+                ? (rest as typeof target.search)
+                : target.search,
             })
-          : navigate({ to: target.to, params: target.params }))
+          : navigate({
+              to: target.to,
+              params: target.params,
+              search: leavingArchive ? {} : target.search,
+            }))
       }
 
       commitDrafts((current) => {

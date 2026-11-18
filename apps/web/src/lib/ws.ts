@@ -21,7 +21,7 @@ import {
 } from "./documents-queries"
 import { patchDocumentRevision } from "./document-rows"
 import { recentQueryKeys } from "./lifetime"
-import { threadQueryKeys } from "./threads-queries"
+import { threadListKeys, threadQueryKeys } from "./threads-queries"
 import { refreshLive } from "./live-refresh"
 import { noteNavigationChanged } from "./personal-navigation"
 import { noteSetupChanged } from "./setup"
@@ -205,6 +205,10 @@ export async function reconcileSpaceThreadQueries(
           exact: true,
         }),
         queryClient.invalidateQueries({
+          queryKey: threadQueryKeys.archivedList(location),
+          exact: true,
+        }),
+        queryClient.invalidateQueries({
           queryKey: threadQueryKeys.detail(location, threadId),
           exact: true,
         }),
@@ -384,10 +388,10 @@ export function applyThreadEvent(
   scope: ThreadLocation | null
 ): void {
   const location = messageLocation(message, scope ?? { kind: "worktable" })
-  const lists = [
-    { queryKey: threadQueryKeys.list({ kind: "all" }), exact: true },
-    { queryKey: threadQueryKeys.list(location), exact: true },
-  ]
+  const lists = threadListKeys(location).map((queryKey) => ({
+    queryKey,
+    exact: true,
+  }))
   const pending = { queryKey: activityQueryKeys.pending }
   const activity = { queryKey: activityQueryKeys.all }
   if (message.type === "thread_activity") {

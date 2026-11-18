@@ -14,7 +14,7 @@ import {
 import { fetchJSON } from "./http"
 import type { ThreadListView } from "./thread-list-view"
 import { threadBase } from "./threads-api"
-import { threadQueryKeys } from "./threads-queries"
+import { threadListKeys, threadQueryKeys } from "./threads-queries"
 
 function setThreadLifetime(
   location: ThreadLocation,
@@ -80,13 +80,8 @@ export function useThreadLifetime(location: ThreadLocation) {
             : current
       )
       // The choice moves the thread between the lists and the archive.
-      for (const scope of [{ kind: "all" } as const, location]) {
-        for (const queryKey of [
-          threadQueryKeys.list(scope),
-          threadQueryKeys.archivedList(scope),
-        ]) {
-          void queryClient.invalidateQueries({ queryKey, exact: true })
-        }
+      for (const queryKey of threadListKeys(location)) {
+        void queryClient.invalidateQueries({ queryKey, exact: true })
       }
     },
   })

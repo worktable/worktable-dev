@@ -1,5 +1,9 @@
 import { z } from "zod"
-import { THREAD_QUIET_DAYS, THREAD_TITLE_MAX_LENGTH } from "./constants"
+import {
+  THREAD_LIFETIME_STATES,
+  THREAD_TITLE_MAX_LENGTH,
+  type ThreadLifetimeChoice,
+} from "./constants"
 
 export const THREAD_IDENTITY_NAME_MAX_LENGTH = 120
 export const ThreadTitleSchema = z
@@ -24,22 +28,7 @@ export const ThreadMessageIdSchema = z
   .string()
   .regex(/^msg_[A-Za-z0-9_-]{12,}$/)
 
-/**
- * What someone last chose for a thread's place in lists. Without a choice a
- * thread is temporary from its last message.
- * - kept: stays in lists however quiet it gets.
- * - archived: out of lists until its next message.
- * - temporary: back to the usual rule, counting quiet days from `at`.
- */
-export const ThreadLifetimeStateSchema = z.enum([
-  "kept",
-  "archived",
-  "temporary",
-])
-export const ThreadLifetimeChoiceSchema = z.object({
-  state: ThreadLifetimeStateSchema,
-  at: z.string(),
-})
+export const ThreadLifetimeStateSchema = z.enum(THREAD_LIFETIME_STATES)
 export const ConversationIdentityIdSchema = z
   .string()
   .regex(/^idt_[A-Za-z0-9_-]{12,}$/)
@@ -527,8 +516,6 @@ export type ThreadResponseRequest = z.infer<typeof ThreadResponseRequestSchema>
 export type ThreadMessageV3 = z.infer<typeof ThreadMessageV3Schema>
 export type ThreadMessage = ThreadMessageV3
 export type ThreadLocation = z.infer<typeof ThreadLocationSchema>
-export type ThreadLifetimeState = z.infer<typeof ThreadLifetimeStateSchema>
-export type ThreadLifetimeChoice = z.infer<typeof ThreadLifetimeChoiceSchema>
 export type ThreadV1 = z.infer<typeof ThreadV1Schema>
 export type ThreadV2 = z.infer<typeof ThreadV2Schema>
 export type ThreadV3 = z.infer<typeof ThreadV3Schema>
@@ -537,42 +524,6 @@ export type Thread = ThreadV3
 export type PortableThread = z.infer<typeof PortableThreadSchema>
 export type ThreadDeliveryState = z.infer<typeof ThreadDeliveryStateSchema>
 export type ThreadActivity = z.infer<typeof ThreadActivitySchema>
-
-/**
- * Where a thread file keeps its lifetime choice: a namespaced key beside the
- * portable fields, so other tools' metadata is never mistaken for it.
- */
-export const THREAD_LIFETIME_KEY = "worktable.threadLifetime"
-
-/** A thread's lifetime choice; undefined when unset or not understood. */
-export function threadLifetimeChoice(
-  thread: Record<string, unknown>
-): ThreadLifetimeChoice | undefined {
-  return ThreadLifetimeChoiceSchema.safeParse(thread[THREAD_LIFETIME_KEY]).data
-}
-
-const THREAD_QUIET_MS = THREAD_QUIET_DAYS * 86_400_000
-
-/**
- * Whether a thread has left lists: someone archived it and nothing was posted
- * since, or it has been quiet for THREAD_QUIET_DAYS. A kept thread never
- * leaves, and a new message always brings a thread back.
- */
-export function isThreadArchived(
-  thread: { lastMessageAt: string; lifetime?: ThreadLifetimeChoice },
-  nowMs: number
-): boolean {
-  const choice = thread.lifetime
-  if (choice?.state === "kept") return false
-  const lastMessageMs = Date.parse(thread.lastMessageAt)
-  const chosenMs = choice ? Date.parse(choice.at) : Number.NaN
-  if (choice?.state === "archived" && !(lastMessageMs > chosenMs)) return true
-  const quietSinceMs =
-    choice?.state === "temporary" && chosenMs > lastMessageMs
-      ? chosenMs
-      : lastMessageMs
-  return nowMs - quietSinceMs >= THREAD_QUIET_MS
-}
 
 export function threadLocation(thread: PortableThread): ThreadLocation {
   return thread.version === 1

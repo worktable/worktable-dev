@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
-  isThreadArchived,
+  isStoredThreadArchived,
   THREAD_LIFETIME_KEY,
   threadLifetimeChoice,
   type Thread,
@@ -46,15 +46,9 @@ export function threadLifetime(
   nowMs: number
 ): { choice?: ThreadLifetimeChoice; archived: boolean } {
   const choice = threadLifetimeChoice(thread)
-  const lastMessage = thread.messages.at(-1)
   return {
     ...(choice ? { choice } : {}),
-    archived: lastMessage
-      ? isThreadArchived(
-          { lastMessageAt: lastMessage.createdAt, lifetime: choice },
-          nowMs
-        )
-      : false,
+    archived: isStoredThreadArchived(thread, nowMs),
   }
 }
 

@@ -25,6 +25,7 @@ import type {
 } from "@worktable/types"
 import {
   defaultConversationIdentityId,
+  isStoredThreadArchived,
   isThreadArchived,
   threadLifetimeChoice,
   threadLocation,
@@ -1431,10 +1432,7 @@ export async function setThreadLifetimeChoice(input: {
     threadId: thread.id,
     revision: thread.revision,
     lifetime,
-    archived: isThreadArchived(
-      { lastMessageAt: thread.messages.at(-1)!.createdAt, lifetime },
-      Date.now()
-    ),
+    archived: isStoredThreadArchived(thread, Date.now()),
   }
 }
 

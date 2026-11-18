@@ -52,7 +52,7 @@ import type {
   ThreadListItem,
   AgentConnectionInventory,
 } from "@worktable/types"
-import { threadLocationKey } from "@worktable/types"
+import { isStoredThreadArchived, threadLocationKey } from "@worktable/types"
 
 /** Delivery activity changes only a Grok Bot's status. */
 function refreshGrokConnections(queryClient: QueryClient): void {
@@ -183,6 +183,9 @@ export function pruneInvisibleThreadDetails(
   })) {
     const threadId = threadDetailId(queryKey, spaceId)
     if (!threadId || visibleIds.has(threadId)) continue
+    // An archived thread is out of the list but still there to read.
+    const cached = queryClient.getQueryData<ThreadReadResult>(queryKey)
+    if (cached && isStoredThreadArchived(cached.thread, Date.now())) continue
     void queryClient.resetQueries({
       queryKey: threadQueryKeys.detail(location, threadId),
       exact: true,

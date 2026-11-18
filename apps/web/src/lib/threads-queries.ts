@@ -285,7 +285,9 @@ export function useThreadMutations(location: ThreadLocation) {
     }),
     create: useMutation({
       mutationFn: (input: {
-        to: string
+        to?: string
+        notifyIdentityIds?: string[]
+        responseIdentityId?: string | null
         body: string
         idempotencyKey: string
       }) => createThread(location, input),

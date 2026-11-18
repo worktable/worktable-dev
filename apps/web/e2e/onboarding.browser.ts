@@ -492,6 +492,11 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
 test("a new owner creates their Worktable, connects agents and finishes their first steps in Getting Started", async ({
   page,
 }) => {
+  // Earlier journeys share this server; this one starts with an unnamed Worktable.
+  const reset = await page.request.put(`${harness.apiUrl}/api/workspace`, {
+    data: { name: "My Workspace" },
+  })
+  expect(reset.ok()).toBe(true)
   await setWelcomed(false)
   await page.goto(appUrl(), { waitUntil: "domcontentloaded" })
   await expect(page.locator("body")).toHaveClass(/loaded/, { timeout: 30_000 })
@@ -500,7 +505,11 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     page.getByRole("heading", { name: "Create your Worktable" })
   ).toBeVisible()
   await page.getByLabel("Your name").fill("Alex")
+  await expect(page.getByLabel("Worktable name")).toHaveValue("Alex's Worktable")
   await page.getByLabel("Worktable name").fill("Alex Worktable")
+  await page.getByLabel("Your name").fill("Alex Smith")
+  await expect(page.getByLabel("Worktable name")).toHaveValue("Alex Worktable")
+  await page.getByLabel("Your name").fill("Alex")
   await page.getByRole("button", { name: "Create Worktable" }).click()
 
   // The welcome opens over Connect Your Agent once, and closing it lands there.
@@ -518,6 +527,18 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
   await expect(
     page.getByRole("heading", { name: "Connect your agent" })
   ).toBeVisible()
+  await page.getByRole("button", { name: "Back", exact: true }).click()
+  for (const chosen of ["My Workspace", "Local Workspace"]) {
+    await page.getByLabel("Worktable name").fill(chosen)
+    await page.getByRole("button", { name: "Create Worktable" }).click()
+    await expect(page.getByRole("heading", { name: "Connect your agent" })).toBeVisible()
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await page.getByRole("button", { name: "Back", exact: true }).click()
+    await expect(page.getByLabel("Worktable name")).toHaveValue(chosen)
+  }
+  await page.getByLabel("Worktable name").fill("Alex Worktable")
+  await page.getByRole("button", { name: "Create Worktable" }).click()
+  await expect(page.getByRole("heading", { name: "Connect your agent" })).toBeVisible()
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(
     page.getByRole("heading", { name: "Connect your agent" })
@@ -541,6 +562,48 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     timeout: 10_000,
   })
 
+  const rules = page.getByRole("region", { name: "Agent rules", exact: true })
+  await expect(rules.getByText("~/.codex/AGENTS.md")).toBeVisible()
+  await expect(rules.getByText("~/.claude/CLAUDE.md")).toHaveCount(0)
+  // Copying does not complete the task; the owner confirms they added the rules.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: new URL(page.url()).origin,
+  })
+  await rules.getByRole("button", { name: "Copy", exact: true }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+    "I keep my work in Worktable."
+  )
+  await expect(page.getByText("~/.codex/AGENTS.md")).toBeVisible()
+  // Either failed write must leave confirmation available to retry.
+  let failedHelp = false
+  let failedSetup = false
+  await page.route("**/api/profile/help", async (route) => {
+    if (!failedHelp && route.request().postDataJSON()?.evidence === "rules-added") {
+      failedHelp = true
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Try again" }) })
+      return
+    }
+    await route.continue()
+  })
+  await page.route("**/api/profile/setup", async (route) => {
+    if (!failedSetup && route.request().postDataJSON()?.done === "agent-instructions") {
+      failedSetup = true
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Try again" }) })
+      return
+    }
+    await route.continue()
+  })
+  await rules.getByRole("button", { name: "I Added It", exact: true }).click()
+  await expect.poll(() => failedHelp).toBe(true)
+  await expect(rules.getByRole("button", { name: "I Added It", exact: true })).toBeEnabled()
+  expect(failedSetup).toBe(false)
+  await rules.getByRole("button", { name: "I Added It", exact: true }).click()
+  await expect.poll(() => failedSetup).toBe(true)
+  await expect(rules.getByRole("button", { name: "I Added It", exact: true })).toBeEnabled()
+  await rules.getByRole("button", { name: "I Added It", exact: true }).click()
+  await expect(rules.getByRole("button", { name: "Added", exact: true })).toBeDisabled()
+  await page.unroute("**/api/profile/help")
+  await page.unroute("**/api/profile/setup")
   await waitForPairingCreate(page, () =>
     page.getByRole("button", { name: /Always-on agents/ }).click()
   )
@@ -564,26 +627,9 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     page.getByRole("heading", { name: "Getting Started" })
   ).toBeVisible()
   await expect(
-    page.getByRole("link", { name: /Getting Started\s*1\/3/ })
-  ).toBeVisible()
-
-  // Copying the instructions doesn't add them anywhere: the step finishes
-  // when the owner says they added them, and the next step opens.
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: new URL(page.url()).origin,
-  })
-  await page.getByRole("button", { name: "Copy", exact: true }).click()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
-    "I keep my work in Worktable."
-  )
-  await expect(page.getByText("~/.codex/AGENTS.md")).toBeVisible()
-  await expect(
-    page.getByRole("link", { name: /Getting Started\s*1\/3/ })
-  ).toBeVisible()
-  await page.getByRole("button", { name: "I Added It", exact: true }).click()
-  await expect(
     page.getByRole("link", { name: /Getting Started\s*2\/3/ })
   ).toBeVisible()
+
   await expect(
     page.getByText(/^Research \[topic\] and set up a Space in Worktable/)
   ).toBeVisible()

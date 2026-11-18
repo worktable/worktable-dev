@@ -11,7 +11,7 @@ import {
 import { existsSync, mkdirSync, rmdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { defaultConversationIdentityId } from "@worktable/types"
+import { defaultConversationIdentityId, prospectiveDefaultConversationIdentities } from "@worktable/types"
 import { createToken, revokeToken, type TokenIdentity } from "./token-store.ts"
 import { setAppDirOverride } from "./app-storage.ts"
 import { upsertAgentConnection } from "./agent-connection-store.ts"
@@ -222,6 +222,86 @@ describe("thread service", () => {
         ])
       )
     ).toEqual({ Atlas: true, Finn: false })
+  })
+
+  for (const location of [{ kind: "worktable" } as const, { kind: "space", spaceId: "connected-agents" } as const]) {
+    it(`starts an unaddressed ${location.kind} thread, preserves retries and lets others join later`, async () => {
+      const input = {
+        location,
+        body: "Notes before choosing an agent",
+        idempotencyKey: `unaddressed-${location.kind}`,
+        waitSeconds: 25,
+      }
+      const created = await postThreadMessage(owner, input)
+      expect(created).toMatchObject({ createdThread: true, timedOut: false, replies: [] })
+      expect(created.activity).toBeUndefined()
+      const page = await readThreadMessages(owner, created.threadId, { location })
+      expect(page.thread.members.map((member) => member.kind)).toEqual(["human"])
+      expect(page.messages[0]!.responseRequest).toBeUndefined()
+      expect(page.messages[0]!.notifyIdentityIds).toEqual([])
+      expect(await claimNextThreadDelivery(atlas, 0, 2)).toBeNull()
+
+      const followup = { location, threadId: created.threadId, body: "More notes", idempotencyKey: `more-${location.kind}` }
+      const replied = await postThreadMessage(owner, followup)
+      expect((await postThreadMessage(owner, followup)).messageId).toBe(replied.messageId)
+      expect(replied.activity).toBeUndefined()
+
+      // Another authorized participant can discover and join an unaddressed thread.
+      expect((await listThreadSummaries(atlas, location)).some((thread) => thread.id === created.threadId)).toBe(true)
+      await postThreadMessage(atlas, { ...followup, body: "Joining the conversation", idempotencyKey: `joined-${location.kind}`, notifyIdentityIds: [], responseIdentityId: null })
+      expect((await postThreadMessage(owner, input)).messageId).toBe(created.messageId)
+      expect((await postThreadMessage(owner, followup)).messageId).toBe(replied.messageId)
+      await expect(postThreadMessage(owner, { ...input, body: "Changed notes" })).rejects.toThrow("Idempotency key")
+      await expect(postThreadMessage(owner, { ...followup, body: "Changed follow-up" })).rejects.toThrow("Idempotency key")
+
+      // Later addressing keeps the usual response and delivery behavior.
+      const ask = { ...followup, body: "Now please help", idempotencyKey: `ask-${location.kind}`, waitSeconds: 0 }
+      const addressed = await postThreadMessage(owner, ask)
+      expect(addressed.activity?.state).toBe("queued")
+      await postThreadMessage(mara, { ...followup, body: "Joining too", idempotencyKey: `joined-mara-${location.kind}`, notifyIdentityIds: [], responseIdentityId: null })
+      expect((await postThreadMessage(owner, followup)).messageId).toBe(replied.messageId)
+      expect((await postThreadMessage(owner, ask)).messageId).toBe(addressed.messageId)
+      await expect(postThreadMessage(owner, { ...ask, idempotencyKey: `ambiguous-${location.kind}` })).rejects.toThrow("A recipient is required")
+    })
+  }
+
+  it("starts a multi-mention thread with only its chosen responder queued", async () => {
+    const offered = await listThreadParticipants(owner, { kind: "worktable" })
+    const identities = prospectiveDefaultConversationIdentities([], offered)
+    const finnId = identities.find((identity) => identity.name === "Finn")!.id
+    const atlasId = identities.find((identity) => identity.name === "Atlas")!.id
+    const input = {
+      location: { kind: "worktable" } as const,
+      to: "Atlas",
+      body: "@Finn and @Atlas, review this together.",
+      idempotencyKey: "multi-mention-create",
+      notifyIdentityIds: [finnId, atlasId],
+      responseIdentityId: atlasId,
+      waitSeconds: 0,
+    }
+    const created = await postThreadMessage(owner, input)
+    const read = await readThreadMessages(owner, created.threadId)
+    expect(read.thread.members.map((member) => member.name).sort()).toEqual(["Atlas", "Finn", "Owner"])
+    expect(read.messages[0]!.notifyIdentityIds).toEqual([finnId])
+    expect(read.messages[0]!.responseRequest).toMatchObject({ identityId: atlasId, status: "open" })
+    expect(await claimNextThreadDelivery(finn, 0, 2)).toBeNull()
+    expect((await claimNextThreadDelivery(atlas, 0, 2))?.messageId).toBe(created.messageId)
+    expect((await postThreadMessage(owner, input)).messageId).toBe(created.messageId)
+
+    // A prospective alias must survive even when its namesake is not selected.
+    await resolveParticipant({ ...mara, principal: { ...mara.principal, displayName: "Finn" } }, { name: "Finn" })
+    const choices = prospectiveDefaultConversationIdentities([], await listThreadParticipants(owner))
+    const duplicate = choices.find((identity) => identity.name === "Finn (2)")!
+    const passive = await postThreadMessage(owner, {
+      body: `@${duplicate.name}, keeping you informed.`,
+      idempotencyKey: "aliased-creation",
+      location: { kind: "worktable" },
+      notifyIdentityIds: [duplicate.id], responseIdentityId: null,
+    })
+    const saved = await readThreadMessages(owner, passive.threadId)
+    expect(saved.thread.identities.find((identity) => identity.id === duplicate.id)?.name).toBe(duplicate.name)
+    expect(saved.thread.members).toHaveLength(2)
+    expect(saved.messages[0]!.responseRequest).toBeUndefined()
   })
 
   it("keeps Worktable deliveries from legacy adapters until they opt into V2 locations", async () => {

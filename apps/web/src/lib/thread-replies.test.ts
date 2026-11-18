@@ -114,16 +114,19 @@ describe("thread reply targeting", () => {
     ).toBe("msg_forother123456")
   })
 
-  test("replaces a participant selection that is no longer discoverable", () => {
+  test("keeps unaddressed threads unaddressed and clears unavailable selections", () => {
+    const participants = [
+      { id: "ptc_firstagent", kind: "agent" as const, name: "Finn" },
+      { id: "ptc_secondagent", kind: "agent" as const, name: "Atlas" },
+    ]
+    expect(availableParticipantSelection(participants, "")).toBe("")
+    expect(availableParticipantSelection(participants, "ptc_secondagent")).toBe("ptc_secondagent")
     expect(
       availableParticipantSelection(
-        [
-          { id: "ptc_firstagent", kind: "agent", name: "Finn" },
-          { id: "ptc_secondagent", kind: "agent", name: "Atlas" },
-        ],
+        participants,
         "ptc_revokedagent"
       )
-    ).toBe("ptc_firstagent")
+    ).toBe("")
     expect(availableParticipantSelection([], "ptc_revokedagent")).toBe("")
   })
 })

@@ -107,7 +107,9 @@ export function readThreadMessage(
 export function createThread(
   location: ThreadLocation,
   input: {
-    to: string
+    to?: string
+    notifyIdentityIds?: string[]
+    responseIdentityId?: string | null
     body: string
     idempotencyKey: string
     waitSeconds?: number

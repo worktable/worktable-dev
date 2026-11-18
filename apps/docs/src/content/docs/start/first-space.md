@@ -14,6 +14,11 @@ to invite anyone. If your agent connected before you first opened your
 Worktable, as when you start from ChatGPT or another app, there is no setup:
 the link your agent gave you opens what it made.
 
+The name starts as your first name followed by **'s Worktable**; you can edit
+it. After connecting an agent, setup shows the global rules to copy and where
+that agent keeps them. Choose **I Added It** after adding the rules; copying
+alone does not complete the step.
+
 Setup that starts on Home ends in the **Getting Started** Space, which stays at
 the top of the sidebar until you remove it. Setup that starts on another page
 returns to that page.
@@ -24,9 +29,10 @@ Its home lists your first steps, and each one ticks off when it happens:
 - **Add Worktable to your agent's global rules.** Copy the line it gives you
   into the rules your agent reads in every chat, so you don't have to say "in
   Worktable" each time.
-- **Set up your first Space.** Copy a prompt, such as one that sets up a Space
-  for your current project. It ticks off when your agent saves work in a Space
-  of your own.
+- **Set up your first Space.** Copy one prompt into your connected agent's
+  chat. Choose a project, personal work, or weekly plan; the prompt asks for
+  the context it needs first. It ticks off when your agent saves work in a
+  Space of your own.
 - **Invite your team** (owners only, can be skipped).
 
 Each person has their own list.

@@ -42,6 +42,8 @@ type Step = "create" | "connect" | "invite"
 interface SetupDraft {
   step: Step
   setups: SetupRecord[]
+  /** Preserve the chosen name when returning to Create, even if it is a default. */
+  created?: true
   invited?: Invited[]
   /** Addresses typed before leaving to pay for a plan, sent on return. */
   pendingEmails?: string[]
@@ -69,6 +71,9 @@ function readDraft(workspaceId: string): SetupDraft {
     return {
       step: isStep(value.step) ? value.step : "create",
       setups: value.setups,
+      ...(value.created === true || value.step === "connect" || value.step === "invite"
+        ? { created: true as const }
+        : {}),
       ...(Array.isArray(value.invited) ? { invited: value.invited } : {}),
       ...(Array.isArray(value.pendingEmails) &&
       value.pendingEmails.every((item) => typeof item === "string")
@@ -93,10 +98,15 @@ function usefulName(value: string | undefined): string {
   return ["User", "Owner", "Worktable user"].includes(name) ? "" : name
 }
 
-function initialWorktableName(workspace: WorkspaceInfo): string {
-  return ["Local Workspace", "My Workspace"].includes(workspace.name)
+function initialWorktableName(workspace: WorkspaceInfo, created: boolean): string {
+  return !created && ["Local Workspace", "My Workspace"].includes(workspace.name)
     ? ""
     : workspace.name
+}
+
+function suggestedWorktableName(name: string): string {
+  const first = name.trim().split(/\s+/)[0] ?? ""
+  return first && first.length <= 60 ? `${first}'s Worktable` : "My Worktable"
 }
 
 function ErrorNote({ error }: { error: unknown }) {
@@ -132,10 +142,12 @@ function Field({
 
 function CreateStep({
   workspace,
+  created,
   needsEmail,
   onCreated,
 }: {
   workspace: WorkspaceInfo
+  created: boolean
   /** The owner signs in with a password and gets their account here. */
   needsEmail: boolean
   onCreated: (reload: boolean) => void
@@ -144,11 +156,12 @@ function CreateStep({
   const profile = useQuery({ queryKey: ["profile"], queryFn: getUserProfile })
   const [typedName, setTypedName] = useState<string | null>(null)
   const [email, setEmail] = useState("")
-  const [worktableName, setWorktableName] = useState(() =>
-    initialWorktableName(workspace)
-  )
+  const [typedWorktableName, setTypedWorktableName] = useState<string | null>(null)
   const name =
     typedName ?? usefulName(profile.data?.name ?? getCurrentUser().name)
+  const worktableName =
+    typedWorktableName ??
+    (initialWorktableName(workspace, created) || suggestedWorktableName(name))
 
   const save = useMutation({
     mutationFn: async () => {
@@ -210,7 +223,7 @@ function CreateStep({
             value={worktableName}
             maxLength={200}
             placeholder="Northwind"
-            onChange={(event) => setWorktableName(event.target.value)}
+            onChange={(event) => setTypedWorktableName(event.target.value)}
           />
         </Field>
       </div>
@@ -490,9 +503,10 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
         {step === "create" ? (
           <CreateStep
             workspace={workspace}
+            created={draft.created === true}
             needsEmail={person?.signOut === "password"}
             onCreated={(reload) => {
-              const next = { ...draft, step: after("create") ?? "create" }
+              const next: SetupDraft = { ...draft, created: true, step: after("create") ?? "create" }
               if (reload) {
                 // Their new account is who is signed in now.
                 writeDraft(workspace.id, next)

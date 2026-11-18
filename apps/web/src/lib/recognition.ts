@@ -6,11 +6,17 @@ import type {
 } from "@worktable/types/recognition"
 import { BASE_URL } from "./http"
 
+declare const __WORKTABLE_AGENT_LOGO_BASE__: string | undefined
+
 export function agentLogoUrl(
   platform: AgentPlatformId | undefined
 ): string | null {
   const logo = platform ? AGENT_PLATFORMS[platform]?.logo : null
-  return logo ? `/agent-logos/${logo}` : null
+  if (!logo) return null
+  const base = typeof __WORKTABLE_AGENT_LOGO_BASE__ === "string"
+    ? __WORKTABLE_AGENT_LOGO_BASE__
+    : "/agent-logos/"
+  return `${base}${logo}`
 }
 
 /** A solid tile or avatar carrying white initials. */

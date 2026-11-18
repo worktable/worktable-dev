@@ -212,17 +212,17 @@ function hasOwnerAuthority(identity: ThreadIdentity): boolean {
 function otherParticipant(
   participants: ParticipantRef[],
   participantId: string
-): ParticipantRef {
+): ParticipantRef | undefined {
   const others = participants.filter(
     (participant) => participant.id !== participantId
   )
-  if (others.length !== 1) {
+  if (others.length > 1) {
     throw new ThreadError(
       "FORBIDDEN",
       "A recipient is required for threads with more than two participants"
     )
   }
-  return others[0]!
+  return others[0]
 }
 
 async function assertCurrentThreadRecipients(
@@ -286,14 +286,15 @@ async function assertCurrentThreadRecipients(
 }
 
 async function participantContextForUnknownDefaultIdentities(
-  thread: ThreadReadResult["thread"],
-  identityIds: string[]
+  identities: ThreadReadResult["thread"]["identities"],
+  identityIds: string[],
+  location: ThreadLocation
 ): Promise<{
   participants: ParticipantRef[]
   availableParticipants: ParticipantRef[]
 }> {
   const knownIdentityIds = new Set(
-    thread.identities.map((identity) => identity.id)
+    identities.map((identity) => identity.id)
   )
   const unknownIdentityIds = [
     ...new Set(
@@ -305,10 +306,8 @@ async function participantContextForUnknownDefaultIdentities(
   }
 
   const availableParticipants = currentTeamWorktable()
-    ? await listThreadParticipants(undefined, threadLocation(thread), false)
-    : (await listParticipantBindings()).map(
-    (binding) => binding.participant
-  )
+    ? await listThreadParticipants(undefined, location, false)
+    : (await listParticipantBindings()).map((binding) => binding.participant)
   const participantsByIdentity = new Map(
     availableParticipants.map((participant) => [
       defaultConversationIdentityId(participant.id),
@@ -487,10 +486,10 @@ export async function postThreadMessageWithStored(
         ? await requireParticipant(input.to)
         : undefined
       const attentionContext =
-        await participantContextForUnknownDefaultIdentities(existing, [
+        await participantContextForUnknownDefaultIdentities(existing.identities, [
           ...(input.notifyIdentityIds ?? []),
           ...(input.responseIdentityId ? [input.responseIdentityId] : []),
-        ])
+        ], location)
       const selectedAuthorIdentity = input.authorIdentityId
         ? existing.identities.find(
             (candidate) =>
@@ -618,12 +617,6 @@ export async function postThreadMessageWithStored(
         )
       }
     }
-    if (!input.to) {
-      throw new ThreadError(
-        "FORBIDDEN",
-        "to is required when creating a thread"
-      )
-    }
     const replay = await findThreadCreationRetry(location, {
       title: input.title,
       author: actor,
@@ -641,7 +634,13 @@ export async function postThreadMessageWithStored(
       recipient = replay.recipient
       result = replay
     } else {
-      recipient = await requireParticipant(input.to)
+      recipient = input.to ? await requireParticipant(input.to) : undefined
+      const targetIds = [
+        ...(input.notifyIdentityIds ?? []),
+        ...(input.responseIdentityId ? [input.responseIdentityId] : []),
+      ]
+      const offered = targetIds.length ? await listThreadParticipants(identity, location) : []
+      const attentionContext = await participantContextForUnknownDefaultIdentities([], targetIds, location)
       await assertCurrentThreadRecipients(location, actor.id, recipient, input)
       result = await createThread(location, {
         title: input.title,
@@ -655,6 +654,8 @@ export async function postThreadMessageWithStored(
         inReplyTo: input.inReplyTo,
         responseTo,
         expectsReply: input.expectsReply,
+        participants: attentionContext.participants,
+        availableParticipants: offered,
       })
     }
   }
@@ -1409,9 +1410,9 @@ export async function assignResponseRequest(
   const participantContext =
     input.identityId &&
     !thread.identities.some((candidate) => candidate.id === input.identityId)
-      ? await participantContextForUnknownDefaultIdentities(thread, [
+      ? await participantContextForUnknownDefaultIdentities(thread.identities, [
           input.identityId,
-        ])
+        ], input.location)
       : undefined
   const addedParticipant = participantContext?.participants[0]
   if (input.identityId) await assertCurrentThreadRecipients(input.location, actor.id, undefined, {responseIdentityId: input.identityId}, thread)

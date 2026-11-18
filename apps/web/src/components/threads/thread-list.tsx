@@ -178,7 +178,7 @@ export function ThreadList({
             </EmptyMedia>
             <EmptyTitle>No threads yet</EmptyTitle>
             <EmptyDescription>
-              Start a durable conversation with a connected participant.
+              Start a conversation here.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>

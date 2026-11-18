@@ -1170,20 +1170,13 @@ export function isSummaryArchived(
 }
 
 export async function listThreadSummaries(
-  ...args: Parameters<typeof listThreadsForViewer>
-): Promise<ThreadSummary[]> {
-  return (await listThreadsForViewer(...args)).summaries
-}
-
-/** The thread list, with the reader's member id so a client can tell their threads. */
-export async function listThreadsForViewer(
   identity: ThreadIdentity,
   locationInput?: ThreadLocation | string,
   participantId?: string,
   deliveryState?: ThreadDeliveryState,
   /** Leave archived threads out, or return only them. Everything by default. */
   archived?: ThreadArchiveFilter
-): Promise<{ summaries: ThreadSummary[]; viewerMemberId: string }> {
+): Promise<ThreadSummary[]> {
   const location = locationInput
     ? normalizeThreadLocation(locationInput)
     : undefined
@@ -1231,12 +1224,9 @@ export async function listThreadsForViewer(
       activities(summary.location, summary.id)
     ),
   }))
-  return {
-    summaries: deliveryState
-      ? summaries.filter((summary) => summary.activity?.state === deliveryState)
-      : summaries,
-    viewerMemberId: actor.id,
-  }
+  return deliveryState
+    ? summaries.filter((summary) => summary.activity?.state === deliveryState)
+    : summaries
 }
 
 export interface ViewerThreadRequest {

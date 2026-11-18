@@ -5,7 +5,7 @@ import type {
   ThreadMessage,
   ThreadPostResponse,
   ThreadReadResult,
-  ThreadListResult,
+  ThreadListItem,
   ThreadRenameResult,
   ThreadWaitResult,
 } from "@worktable/types"
@@ -73,7 +73,7 @@ export function listThreads(
   scope: ThreadListScope,
   archived: "exclude" | "only",
   options?: ReadOptions
-): Promise<ThreadListResult> {
+): Promise<{ threads: ThreadListItem[] }> {
   const query = new URLSearchParams({ archived })
   if (scope.kind === "worktable") query.set("location", "worktable")
   const base = scope.kind === "space" ? threadBase(scope) : "/api/threads"

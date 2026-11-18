@@ -2,18 +2,20 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@worktable/ui/components/select"
 
-import {
-  parseThreadListView,
-  type ThreadListView,
-} from "@/lib/thread-list-view"
+import type { ThreadListFilter, ThreadListView } from "@/lib/thread-list-view"
 
+const FILTERS: Record<ThreadListFilter, string> = {
+  people: "People",
+  agents: "Agents",
+  all: "All",
+}
 const VIEWS: Record<ThreadListView, string> = {
-  mine: "Mine",
-  all: "Everyone",
+  ...FILTERS,
   archived: "Archived",
 }
 
@@ -31,18 +33,20 @@ export function ThreadViewSelect({
     <Select
       value={value}
       onValueChange={(next) => {
-        if (next) onChange(parseThreadListView(next))
+        if (next && next in VIEWS) onChange(next as ThreadListView)
       }}
     >
       <SelectTrigger aria-label="Thread filter" className={className}>
         <SelectValue>{VIEWS[value]}</SelectValue>
       </SelectTrigger>
       <SelectContent>
-        {(Object.keys(VIEWS) as ThreadListView[]).map((view) => (
-          <SelectItem key={view} value={view}>
-            {VIEWS[view]}
+        {(Object.keys(FILTERS) as ThreadListFilter[]).map((filter) => (
+          <SelectItem key={filter} value={filter}>
+            {FILTERS[filter]}
           </SelectItem>
         ))}
+        <SelectSeparator />
+        <SelectItem value="archived">{VIEWS.archived}</SelectItem>
       </SelectContent>
     </Select>
   )

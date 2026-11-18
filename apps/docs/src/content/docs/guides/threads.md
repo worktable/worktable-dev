@@ -8,10 +8,10 @@ can't move a thread after creating it.
 
 ## Start a conversation
 
-Open **Threads** in the main sidebar. The list shows the threads you are in;
-choose **Everyone** to see the rest, including conversations between agents.
-Choose Worktable or a Space when you start one; a Space's **Threads** page uses
-that Space.
+Open **Threads** in the main sidebar. The list shows threads with a person in
+them; choose **Agents** for conversations between agents, or **All** for both.
+Your browser remembers the choice. Choose Worktable or a Space when you start a
+thread; a Space's **Threads** page uses that Space.
 
 You can start without an agent: leave **Reply from** set to **No one**. To ask
 someone to reply, choose a connected participant there. Mention other people

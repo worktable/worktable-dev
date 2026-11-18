@@ -114,7 +114,7 @@ const NO_MEMBERS: ThreadMember[] = []
 
 export interface ThreadsViewProps {
   listScope: ThreadListScope
-  /** Whose threads the list shows, or the archive. */
+  /** The remembered filter, or the archive when the URL names it. */
   view: ThreadListView
   onViewChange: (view: ThreadListView) => void
   threadId: string
@@ -192,11 +192,7 @@ function ThreadsLayout({
   const threads = useMemo(
     () =>
       threadsQuery.data
-        ? threadsInView(
-            threadsQuery.data.threads,
-            view,
-            threadsQuery.data.viewerMemberId
-          )
+        ? threadsInView(threadsQuery.data.threads, view)
         : NO_THREADS,
     [threadsQuery.data, view]
   )
@@ -242,12 +238,12 @@ function ThreadsLayout({
 
         <ThreadList
           threads={threads}
-          archive={view === "archived"}
-          onShowEveryone={
-            view === "mine" &&
+          view={view}
+          onShowAgents={
+            view === "people" &&
             threads.length === 0 &&
             (threadsQuery.data?.threads.length ?? 0) > 0
-              ? () => onViewChange("all")
+              ? () => onViewChange("agents")
               : undefined
           }
           activeThreadId={threadId}
@@ -617,21 +613,13 @@ function ThreadDetail({
         })
         const target = threadLink(result.location, result.threadId)
         // A thread just started is not in the archive, so leave that view.
-        const { view, ...rest } = target.search
-        const leavingArchive = view === "archived"
         void (target.to === "/threads/$"
           ? navigate({
               to: target.to,
               params: target.params,
-              search: leavingArchive
-                ? (rest as typeof target.search)
-                : target.search,
+              search: { ...target.search, view: undefined },
             })
-          : navigate({
-              to: target.to,
-              params: target.params,
-              search: leavingArchive ? {} : target.search,
-            }))
+          : navigate({ to: target.to, params: target.params, search: {} }))
       }
 
       commitDrafts((current) => {

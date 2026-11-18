@@ -10,20 +10,20 @@ import {
 } from "@worktable/ui/components/select"
 import { ThreadViewSelect } from "@/components/threads/thread-view-select"
 import { ThreadsView } from "@/components/threads/threads-view"
+import { useThreadListFilter } from "@/lib/thread-lifetime"
 import {
-  parseThreadListView,
+  threadViewSearch,
   type ThreadListView,
+  type ThreadViewSearch,
 } from "@/lib/thread-list-view"
 import { useSpaces } from "@/lib/queries"
 import { threadScopeContains, type ThreadListScope } from "@/lib/threads-api"
 import { preloadThread, threadsQueryOptions } from "@/lib/threads-queries"
 import { useWorktableThreadSubscription } from "@/lib/ws"
 
-interface ThreadsSearch {
+interface ThreadsSearch extends ThreadViewSearch {
   location: "all" | "worktable" | "space"
   spaceId?: string
-  /** Absent for the reader's own threads. */
-  view?: Exclude<ThreadListView, "mine">
 }
 
 export const Route = createFileRoute("/threads/$")({
@@ -37,11 +37,10 @@ export const Route = createFileRoute("/threads/$")({
       location === "space" && typeof search.spaceId === "string"
         ? search.spaceId
         : undefined
-    const view = parseThreadListView(search.view)
     return {
       location: spaceId ? location : location === "space" ? "all" : location,
       spaceId,
-      ...(view === "mine" ? {} : { view }),
+      ...threadViewSearch(search.view),
     }
   },
   beforeLoad: ({ context, search, params, preload }) => {
@@ -154,14 +153,18 @@ function GlobalThreadsPage() {
     })
   }
 
-  const setView = (view: ThreadListView) => {
+  const [filter, rememberFilter] = useThreadListFilter()
+  const view: ThreadListView = search.view ?? filter
+  const setView = (next: ThreadListView) => {
+    if (next !== "archived") rememberFilter(next)
+    if ((next === "archived") === (search.view === "archived")) return
     void navigate({
       to: "/threads/$",
       params: { _splat },
       search: {
         location: search.location,
         ...(search.spaceId ? { spaceId: search.spaceId } : {}),
-        ...(view === "mine" ? {} : { view }),
+        ...threadViewSearch(next),
       },
     })
   }
@@ -176,7 +179,7 @@ function GlobalThreadsPage() {
   return (
     <ThreadsView
       listScope={scope}
-      view={search.view ?? "mine"}
+      view={view}
       onViewChange={setView}
       threadId={selected.threadId}
       selectedLocation={selected.location}
@@ -186,7 +189,7 @@ function GlobalThreadsPage() {
       headerControl={
         <div className="flex gap-2">
           <ThreadViewSelect
-            value={search.view ?? "mine"}
+            value={view}
             onChange={setView}
             className="w-auto shrink-0"
           />

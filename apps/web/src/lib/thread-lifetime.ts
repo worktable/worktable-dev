@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useSyncExternalStore } from "react"
 import {
   isStoredThreadArchived,
   THREAD_LIFETIME_KEY,
@@ -12,7 +13,7 @@ import {
   type ThreadReadResult,
 } from "@worktable/types"
 import { fetchJSON } from "./http"
-import type { ThreadListView } from "./thread-list-view"
+import type { ThreadListFilter, ThreadListView } from "./thread-list-view"
 import { threadBase } from "./threads-api"
 import { threadListKeys, threadQueryKeys } from "./threads-queries"
 
@@ -30,14 +31,67 @@ function setThreadLifetime(
 /** The threads a view shows, from the list it reads. */
 export function threadsInView(
   threads: ThreadListItem[],
-  view: ThreadListView,
-  viewerMemberId: string | undefined
+  view: ThreadListView
 ): ThreadListItem[] {
-  return view === "mine"
-    ? threads.filter((thread) =>
-        thread.members.some((member) => member.id === viewerMemberId)
-      )
-    : threads
+  if (view === "all" || view === "archived") return threads
+  const withPeople = view === "people"
+  return threads.filter(
+    (thread) =>
+      thread.members.some((member) => member.kind === "human") === withPeople
+  )
+}
+
+// ── Remembered filter ──────────────────────────────────────
+
+const FILTER_KEY = "worktable-thread-list-filter"
+const filterListeners = new Set<() => void>()
+let fallbackFilter: ThreadListFilter | undefined
+
+/** Threads with people unless the person last chose otherwise. */
+function readFilter(): ThreadListFilter {
+  try {
+    const stored = localStorage.getItem(FILTER_KEY)
+    return stored === "agents" || stored === "all" ? stored : "people"
+  } catch {
+    return "people"
+  }
+}
+
+function writeFilter(filter: ThreadListFilter): void {
+  try {
+    localStorage.setItem(FILTER_KEY, filter)
+  } catch {
+    // Private browsing: the choice lasts until the page reloads.
+    fallbackFilter = filter
+  }
+  for (const listener of filterListeners) listener()
+}
+
+function subscribeFilter(listener: () => void): () => void {
+  filterListeners.add(listener)
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === FILTER_KEY) listener()
+  }
+  window.addEventListener("storage", onStorage)
+  return () => {
+    filterListeners.delete(listener)
+    window.removeEventListener("storage", onStorage)
+  }
+}
+
+/**
+ * The filter every thread list opens on: one choice for the Threads page and
+ * each Space's, kept in this browser so leaving and coming back keeps it.
+ */
+export function useThreadListFilter(): [
+  ThreadListFilter,
+  (filter: ThreadListFilter) => void,
+] {
+  const filter = useSyncExternalStore(
+    subscribeFilter,
+    () => fallbackFilter ?? readFilter()
+  )
+  return [filter, writeFilter]
 }
 
 /** Where an open thread stands: kept, archived, or neither. */

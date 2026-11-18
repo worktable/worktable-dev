@@ -46,6 +46,7 @@ import {
 } from "@worktable/ui/components/tooltip"
 
 import { useScrollFade } from "@/hooks/use-scroll-fade"
+import type { ThreadListView } from "@/lib/thread-list-view"
 import { RelativeTime } from "@/lib/time"
 import { deliveryPresentation } from "@/lib/thread-presentation"
 import { ThreadParticipantAvatar } from "./thread-participant-avatar"
@@ -58,13 +59,13 @@ export type ThreadLinkTarget =
       search: {
         location: "all" | "worktable" | "space"
         spaceId?: string
-        view?: "all" | "archived"
+        view?: "archived"
       }
     }
   | {
       to: "/spaces/$spaceId/threads/$"
       params: { spaceId: string; _splat: string }
-      search: { view?: "all" | "archived" }
+      search: { view?: "archived" }
     }
 
 export type ThreadLink = (
@@ -74,10 +75,10 @@ export type ThreadLink = (
 
 interface ThreadListProps {
   threads: ThreadListItem[]
-  /** The list shows archived threads, so an empty one offers nothing to start. */
-  archive?: boolean
-  /** Set when the reader is in no thread here but other threads exist. */
-  onShowEveryone?: () => void
+  /** Which threads the list shows; an empty list says so in its own words. */
+  view: ThreadListView
+  /** Set when no thread here has a person in it but agents' threads exist. */
+  onShowAgents?: () => void
   activeThreadId: string
   activeLocation: ThreadLocation
   loading: boolean
@@ -99,8 +100,8 @@ function sameLocation(left: ThreadLocation, right: ThreadLocation): boolean {
 
 export function ThreadList({
   threads,
-  archive = false,
-  onShowEveryone,
+  view,
+  onShowAgents,
   activeThreadId,
   activeLocation,
   loading,
@@ -182,13 +183,17 @@ export function ThreadList({
             threadLink={threadLink}
           />
         </TooltipProvider>
-      ) : archive ? (
+      ) : view === "archived" || view === "agents" ? (
         <Empty className="min-h-72">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <ArchiveIcon />
+              {view === "archived" ? <ArchiveIcon /> : <MessageCircleIcon />}
             </EmptyMedia>
-            <EmptyTitle>No archived threads</EmptyTitle>
+            <EmptyTitle>
+              {view === "archived"
+                ? "No archived threads"
+                : "No threads between agents"}
+            </EmptyTitle>
           </EmptyHeader>
         </Empty>
       ) : (
@@ -197,10 +202,8 @@ export function ThreadList({
             <EmptyMedia variant="icon">
               <MessageCircleIcon />
             </EmptyMedia>
-            <EmptyTitle>
-              {onShowEveryone ? "You're not in any threads" : "No threads yet"}
-            </EmptyTitle>
-            {onShowEveryone ? null : (
+            <EmptyTitle>No threads yet</EmptyTitle>
+            {onShowAgents ? null : (
               <EmptyDescription>Start a conversation here.</EmptyDescription>
             )}
           </EmptyHeader>
@@ -215,9 +218,9 @@ export function ThreadList({
               <PlusIcon />
               Thread
             </Button>
-            {onShowEveryone ? (
-              <Button variant="ghost" size="sm" onClick={onShowEveryone}>
-                Show Everyone
+            {onShowAgents ? (
+              <Button variant="ghost" size="sm" onClick={onShowAgents}>
+                Show Agents
               </Button>
             ) : null}
           </EmptyContent>

@@ -3,23 +3,14 @@ import { useCallback } from "react"
 import type { ThreadLocation } from "@worktable/types"
 import { ThreadViewSelect } from "@/components/threads/thread-view-select"
 import { ThreadsView } from "@/components/threads/threads-view"
-import {
-  parseThreadListView,
-  type ThreadListView,
-} from "@/lib/thread-list-view"
+import { useThreadListFilter } from "@/lib/thread-lifetime"
+import { threadViewSearch, type ThreadListView } from "@/lib/thread-list-view"
 import { preloadThread, threadsQueryOptions } from "@/lib/threads-queries"
-
-interface SpaceThreadsSearch {
-  /** Absent for the reader's own threads. */
-  view?: Exclude<ThreadListView, "mine">
-}
 
 export const Route = createFileRoute("/spaces/$spaceId/threads/$")({
   ssr: false,
-  validateSearch: (search: Record<string, unknown>): SpaceThreadsSearch => {
-    const view = parseThreadListView(search.view)
-    return view === "mine" ? {} : { view }
-  },
+  validateSearch: (search: Record<string, unknown>) =>
+    threadViewSearch(search.view),
   beforeLoad: ({ context, params, search, preload }) => {
     const location = { kind: "space", spaceId: params.spaceId } as const
     void context.queryClient.prefetchQuery(
@@ -38,11 +29,15 @@ function SpaceThreadsPage() {
   const threadId = _splat ?? ""
   const navigate = useNavigate()
   const location = { kind: "space", spaceId } satisfies ThreadLocation
-  const setView = (view: ThreadListView) => {
+  const [filter, rememberFilter] = useThreadListFilter()
+  const view: ThreadListView = search.view ?? filter
+  const setView = (next: ThreadListView) => {
+    if (next !== "archived") rememberFilter(next)
+    if ((next === "archived") === (search.view === "archived")) return
     void navigate({
       to: "/spaces/$spaceId/threads/$",
       params: { spaceId, _splat: threadId },
-      search: view === "mine" ? {} : { view },
+      search: threadViewSearch(next),
     })
   }
   const threadLink = useCallback(
@@ -57,11 +52,11 @@ function SpaceThreadsPage() {
   return (
     <ThreadsView
       listScope={location}
-      view={search.view ?? "mine"}
+      view={view}
       onViewChange={setView}
       headerControl={
         <ThreadViewSelect
-          value={search.view ?? "mine"}
+          value={view}
           onChange={setView}
           className="w-full"
         />

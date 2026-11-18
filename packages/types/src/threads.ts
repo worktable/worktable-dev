@@ -728,12 +728,6 @@ export interface ThreadListItem extends Omit<ThreadSummary, "lastMessage"> {
   lastMessage: { id: string; excerpt: string }
 }
 
-/** The app's thread list, with the reader's member id to tell their threads. */
-export interface ThreadListResult {
-  threads: ThreadListItem[]
-  viewerMemberId: string
-}
-
 export interface ThreadLifetimeResult {
   threadId: string
   revision: number

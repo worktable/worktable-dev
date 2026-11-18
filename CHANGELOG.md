@@ -17,7 +17,7 @@ infrastructure and personal context out of release notes.
 
 - **Getting Started:** Creation prefills an editable name, setup shows agent rules while connecting, and shorter starter prompts gather context before creating your first Space.
 - **Thread creation:** Start without a responder, mention several participants, and independently choose one to reply, with saved drafts and safe send retries.
-- **Threads list:** The list opens on threads you're in, and threads archive after seven quiet days unless kept; a new message brings one back.
+- **Threads list:** The list opens on threads with people, with agents' own threads one filter away, and threads archive after seven quiet days unless kept.
 - **Next Steps:** Home shows your next steps as one row of tiles, in order, with a progress bar. Steps you finished before leave the row, and later ones scroll into view.
 
 ### Fixed

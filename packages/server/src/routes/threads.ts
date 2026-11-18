@@ -6,7 +6,6 @@ import {
   markdownPlainText,
   ThreadLifetimeStateSchema,
   type ThreadListItem,
-  type ThreadListResult,
   type ThreadLocation,
   ThreadMessageIdSchema,
   ThreadTitleSchema,
@@ -21,7 +20,7 @@ import {
 import {
   assignResponseRequest,
   listThreadParticipantsForDisplay,
-  listThreadsForViewer,
+  listThreadSummaries,
   postThreadMessageWithStored,
   readThreadMessage,
   readThreadMessages,
@@ -227,17 +226,14 @@ threadsRouter.get("/", async (c) => {
     )
   }
   try {
-    const { summaries, viewerMemberId } = await listThreadsForViewer(
+    const summaries = await listThreadSummaries(
       c.get("identity"),
       parsedLocation.location,
       participantId,
       parsedDeliveryState.data,
       parsedArchived.data
     )
-    return c.json({
-      threads: summaries.map(threadListItem),
-      viewerMemberId,
-    } satisfies ThreadListResult)
+    return c.json({ threads: summaries.map(threadListItem) })
   } catch (error) {
     return errorResponse(c, error)
   }

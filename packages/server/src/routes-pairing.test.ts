@@ -1147,7 +1147,8 @@ describe("redeem (code surface)", () => {
     expect(codexTokens.filter((t) => !t.revokedAt)).toHaveLength(1);
     expect(await verifyToken(firstToken)).toBeNull();
     expect(await verifyToken(secondToken)).not.toBeNull();
-    expect(await listAgentConnections()).toEqual([
+    const connections = await listAgentConnections();
+    expect(connections).toEqual([
       expect.objectContaining({
         displayName: "My Codex",
         participant: expect.objectContaining({ name: "My Codex" }),
@@ -1156,9 +1157,12 @@ describe("redeem (code surface)", () => {
     const status = await app.fetch(jsonReq("GET", `/api/pairing/${second.id}`));
     const view = (await status.json()) as {
       status: string;
+      connectionId?: string;
       events: { event: string }[];
     };
     expect(view.status).toBe("verified");
+    // It names the agent it connected, so setup can show that agent.
+    expect(view.connectionId).toBe(connections[0]!.id);
     expect(
       view.events.filter((event) => event.event === "verified")
     ).toHaveLength(1);

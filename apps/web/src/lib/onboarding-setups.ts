@@ -11,6 +11,8 @@ export interface SetupRecord {
   platform?: AgentPlatformId
   /** The row and tab it was connected from, such as `code:Codex`. */
   source?: string
+  /** Its row in the agent list, once known, for naming it and setting its access. */
+  connectionId?: string
 }
 
 export function isSetupRecord(item: unknown): item is SetupRecord {
@@ -23,6 +25,7 @@ export function isSetupRecord(item: unknown): item is SetupRecord {
     ["on-demand", "always-on"].includes(setup.mode) &&
     typeof setup.verified === "boolean" &&
     (setup.platform === undefined || isAgentPlatformId(setup.platform)) &&
-    (setup.source === undefined || typeof setup.source === "string")
+    (setup.source === undefined || typeof setup.source === "string") &&
+    (setup.connectionId === undefined || typeof setup.connectionId === "string")
   )
 }

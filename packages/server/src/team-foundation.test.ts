@@ -2557,7 +2557,7 @@ test("connector rollback retires its Team credential without removing other agen
 test("re-pairing an installation keeps its agent and retires the previous credential", async () => {
   const { member, owner } = await setup()
   const { pairingRouter } = await import("./routes/pairing.ts")
-  const { createPairingSession } = await import("./pairing-store.ts")
+  const { createPairingSession, getPairingSession } = await import("./pairing-store.ts")
   const { registerTeamPairing } = await import("./team-pairing.ts")
   const { verifyToken } = await import("./token-store.ts")
   const app = new Hono().route("/api/pairing", pairingRouter)
@@ -2586,6 +2586,9 @@ test("re-pairing an installation keeps its agent and retires the previous creden
     expect(redeemed.status).toBe(200)
     const { token } = (await redeemed.json()) as { token: string }
     expect((await request("complete", { code: pairing.code }, token)).status).toBe(200)
+    // The pairing names the agent it connected, as the agent list does.
+    const agentId = resolveTeamAgentCredential((await verifyToken(token))!)!.team!.agentId!
+    expect((await getPairingSession(pairing.session.id))?.connectionId).toBe(agentId)
     return token
   }
   const first = await pair(member)

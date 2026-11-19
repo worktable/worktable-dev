@@ -519,8 +519,11 @@ export function Onboarding({ workspace }: { workspace: WorkspaceInfo }) {
         ) : step === "connect" ? (
           <ConnectAgentStep
             setups={draft.setups}
-            onSetupsChange={(setups) =>
-              setDraft((current) => ({ ...current, setups }))
+            onSetupsChange={(update) =>
+              setDraft((current) => ({
+                ...current,
+                setups: update(current.setups),
+              }))
             }
             onContinue={() => {
               const next = after("connect")

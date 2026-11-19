@@ -61,6 +61,14 @@ async function waitForPairingCreate(page: Page, click: () => Promise<void>) {
   return (await result.json()) as { code: string; id: string }
 }
 
+/** Picks an app; the apps fold away into its card. */
+async function pickApp(page: Page, app: string) {
+  const apps = page.getByRole("group", { name: "Apps" })
+  await apps.getByRole("button", { name: app, exact: true }).click()
+  await expect(apps).toBeHidden()
+  return page.getByRole("region", { name: `Connect ${app}` })
+}
+
 /**
  * Whether the owner has seen the welcome, which otherwise opens over Connect
  * Your Agent. Journeys about other steps start past it.
@@ -192,8 +200,7 @@ for (const wakeMethod of ["webhook", "email"] as const)
     await page
       .getByRole("button", { name: "Create Worktable", exact: true })
       .click()
-    await page.getByRole("button", { name: /^Always-on agents/ }).click()
-    await page.getByRole("tab", { name: "Grok Bot", exact: true }).click()
+    const grokCard = await pickApp(page, "Grok Bot")
     const options = page
       .getByRole("list")
       .filter({ hasText: "Connect Worktable" })
@@ -346,13 +353,13 @@ for (const wakeMethod of ["webhook", "email"] as const)
     await expect(
       page.getByRole("button", { name: "Continue", exact: true })
     ).toBeVisible()
-    const tabs = await page.getByRole("tablist").boundingBox()
+    const header = await grokCard.locator("header").boundingBox()
     const status = await page
       .getByText("Connected", { exact: true })
       .boundingBox()
-    expect(tabs).not.toBeNull()
+    expect(header).not.toBeNull()
     expect(status).not.toBeNull()
-    expect(status!.y).toBeGreaterThanOrEqual(tabs!.y + tabs!.height)
+    expect(status!.y).toBeGreaterThanOrEqual(header!.y + header!.height)
     await page.screenshot({
       path: testInfo.outputPath("grok-connected-mobile.png"),
     })
@@ -376,8 +383,7 @@ for (const wakeMethod of ["webhook", "email"] as const)
     await expect(page.getByLabel("Bot name", { exact: true })).not.toBeVisible()
     linkReady = false
     await page.reload({ waitUntil: "domcontentloaded" })
-    await page.getByRole("button", { name: /^Always-on agents/ }).click()
-    await page.getByRole("tab", { name: "Grok Bot", exact: true }).click()
+    await pickApp(page, "Grok Bot")
     await page.getByText("Connection settings", { exact: true }).click()
     await page.getByRole("combobox", { name: "Notify Grok using" }).click()
     await page
@@ -393,7 +399,7 @@ for (const wakeMethod of ["webhook", "email"] as const)
     ).toBeEnabled()
   })
 
-test("Cloud coding agents are recognized on their own tab when they sign in", async ({
+test("Cloud coding agents on a second Worktable get its own command, and each app recognizes only itself", async ({
   page,
 }) => {
   const mcpUrl = "https://cloud.example.test/api/mcp/w/wt_fixture"
@@ -452,15 +458,28 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
   await page
     .getByRole("button", { name: "Create Worktable", exact: true })
     .click()
-  await page.getByRole("button", { name: /^Coding agents/ }).click()
+
+  // The plugin's shared address lands elsewhere, so the best way is this
+  // Worktable's own command, with the skills after it; the plugin waits
+  // under Other Ways.
+  const claudeCode = await pickApp(page, "Claude Code")
   await expect(
-    page.getByText(
+    claudeCode.getByText(
       "Run this in your terminal, then choose Allow access when your browser opens."
     )
   ).toBeVisible()
-  await expect(page.getByText(`--client claude-code`)).toBeVisible()
+  await expect(
+    claudeCode.getByText("Works in Cloud workspace", { exact: false })
+  ).toBeVisible()
+  await expect(claudeCode.locator("code").first()).toContainText(
+    `--mcp-url '${mcpUrl}' --client claude-code && curl -fsSL https://worktable.dev/install-skills | sh -s -- --target claude`
+  )
+  await claudeCode.getByRole("button", { name: "Other Ways" }).click()
+  await expect(
+    claudeCode.getByText("claude plugin install worktable@worktable")
+  ).toBeVisible()
 
-  // Codex signs in while Claude Code's tab is on show: it isn't Claude Code.
+  // Codex signs in while Claude Code's setup is on show: it isn't Claude Code.
   const poll = page.waitForRequest((request) =>
     new URL(request.url()).pathname.endsWith("/api/agent-connections")
   )
@@ -473,20 +492,25 @@ test("Cloud coding agents are recognized on their own tab when they sign in", as
     )
   )
   await (await poll).response()
-  await expect(page.getByText("Waiting for Claude Code")).toBeVisible()
-  await expect(page.getByText(/is connected\./)).toHaveCount(0)
+  await expect(claudeCode.getByText("Waiting for Claude Code")).toBeVisible()
+  await expect(
+    claudeCode.getByRole("img", { name: "Connected" })
+  ).toHaveCount(0)
 
   // An agent already connected when the step opened isn't new, while one
-  // that signed in since is recognized when its tab opens.
-  await page.getByRole("tab", { name: "Codex CLI", exact: true }).click()
-  await expect(page.getByText("Codex is connected.")).toBeVisible()
+  // that signed in since is recognized when its app is chosen.
+  await claudeCode.getByRole("button", { name: "Change", exact: true }).click()
+  const codex = await pickApp(page, "Codex")
+  await expect(codex.getByRole("img", { name: "Connected" })).toBeVisible()
+  await expect(codex.getByLabel("Name", { exact: true })).toHaveValue("Codex")
   await expect(
     page.getByRole("button", { name: "Continue", exact: true })
   ).toBeEnabled()
 
   // Other takes any agent that signs in, but not Codex again.
-  await page.getByRole("tab", { name: "Other", exact: true }).click()
-  await expect(page.getByText("Waiting for your agent")).toBeVisible()
+  await codex.getByRole("button", { name: "Change", exact: true }).click()
+  const other = await pickApp(page, "Other")
+  await expect(other.getByText("Waiting for your agent")).toBeVisible()
 })
 
 test("a new owner creates their Worktable, connects agents and finishes their first steps in Getting Started", async ({
@@ -545,22 +569,40 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
   ).toBeVisible()
   await expect(page.getByRole("button", { name: "Continue" })).toBeDisabled()
 
-  // Opening a row shows the first tab's command straight away.
-  await waitForPairingCreate(page, () =>
-    page.getByRole("button", { name: /Coding agents/ }).click()
-  )
-  await expect(page.getByText(/--client claude-code$/)).toBeVisible()
+  // Every app shows at once; choosing one shows its command straight away.
+  await waitForPairingCreate(page, () => pickApp(page, "Claude Code").then(() => {}))
+  const claudeCode = page.getByRole("region", { name: "Connect Claude Code" })
+  await expect(claudeCode.getByText("On this computer")).toBeVisible()
+  await expect(
+    claudeCode.getByText(
+      /--client claude-code && curl -fsSL https:\/\/worktable\.dev\/install-skills \| sh -s -- --target claude$/
+    )
+  ).toBeVisible()
+  await claudeCode.getByRole("button", { name: "Change", exact: true }).click()
   const cliPairing = await waitForPairingCreate(page, () =>
-    page.getByRole("tab", { name: "Codex" }).click()
+    pickApp(page, "Codex").then(() => {})
   )
-  await expect(page.getByText(/--client codex$/)).toBeVisible()
+  const codex = page.getByRole("region", { name: "Connect Codex" })
+  await expect(codex.getByText(/--target agents$/)).toBeVisible()
   const codexToken = await completePairing(cliPairing, {
     hostname: "browser-devbox",
     client: "codex",
   })
-  await expect(page.getByText("Codex CLI is connected.")).toBeVisible({
-    timeout: 10_000,
-  })
+  // Connected in the same card: Worktable's name for it, saved as it's
+  // changed, and what it may do.
+  const codexName = codex.getByLabel("Name", { exact: true })
+  await expect(codexName).toHaveValue("Codex CLI", { timeout: 10_000 })
+  const renamed = page.waitForResponse(
+    (item) =>
+      item.request().method() === "PATCH" &&
+      new URL(item.url()).pathname.startsWith("/api/agent-connections/")
+  )
+  await codexName.fill("Codex Devbox")
+  await codexName.blur()
+  expect((await renamed).ok()).toBe(true)
+  await expect(
+    page.getByRole("button", { name: "Continue", exact: true })
+  ).toBeEnabled()
 
   const rules = page.getByRole("region", { name: "Agent rules", exact: true })
   await expect(rules.getByText("~/.codex/AGENTS.md")).toBeVisible()
@@ -604,21 +646,27 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
   await expect(rules.getByRole("button", { name: "Added", exact: true })).toBeDisabled()
   await page.unroute("**/api/profile/help")
   await page.unroute("**/api/profile/setup")
-  await waitForPairingCreate(page, () =>
-    page.getByRole("button", { name: /Always-on agents/ }).click()
-  )
-  await expect(page.getByText(/openclaw worktable connect /)).toBeVisible()
+  await codex.getByRole("button", { name: "Change", exact: true }).click()
+  await waitForPairingCreate(page, () => pickApp(page, "OpenClaw").then(() => {}))
+  const openclaw = page.getByRole("region", { name: "Connect OpenClaw" })
+  await expect(
+    openclaw.getByText("Run this in your terminal.", { exact: true })
+  ).toBeVisible()
+  await expect(openclaw.getByText(/openclaw worktable connect /)).toBeVisible()
+  await openclaw.getByRole("button", { name: "Change", exact: true }).click()
   const hermesPairing = await waitForPairingCreate(page, () =>
-    page.getByRole("tab", { name: "Hermes" }).click()
+    pickApp(page, "Hermes").then(() => {})
   )
-  await expect(page.getByText(/hermes worktable connect /)).toBeVisible()
+  const hermes = page.getByRole("region", { name: "Connect Hermes" })
+  await expect(hermes.getByText(/hermes worktable connect /)).toBeVisible()
   await completePairing(hermesPairing, {
     hostname: "browser-hermes",
     installationId: "hci_browser_test_0987654321",
   })
-  await expect(
-    page.getByText("Hermes is connected. Ask it for work in Threads.")
-  ).toBeVisible({ timeout: 10_000 })
+  await expect(hermes.getByLabel("Name", { exact: true })).toHaveValue(
+    "Hermes",
+    { timeout: 10_000 }
+  )
 
   // On this computer there is nobody to invite, so setup ends here.
   await page.getByRole("button", { name: "Continue" }).click()
@@ -672,7 +720,7 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     )
   ).toMatchObject({
     connections: expect.arrayContaining([
-      expect.objectContaining({ displayName: "Codex CLI" }),
+      expect.objectContaining({ displayName: "Codex Devbox" }),
       expect.objectContaining({
         target: expect.objectContaining({ adapter: "hermes" }),
         displayName: "Hermes",

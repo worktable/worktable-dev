@@ -8,6 +8,8 @@ export type AgentLogoFit = "pad" | "inset" | "fill"
 const FITS: Record<string, AgentLogoFit> = {
   "hermes.png": "fill",
   "openai.svg": "inset",
+  // Its own white tile, like the app icon, so it covers the circle.
+  "codex.svg": "fill",
   "goose.png": "inset",
 }
 

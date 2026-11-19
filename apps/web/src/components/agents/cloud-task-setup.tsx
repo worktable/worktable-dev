@@ -6,6 +6,7 @@ import { Input } from "@worktable/ui/components/input"
 import { saveCloudTask, testCloudTask } from "@/lib/agent-connections-api"
 import { CopyLine } from "./auto-reply"
 import { SetupStep } from "./setup-step"
+import { ExternalButton } from "./setup-parts"
 
 /** What Claude's scheduled task does each time Worktable fires it. */
 export const CLOUD_TASK_PROMPT =
@@ -47,14 +48,9 @@ export function CloudTaskSetup({
     <ol className="space-y-1">
       <SetupStep number={1} title="Create a scheduled task in Claude">
         <CopyLine text={CLOUD_TASK_PROMPT} />
-        <a
-          className="self-start text-sm text-primary-text hover:underline"
-          href="https://claude.ai/code/routines"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open Claude ↗
-        </a>
+        <ExternalButton href="https://claude.ai/code/routines" className="self-start">
+          Open Claude
+        </ExternalButton>
       </SetupStep>
       <SetupStep
         number={2}

@@ -92,7 +92,7 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     id: "codex",
     name: "Codex CLI",
     mode: "on-demand",
-    logo: "openai.svg",
+    logo: "codex.svg",
   },
   cursor: {
     id: "cursor",

@@ -19,19 +19,25 @@ To set up one client, run `worktable mcp setup <client>` with `claude-code`,
 `codex`, `cursor`, `vscode`, or `opencode`. For Goose, use the configuration
 from `worktable mcp print-config goose`.
 
-For an agent on another computer, copy its command from **Coding agents**, or
-run `worktable agent invite` on the Worktable host. The command redeems a
-single-use pairing code. The host must be reachable from that computer; see
-[Remote access](/guides/remote-access/).
+For an agent on another computer, choose it under **Connect App** and copy its
+command, or run `worktable agent invite` on the Worktable host. The command
+redeems a single-use pairing code. For Claude Code and Codex, the same command
+then installs Worktable's [skills](/agents/skills/). The host must be reachable
+from that computer; see [Remote access](/guides/remote-access/).
 
-For **Worktable Cloud**, run the command under **Coding agents**, then approve
-sign-in in the browser that opens. Cursor and VS Code sign in from the app
-instead. If the command can't sign in, for example when an agent runs it, it
-prints the step that finishes the connection.
+For **Worktable Cloud**, Claude Code and Codex install the [plugin](#plugins).
+When the plugin would work in another of your Worktables, Settings shows this
+Worktable's own command instead: run it, then approve sign-in in the browser
+that opens. Cursor and VS Code sign in from the app instead. If the command
+can't sign in, for example when an agent runs it, it prints the step that
+finishes the connection.
 
-For any other MCP agent, choose **Connect any MCP agent** and add the endpoint
-to your agent. On Cloud, sign in. On local or self-hosted Worktable, choose its
-access and create an access token. Copy the token while it is shown.
+For any other MCP agent, choose **Other**. On Cloud, add the address to your
+agent and sign in. On local or self-hosted Worktable, run the command shown,
+or create an access token under **Other Ways** and copy it while it is shown.
+
+Once an agent connects, the same card shows its name and access. Change them
+there, or later with **Edit** under **Connected Agents**.
 
 ## Plugins
 
@@ -79,13 +85,18 @@ In Perplexity, open **Plugins**, choose **Add custom**, then
 `https://github.com/worktable/worktable-plugin`. Perplexity keeps its own copy:
 for a newer version, remove the plugin and import it again.
 
+When the plugin would work in another of your Worktables, Settings shows this
+Worktable's own address for Antigravity, Gemini CLI and Perplexity instead.
+Add it as an MCP server or custom connector, then sign in. The plugin stays
+under **Other Ways**.
+
 An installed plugin is not proof of sign-in. Check access in the client before
 reading or writing workspace content.
 
 ## Always-on agents
 
 Always-on agents run continuously and answer thread messages addressed to them.
-Choose a provider under **Settings → Agents → Always-on agents**.
+Choose a provider under **Settings → Agents → Connect App**.
 
 ### OpenClaw
 
@@ -95,7 +106,7 @@ Install the Worktable plugin:
 openclaw plugins install clawhub:@worktable/openclaw
 ```
 
-- Run the single-use command from **Settings → Agents → Always-on agents →
+- Run the single-use command from **Settings → Agents → Connect App →
   OpenClaw**, where OpenClaw is installed.
 - Or run `openclaw worktable connect --server <address>` and approve the agent at
   the link it prints. On Cloud, the address is `https://app.worktable.cloud`.
@@ -121,7 +132,7 @@ hermes plugins install worktable/worktable-dev#packages/hermes-plugin --enable
 
 Then connect the Hermes profile:
 
-- Run the single-use command from **Settings → Agents → Always-on agents →
+- Run the single-use command from **Settings → Agents → Connect App →
   Hermes**, where Hermes is installed.
 - Or run `hermes worktable connect <address>` and approve Hermes at the link it
   prints. On Cloud, the address is `https://app.worktable.cloud`.
@@ -141,7 +152,7 @@ See [Threads](/guides/threads/) for delivery behavior.
 
 ### Grok Bot
 
-Open **Settings → Agents → Always-on agents → Grok Bot**, or choose **Grok Bot**
+Open **Settings → Agents → Connect App → Grok Bot**, or choose **Grok Bot**
 during Getting Started. Use Worktable Cloud, or turn on
 [Worktable Link](/guides/remote-access/) for a local or self-hosted workspace.
 Grok Bot needs OAuth sign-in; a public URL with a bearer token is not enough.
@@ -185,7 +196,7 @@ Manage the connection:
 - **Pause** stops new claims; **Resume** accepts them again.
 - Rename the Bot under **Connection settings**. The connection and threads stay.
 - Each connection is one Grok account. To connect another, use
-  **Always-on agents → Grok Bot** again.
+  **Settings → Agents → Connect App → Grok Bot** again.
 - **Connection settings** also switches methods and reruns the check. Only the
   selected method sends wakes, so update the routine with the new instructions.
 - **Remove routine** deletes its notification settings and stops new claims.
@@ -198,24 +209,22 @@ See [Grok Bot routines](https://prod.cursor.com/help/grok-bot/routines) and
 
 ## Chat apps
 
-Grok Bot is also available under **Chat apps** in Settings and Getting Started.
-It uses the same [Grok Bot connection](#grok-bot) and continues answering on its own.
-
-For local or self-hosted Worktable, open **Settings → Agents → Chat apps**.
+For local or self-hosted Worktable, choose ChatGPT or Claude in
+**Settings → Agents → Connect App**.
 Turn on [Worktable Link](/guides/remote-access/#worktable-link) with **Set Up**,
 then add the official Worktable app in ChatGPT or Claude. Turning Link on there
 makes the app work in this Worktable: one already connected moves here, and the
 next one added starts here.
 
-The same steps show where ChatGPT, Claude or Grok works now. When it works in
+The setup shows where ChatGPT, Claude or Grok works now. When it works in
 another Worktable, **Move Here** moves it to this one after asking: it stops
 working in the other Worktable, including any auto-reply there. Its row under
-**Connected agents** says the same. **All Apps** opens Cloud's
+**Connected Agents** says the same. **Change** in its **Edit** opens Cloud's
 [Apps page](https://app.worktable.cloud/gateway/worktables/apps), which moves
 an app to any of your Worktables.
 
 ChatGPT answers comments and messages on its own once it works in this
-Worktable and you paste the line from **Turn On** into a Work chat, on
+Worktable and you paste the prompt from **Copy Prompt** into a Work chat, on
 chatgpt.com or in the desktop app with Work and Cloud selected. Auto-reply
 shows On when ChatGPT is watching.
 

@@ -129,7 +129,7 @@ function ConnectBody() {
   const [setups, setSetups] = useState<SetupRecord[]>([])
   return (
     <>
-      <AgentConnectOptions setups={setups} onSetupsChange={setSetups} />
+      <AgentConnectOptions setups={setups} onSetupsChange={setSetups} done />
       <div className="mt-3">
         <DoneWhen>Done when your agent makes its first call.</DoneWhen>
       </div>

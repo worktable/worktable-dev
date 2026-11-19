@@ -44,6 +44,13 @@ function useTempRuntime(): string {
   process.env["WORKTABLE_ANTIGRAVITY_MCP_CONFIG"] = join(root, ".gemini", "config", "mcp_config.json");
   process.env["WORKTABLE_DEVIN_MCP_CONFIG"] = join(root, ".config", "devin", "mcp_config.json");
   process.env["WORKTABLE_JUNIE_MCP_CONFIG"] = join(root, ".junie", "mcp", "mcp.json");
+  process.env["WORKTABLE_ZED_SETTINGS"] = join(root, ".config", "zed", "settings.json");
+  process.env["WORKTABLE_CLINE_MCP_CONFIG"] = join(root, ".cline", "data", "settings", "cline_mcp_settings.json");
+  process.env["WORKTABLE_WARP_MCP_CONFIG"] = join(root, ".warp", ".mcp.json");
+  process.env["WORKTABLE_PI_MCP_CONFIG"] = join(root, ".pi", "agent", "mcp.json");
+  process.env["WORKTABLE_DROID_MCP_CONFIG"] = join(root, ".factory", "mcp.json");
+  process.env["WORKTABLE_AMP_SETTINGS"] = join(root, ".config", "amp", "settings.json");
+  process.env["WORKTABLE_KIRO_MCP_CONFIG"] = join(root, ".kiro", "settings", "mcp.json");
   process.env["WORKTABLE_CODEX_CONFIG"] = join(root, ".codex", "config.toml");
   process.env["WORKTABLE_VSCODE_MCP_CONFIG"] = join(root, "vscode", "mcp.json");
   return root;
@@ -193,6 +200,41 @@ describe("installClient", () => {
     const outcome = installClient("codex", TARGET);
     expect(outcome.ok).toBe(false);
     expect(outcome.message).toBeDefined();
+  });
+
+  it("edits a settings file with comments in place, keeping everything but the worktable entry", () => {
+    useTempRuntime();
+    const path = process.env["WORKTABLE_ZED_SETTINGS"]!;
+    mkdirSync(dirname(path), { recursive: true });
+    const settings = [
+      "// Zed settings",
+      "{",
+      '  "theme": "One Dark", // keep me',
+      '  "context_servers": {',
+      '    "worktable": { "url": "https://old.test/mcp" },',
+      '    "other": { "url": "http://other" },',
+      "  },",
+      "}",
+      "",
+    ].join("\n");
+    writeFileSync(path, settings);
+
+    // The connector reads it as the client does, and finds the old entry.
+    const blocked = preflightClient("zed", { replace: false });
+    expect(blocked.message).toContain("Worktable at https://old.test/mcp");
+    expect(installClient("zed", TARGET).ok).toBe(true);
+
+    const text = readFileSync(path, "utf8");
+    expect(text).toStartWith("// Zed settings\n{\n  \"theme\": \"One Dark\", // keep me\n");
+    expect(text).toContain('"other": { "url": "http://other" }');
+    expect(text).not.toContain("old.test");
+    expect(text).toContain('"Authorization": "Bearer wt_x_y"');
+
+    // Amp keeps its servers under one dotted key in a new file.
+    expect(installClient("amp", TARGET).ok).toBe(true);
+    expect(JSON.parse(readFileSync(process.env["WORKTABLE_AMP_SETTINGS"]!, "utf8"))).toEqual({
+      "amp.mcpServers": { worktable: { url: TARGET.endpoint, headers: { Authorization: "Bearer wt_x_y" } } },
+    });
   });
 
   it("connector preflight leaves malformed JSON byte-for-byte unchanged", () => {

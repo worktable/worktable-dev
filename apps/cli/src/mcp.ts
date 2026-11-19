@@ -22,6 +22,8 @@ import {
   juniePath,
   type JsonEntryPlaces,
   kiloPath,
+  LISTED_PATHS,
+  listedEntry,
   opencodeEntry,
   opencodePath,
   preflightClient,
@@ -408,6 +410,23 @@ export const adapters: Record<ConnectorInstallableMcpClientId, Adapter> = {
     junieEntry,
     "junie"
   ),
+  ...listedAdapters(),
+}
+
+/** Clients whose servers sit in one list of URL entries. */
+function listedAdapters() {
+  const ids = Object.keys(LISTED_PATHS) as (keyof typeof LISTED_PATHS)[]
+  return Object.fromEntries(
+    ids.map((id) => [
+      id,
+      makeJsonAdapter(
+        CLIENTS[id],
+        LISTED_PATHS[id],
+        JSON_CLIENT_ENTRY_PLACES[id],
+        (endpoint, token) => listedEntry(id, endpoint, token)
+      ),
+    ])
+  ) as Record<keyof typeof LISTED_PATHS, Adapter>
 }
 
 export function listClients(includeAll = false): McpClientInfo[] {

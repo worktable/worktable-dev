@@ -37,6 +37,13 @@ export const CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS = [
   "antigravity",
   "devin",
   "junie",
+  "zed",
+  "cline",
+  "warp",
+  "pi",
+  "droid",
+  "amp",
+  "kiro",
 ] as const
 
 export const MANUAL_MCP_CLIENT_IDS = ["goose"] as const
@@ -174,6 +181,55 @@ export const MCP_CLIENTS: Record<McpClientId, McpClientMeta> = {
     setupKind: "connector",
     configPathHint: "~/.junie/mcp/mcp.json",
   },
+  zed: {
+    id: "zed",
+    label: "Zed",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.config/zed/settings.json",
+  },
+  cline: {
+    id: "cline",
+    label: "Cline",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.cline/data/settings/cline_mcp_settings.json",
+  },
+  warp: {
+    id: "warp",
+    label: "Warp",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.warp/.mcp.json",
+  },
+  pi: {
+    id: "pi",
+    label: "Pi",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.pi/agent/mcp.json",
+  },
+  droid: {
+    id: "droid",
+    label: "Factory Droid",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.factory/mcp.json",
+  },
+  amp: {
+    id: "amp",
+    label: "Amp",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.config/amp/settings.json",
+  },
+  kiro: {
+    id: "kiro",
+    label: "Kiro",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.kiro/settings/mcp.json",
+  },
   goose: {
     id: "goose",
     label: "Goose",
@@ -223,6 +279,27 @@ function bearerHeaders(token: string): Record<string, string> {
 function jsonBody(value: unknown): string {
   return JSON.stringify(value, null, 2)
 }
+
+/**
+ * Clients whose server entry is a URL with optional headers: the key their
+ * file lists servers under, and what each entry carries besides.
+ */
+export const SERVER_LISTS = {
+  // Zed's settings.json, which Zed writes with comments.
+  zed: { key: "context_servers", extra: {} },
+  // Cline's shared file for Cline CLI and its editor extensions.
+  cline: { key: "mcpServers", extra: { type: "streamableHttp" } },
+  warp: { key: "mcpServers", extra: {} },
+  pi: { key: "mcpServers", extra: {} },
+  // What `droid mcp add --type http` writes.
+  droid: { key: "mcpServers", extra: { type: "http" } },
+  // Amp's settings.json keeps servers under one dotted key.
+  amp: { key: "amp.mcpServers", extra: {} },
+  // Kiro IDE and kiro-cli share this file.
+  kiro: { key: "mcpServers", extra: {} },
+} as const satisfies Partial<
+  Record<McpSnippetClientId, { key: string; extra: Record<string, string> }>
+>
 
 /**
  * Render the connection config for one client. The CLI uses this renderer;
@@ -377,6 +454,28 @@ export function mcpClientSnippet(
           },
         }),
       }
+    case "zed":
+    case "cline":
+    case "warp":
+    case "pi":
+    case "droid":
+    case "amp":
+    case "kiro": {
+      const { key, extra } = SERVER_LISTS[id]
+      return {
+        ...base,
+        language: "json",
+        body: jsonBody({
+          [key]: {
+            worktable: {
+              ...extra,
+              url: endpoint,
+              ...(token ? { headers: bearerHeaders(token) } : {}),
+            },
+          },
+        }),
+      }
+    }
     case "goose":
       return {
         ...base,

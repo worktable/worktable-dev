@@ -19,6 +19,13 @@ describe("MCP client configuration", () => {
       "antigravity",
       "devin",
       "junie",
+      "zed",
+      "cline",
+      "warp",
+      "pi",
+      "droid",
+      "amp",
+      "kiro",
       "goose",
     ] as const
     for (const id of clients) {
@@ -32,13 +39,22 @@ describe("MCP client configuration", () => {
           id === "copilot" ||
           id === "antigravity" ||
           id === "devin" ||
-          id === "junie"
+          id === "junie" ||
+          id === "cline" ||
+          id === "warp" ||
+          id === "pi" ||
+          id === "droid" ||
+          id === "kiro"
             ? parsed.mcpServers.worktable
-            : id === "opencode" || id === "kilo"
-              ? parsed.mcp.servers.worktable
-              : id === "vscode"
-                ? parsed.servers.worktable
-                : parsed
+            : id === "zed"
+              ? parsed.context_servers.worktable
+              : id === "amp"
+                ? parsed["amp.mcpServers"].worktable
+                : id === "opencode" || id === "kilo"
+                  ? parsed.mcp.servers.worktable
+                  : id === "vscode"
+                    ? parsed.servers.worktable
+                    : parsed
         // Antigravity's own key; it also reads `url`, but documents this one.
         expect(id === "antigravity" ? server.serverUrl : server.url).toBe(url)
         expect(server.headers).toEqual(
@@ -49,6 +65,9 @@ describe("MCP client configuration", () => {
         if (id === "copilot") expect(server.tools).toEqual(["*"])
         // What `devin mcp add --scope user` writes.
         if (id === "devin") expect(server.transport).toBe("http")
+        // What `droid mcp add --type http` writes; Cline's own transport name.
+        if (id === "droid") expect(server.type).toBe("http")
+        if (id === "cline") expect(server.type).toBe("streamableHttp")
         if (id === "opencode" || id === "kilo" || id === "goose")
           expect(server.type).toBe("remote")
         if (id === "goose") expect(server.enabled).toBe(true)

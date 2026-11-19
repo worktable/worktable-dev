@@ -92,9 +92,9 @@ export interface ReleaseInfo {
  * connector of this tag, so it knows what this build's setup offers.
  */
 export function releaseTag(version: string = VERSION): string | null {
-  return /^\d+\.\d+\.\d+(?:-dev\.\d+)?$/.test(version) && version !== "0.0.1"
-    ? `v${version}`
-    : null
+  // A beta build's version carries its commit (0.1.52-dev.529+9a28c9d); its tag doesn't.
+  const release = /^(\d+\.\d+\.\d+(?:-dev\.\d+)?)(?:\+[0-9A-Za-z.]+)?$/.exec(version)?.[1]
+  return release && release !== "0.0.1" ? `v${release}` : null
 }
 
 export function getReleaseInfo(): ReleaseInfo {

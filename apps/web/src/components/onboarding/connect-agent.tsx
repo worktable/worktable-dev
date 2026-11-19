@@ -738,14 +738,20 @@ function SignInPanel(props: PanelProps) {
   const { app, way, connection } = props
   const { step, value, open } = cloudStep(app, way, connection)
   const { skills } = way
-  // An address brings no skills, so they are a step of their own.
-  const skillsStep = skills.via === "files" || skills.via === "url"
+  // An address brings no skills, so they are a step of their own. The
+  // installer's comes first: this card settles once the agent signs in.
   const back = props.primary ? " Then return to Worktable." : null
   return (
     <>
+      {skills.via === "url" ? (
+        <div className="mb-3">
+          <Instruction>First run this for Worktable’s skills.</Instruction>
+          <CommandBlock value={skillsCommand(skills.target)} />
+        </div>
+      ) : null}
       <Instruction>
         {step}
-        {skillsStep ? null : back}
+        {skills.via === "files" ? null : back}
       </Instruction>
       <CommandBlock value={value} />
       {open ? (
@@ -766,11 +772,6 @@ function SignInPanel(props: PanelProps) {
             , unpack it, and upload its worktable folder in Customize, then
             Skills.{back}
           </Instruction>
-        </div>
-      ) : skills.via === "url" ? (
-        <div className="mt-3">
-          <Instruction>Then run this for Worktable’s skills.{back}</Instruction>
-          <CommandBlock value={skillsCommand(skills.target)} />
         </div>
       ) : null}
       {props.primary ? <CloudStatus {...props} /> : null}

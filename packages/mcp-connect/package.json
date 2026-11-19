@@ -19,6 +19,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@worktable/types": "workspace:*",
+    "jsonc-parser": "^3.3.1",
     "smol-toml": "^1.7.0"
   },
   "devDependencies": {

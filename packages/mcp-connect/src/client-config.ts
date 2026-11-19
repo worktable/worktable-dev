@@ -20,6 +20,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { MCP_CLIENTS, type ConnectorInstallableMcpClientId } from "@worktable/types/mcp-clients";
+import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser";
 import { parse as parseToml } from "smol-toml";
 
 // ============================================================
@@ -61,28 +62,64 @@ export function commandExists(command: string): boolean {
 
 // ---- JSON config files -----------------------------------------------------
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * A client config's contents. Many clients (Kilo, OpenCode, VS Code) accept
+ * comments and trailing commas, so read JSON with comments; undefined when
+ * the text isn't valid even then.
+ */
+function parseJsonText(text: string): unknown {
+  const errors: ParseError[] = [];
+  const parsed: unknown = parseJsonc(text, errors, { allowTrailingComma: true });
+  return errors.length > 0 ? undefined : parsed;
+}
+
 export function readJsonObject(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
+  const parsed = parseJsonText(readFileSync(path, "utf8"));
+  return isJsonObject(parsed) ? parsed : {};
 }
 
 function readJsonObjectForMutation(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
-  } catch {
+  const parsed = parseJsonText(readFileSync(path, "utf8"));
+  if (parsed === undefined) {
     throw new Error(`${path} is not valid JSON; it was left unchanged.`);
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isJsonObject(parsed)) {
     throw new Error(`${path} must contain a JSON object; it was left unchanged.`);
   }
-  return parsed as Record<string, unknown>;
+  return parsed;
+}
+
+/**
+ * The file's text with only what changed between `before` and `after`
+ * edited, so its comments and layout stay where the person put them.
+ */
+function editJsonText(
+  text: string,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  path: string[] = []
+): string {
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    const was = before[key];
+    const now = after[key];
+    if (isJsonObject(was) && isJsonObject(now)) {
+      text = editJsonText(text, was, now, [...path, key]);
+    } else if (JSON.stringify(was) !== JSON.stringify(now)) {
+      text = applyEdits(
+        text,
+        modify(text, [...path, key], now, {
+          formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" },
+        })
+      );
+    }
+  }
+  return text;
 }
 
 function writeFilePrivate(path: string, contents: string | Buffer, mode = 0o600): void {
@@ -111,7 +148,14 @@ function writeFilePrivate(path: string, contents: string | Buffer, mode = 0o600)
 }
 
 export function writeJsonObject(path: string, value: Record<string, unknown>): void {
-  writeFilePrivate(path, JSON.stringify(value, null, 2) + "\n");
+  const text = existsSync(path) ? readFileSync(path, "utf8") : null;
+  const before = text === null ? undefined : parseJsonText(text);
+  writeFilePrivate(
+    path,
+    text !== null && isJsonObject(before)
+      ? editJsonText(text, before, value)
+      : JSON.stringify(value, null, 2) + "\n"
+  );
 }
 
 export function bearerHeaders(token?: string): Record<string, string> | undefined {

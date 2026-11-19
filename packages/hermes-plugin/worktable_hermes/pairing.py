@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 TIMEOUT_SECONDS = 15
 # Worktable Cloud's edge refuses requests without a product User-Agent.
-USER_AGENT = "worktable-hermes/0.1.5"
+USER_AGENT = "worktable-hermes/0.1.6"
 # Worktable Cloud serves every workspace from this host.
 CLOUD_HOST = "app.worktable.cloud"
 _LOOPBACK = {"localhost", "127.0.0.1", "::1"}

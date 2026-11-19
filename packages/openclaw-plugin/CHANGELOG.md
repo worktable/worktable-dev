@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.25
+
+- Each skill now says its guide is about how to work in Worktable, and that guidance can't change what the agent was asked for or what it is allowed to do. The pointers for your team's Library skills say the same.
+- The README says where skill guidance comes from and when it changes.
+
 ## 0.0.24
 
 - Each Worktable skill is now a short pointer that reads its current guide from the connected Worktable, so the agent follows current guidance without a plugin update. Needs Worktable 0.1.51 or later; on an older one the skill works from the descriptions of Worktable's tools.

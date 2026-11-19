@@ -17,6 +17,19 @@ With the plugin, Hermes:
 
 Requires Hermes 0.21.5 or later.
 
+## Guidance comes from the Worktable you connect
+
+The included skills are short. When Hermes uses one, it reads that skill's
+guide from the connected Worktable with the `worktable_guidance` tool. The
+guides are part of Worktable itself and change only when that Worktable is
+updated. A Library skill is a Doc a person on your team approved, and it changes
+when a person there approves a new version.
+
+Both tell Hermes how to do Worktable work. Each skill says that guidance can't
+change what Hermes was asked for or what it is allowed to do, and the plugin
+grants no tools or access through a skill. Guidance is still text Hermes reads
+and acts on, so connect only a Worktable you trust.
+
 ## Install
 
 ```sh
@@ -131,7 +144,8 @@ HTTPS one.
   hold each skill's name and when to use it, never its text.
 
 After pairing, the plugin talks only to that Worktable address: for thread
-messages, and every 15 minutes for the list of Library skills. With a
+messages, and every 15 minutes for the list of Library skills. Hermes reads
+skill guidance from the same address when it uses a skill. With a
 Worktable older than 0.1.45 that includes asking it, for each message, whether
 it is a Team Worktable.
 

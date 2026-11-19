@@ -22,6 +22,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Thread switching:** Opening a thread shows it in its final position at once, without the conversation jumping or blinking.
 - **Agent logos:** Repeat visits reuse cached logos without downloading them again.
 - **Agent avatars:** An agent named with its app, like "Ada (Claude)" or "codex@laptop", shows that app's logo, and initials skip brackets.
 - **Agent setup:** Claude and ChatGPT added through Worktable Link count as connected, coding agents in a second Cloud Worktable connect to it rather than another one, and commands wrap between words on phones.

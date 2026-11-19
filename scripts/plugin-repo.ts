@@ -7,10 +7,11 @@
 // a generated Gemini CLI manifest, a note on where the source lives, and the
 // workflow that pulls each change and releases each new plugin version.
 //
-// The repository is also the Claude Code and Codex marketplace that Worktable's
-// connect command installs from. Beside the full plugin it lists Worktable
-// Skills (`plugins/worktable-skills`), built here from the same skills with no
-// MCP server: the connect command adds the connection to a Worktable on a
+// The repository is also the Claude Code, Codex and Copilot marketplace that
+// Worktable's connect command installs from, and Antigravity installs from its
+// folders. Beside the full plugin it lists Worktable Skills
+// (`plugins/worktable-skills`), built here from the same skills with no MCP
+// server: the connect command adds the connection to a Worktable on a
 // computer or server itself, so a bundled Cloud server would only duplicate it.
 
 import { lstat, mkdir, readdir, writeFile } from "node:fs/promises"
@@ -118,11 +119,15 @@ function antigravity(files: Map<string, Uint8Array>): { manifest: string; mcp: s
 }
 
 /**
- * Worktable Skills: the full plugin's skills, assets and license under Claude
- * and Codex manifests that name no MCP server. Nothing is copied in
- * worktable-dev; the tree is built from plugins/worktable each sync.
+ * Worktable Skills: the full plugin's skills, assets and license under Claude,
+ * Codex and Antigravity manifests that name no MCP server. Copilot reads the
+ * Claude one. Nothing is copied in worktable-dev; the tree is built from
+ * plugins/worktable each sync.
  */
-function skillsPlugin(files: Map<string, Uint8Array>): Map<string, string | Uint8Array> {
+function skillsPlugin(
+  files: Map<string, Uint8Array>,
+  antigravityManifest: string
+): Map<string, string | Uint8Array> {
   const claude = json(files.get(".claude-plugin/plugin.json"), ".claude-plugin/plugin.json")
   const codex = json(files.get(".codex-plugin/plugin.json"), ".codex-plugin/plugin.json")
   const { mcpServers: _claudeServers, ...claudeRest } = claude
@@ -152,6 +157,16 @@ function skillsPlugin(files: Map<string, Uint8Array>): Map<string, string | Uint
       },
     })
   )
+  // Without its own manifest Antigravity converts the Claude one and shows
+  // the plugin by its id.
+  out.set(
+    ".antigravity-plugin/plugin.json",
+    manifest({
+      ...JSON.parse(antigravityManifest),
+      name: SKILLS_PLUGIN,
+      description: SKILLS_PLUGIN_DESCRIPTION,
+    })
+  )
   for (const [path, contents] of files) {
     if (path.startsWith("skills/") || path.startsWith("assets/") || path === "LICENSE")
       out.set(path, contents)
@@ -162,9 +177,9 @@ function skillsPlugin(files: Map<string, Uint8Array>): Map<string, string | Uint
 
 Worktable's skills, without a connection: find and cite context, write Docs,
 build HTML Docs, organize Records, review with annotations, and work in
-threads. Worktable's connect command installs this plugin in Claude Code and
-Codex when it connects them to a Worktable on your computer or server, and adds
-the connection itself.
+threads. Worktable's connect command installs this plugin in Claude Code,
+Codex, Copilot CLI, VS Code and Antigravity when it connects them to a
+Worktable on your computer or server, and adds the connection itself.
 
 To install it yourself:
 
@@ -175,6 +190,15 @@ claude plugin install ${SKILLS_PLUGIN} --marketplace ${PLUGIN_REPOSITORY}
 \`\`\`text
 codex plugin marketplace add ${PLUGIN_REPOSITORY}
 codex plugin add ${SKILLS_PLUGIN}@worktable
+\`\`\`
+
+\`\`\`text
+copilot plugin marketplace add ${PLUGIN_REPOSITORY}
+copilot plugin install ${SKILLS_PLUGIN}@worktable
+\`\`\`
+
+\`\`\`text
+agy plugin install https://github.com/${PLUGIN_REPOSITORY}/tree/main/${SKILLS_PLUGIN_PATH}
 \`\`\`
 
 For Worktable Cloud, install the full Worktable plugin at the root of this
@@ -235,7 +259,8 @@ changes in [worktable-dev](${ISSUES_URL}).
 
 [\`${SKILLS_PLUGIN_PATH}\`](${SKILLS_PLUGIN_PATH}) holds Worktable Skills, the
 same skills without the Cloud connection, which Worktable's connect command
-installs in Claude Code and Codex for a Worktable on a computer or server.
+installs in Claude Code, Codex, Copilot CLI, VS Code and Antigravity for a
+Worktable on a computer or server.
 `
 }
 
@@ -353,7 +378,7 @@ export async function buildPluginRepositoryTree(
   })
   files.set(".claude-plugin/marketplace.json", claudeMarketplace(json(catalogs.get(claudeCatalog), claudeCatalog)))
   files.set(".agents/plugins/marketplace.json", codexMarketplace(json(catalogs.get(codexCatalog), codexCatalog)))
-  for (const [path, contents] of skillsPlugin(source))
+  for (const [path, contents] of skillsPlugin(source, google.manifest))
     files.set(`${SKILLS_PLUGIN_PATH}/${path}`, contents)
   files.set("README.md", readme(source))
   files.set(".github/workflows/sync.yml", SYNC_WORKFLOW)

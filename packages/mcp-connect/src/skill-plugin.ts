@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { isAbsolute, join, resolve } from "node:path"
 import type { SkillProjectionTargetId } from "@worktable/types"
 import { claudeCodeCommand } from "./client-config.ts"
 import {
@@ -15,26 +16,39 @@ import {
 // Worktable's skills for a connected coding agent
 // ============================================================
 //
-// After the connect command sets up Claude Code or Codex, it installs
-// Worktable Skills (the skills-only build of the Worktable plugin) with the
-// agent's own plugin command, so the skills update with the agent. The full
-// Worktable plugin already carries the skills, so it is left alone. When the
-// plugin can't be installed, the skills are copied as before, by the same
-// installer `curl https://worktable.dev/install-skills | sh` runs. Nothing
-// here can fail the connection: every outcome is a line to show.
+// After the connect command sets up Claude Code, Codex, Copilot CLI, VS Code
+// or Antigravity, it installs Worktable Skills (the skills-only build of the
+// Worktable plugin) with the agent's own plugin command: `claude`, `codex`,
+// `agy`, and `copilot` for both Copilot CLI and VS Code, which loads Copilot
+// CLI's plugins. The full Worktable plugin already carries the skills, so it
+// is left alone. When the plugin can't be installed, the skills are copied
+// as before, by the same installer `curl https://worktable.dev/install-skills
+// | sh` runs; Antigravity, which reads no folder that installer writes, gets
+// the plugin built from the skills the Worktable serves instead. Nothing here
+// can fail the connection: every outcome is a line to show.
 //
 // Must stay runnable under plain Node 18+, like the rest of the connector.
 
-export type SkillPluginClient = "claude-code" | "codex"
+export type SkillPluginClient =
+  | "claude-code"
+  | "codex"
+  | "copilot"
+  | "vscode"
+  | "antigravity"
 
 export const SKILL_PLUGIN_CLIENTS: readonly SkillPluginClient[] = [
   "claude-code",
   "codex",
+  "copilot",
+  "vscode",
+  "antigravity",
 ]
 
 /** Where the plugins are listed. Self-hosted mirrors and tests point elsewhere. */
 export const DEFAULT_PLUGIN_MARKETPLACE = "worktable/worktable-plugin"
 export const SKILLS_PLUGIN = "worktable-skills"
+/** Its folder in the marketplace's repository. */
+const SKILLS_PLUGIN_PATH = `plugins/${SKILLS_PLUGIN}`
 const FULL_PLUGIN = "worktable"
 const MARKETPLACE_NAME = "worktable"
 const SKILLS_INSTALLER = "https://worktable.dev/install-skills"
@@ -59,12 +73,16 @@ export interface SkillPluginDependencies {
     removed: boolean
     error?: string
   }
+  /** Installs Worktable Skills in Antigravity from the skills a Worktable serves. */
+  installFromWorktable(origin: string): Promise<string | null>
   env: NodeJS.ProcessEnv
 }
 
 export type SkillsOutcome =
   | { via: "full-plugin" }
   | { via: "plugin"; alreadyInstalled: boolean }
+  /** Antigravity's plugin, built from the skills the Worktable serves. */
+  | { via: "worktable"; reason: string }
   /** OpenCode and Kilo load them from the Worktable's skills address. */
   | { via: "catalog"; alreadyAdded: boolean }
   | { via: "copy"; reason: string; copied: boolean; copyError?: string }
@@ -79,11 +97,46 @@ export interface SkillsReport {
 const LABELS: Record<SkillPluginClient, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
+  copilot: "Copilot CLI",
+  vscode: "VS Code",
+  antigravity: "Antigravity",
 }
 
-const TARGETS: Record<SkillPluginClient, SkillProjectionTargetId> = {
+/** Where each copies to; Antigravity reads neither, so it never copies. */
+const TARGETS: Record<SkillPluginClient, SkillProjectionTargetId | null> = {
   "claude-code": "claude",
   codex: "agents",
+  copilot: "agents",
+  vscode: "agents",
+  antigravity: null,
+}
+
+/**
+ * Copies a plugin makes redundant, removed so each skill shows once. Copilot
+ * shares ~/.agents/skills with other agents and shows a skill once by name,
+ * so its copies stay.
+ */
+const REMOVES_COPIES: Record<SkillPluginClient, boolean> = {
+  "claude-code": true,
+  codex: true,
+  copilot: false,
+  vscode: false,
+  antigravity: false,
+}
+
+/** The command that installs plugins: VS Code loads Copilot CLI's. */
+function pluginCommand(client: SkillPluginClient): string {
+  switch (client) {
+    case "claude-code":
+      return claudeCodeCommand()
+    case "codex":
+      return "codex"
+    case "copilot":
+    case "vscode":
+      return "copilot"
+    case "antigravity":
+      return "agy"
+  }
 }
 
 const TARGET_FOLDERS: Record<SkillProjectionTargetId, string> = {
@@ -95,6 +148,9 @@ const RESTART_HINTS: Record<SkillPluginClient, string> = {
   "claude-code":
     "Start a new Claude Code session, or run /reload-plugins, to load Worktable.",
   codex: "Start a new Codex session to load Worktable.",
+  copilot: "Start a new Copilot CLI session to load Worktable.",
+  vscode: "Reload VS Code windows to load Worktable.",
+  antigravity: "Start a new Antigravity conversation to load Worktable.",
 }
 
 function runCommand(command: string, args: string[]): CommandResult {
@@ -155,10 +211,22 @@ function installedPlugins(
   client: SkillPluginClient,
   dependencies: SkillPluginDependencies
 ): { names: string[] } | { error: string } {
-  const command = client === "claude-code" ? claudeCodeCommand() : "codex"
+  const command = pluginCommand(client)
   const result = dependencies.run(command, ["plugin", "list", "--json"])
   if (result.status !== 0) return { error: firstLine(result, command) }
   const parsed = parseJson(result.stdout)
+  // Antigravity lists `[{ name }]`. Copilot lists the same, plus built-in
+  // plugins and, from a marketplace in a local folder, each plugin it offers,
+  // which counts only once turned on.
+  if ((client === "antigravity" || client === "copilot" || client === "vscode") && Array.isArray(parsed)) {
+    return {
+      names: parsed
+        .filter((entry: { source?: unknown; enabled?: unknown }) =>
+          entry.source === "builtin" ? false : entry.source !== "live" || entry.enabled === true
+        )
+        .map((entry: { name?: unknown }) => String(entry.name ?? "")),
+    }
+  }
   // Claude lists installed plugins as an array of `name@marketplace` ids;
   // Codex as `{ installed: [{ name }] }`. A turned-off plugin still counts,
   // so the two are never installed side by side.
@@ -180,11 +248,47 @@ function installedPlugins(
   return { error: "couldn't read its plugin list" }
 }
 
+/**
+ * Antigravity installs from a folder or a GitHub folder address, not from a
+ * marketplace: the plugin's folder in the marketplace's repository.
+ */
+export function antigravitySource(marketplace: string): string | null {
+  if (isAbsolute(marketplace) || marketplace.startsWith(".") || existsSync(marketplace))
+    return join(resolve(marketplace), SKILLS_PLUGIN_PATH)
+  const repository = /^[\w.-]+\/[\w.-]+$/.test(marketplace)
+    ? `https://github.com/${marketplace}`
+    : /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+?(?:\.git)?\/?$/.test(marketplace)
+      ? marketplace.replace(/(?:\.git)?\/?$/, "")
+      : null
+  return repository ? `${repository}/tree/main/${SKILLS_PLUGIN_PATH}` : null
+}
+
 function installSkillsPlugin(
   client: SkillPluginClient,
   marketplace: string,
   dependencies: SkillPluginDependencies
 ): string | null {
+  if (client === "antigravity") {
+    const source = antigravitySource(marketplace)
+    if (!source) return `it can't install from ${marketplace}`
+    const result = dependencies.run("agy", ["plugin", "install", source])
+    return result.status === 0 ? null : firstLine(result, "agy")
+  }
+  if (client === "copilot" || client === "vscode") {
+    // An already registered marketplace named worktable is used as it is.
+    const added = dependencies.run("copilot", ["plugin", "marketplace", "add", marketplace])
+    const install = () =>
+      dependencies.run("copilot", ["plugin", "install", `${SKILLS_PLUGIN}@${MARKETPLACE_NAME}`])
+    let result = install()
+    if (result.status !== 0 && /not found/i.test(`${result.stderr}\n${result.stdout}`)) {
+      // A copy of the marketplace taken before it listed the plugin: refresh it once.
+      dependencies.run("copilot", ["plugin", "marketplace", "update", MARKETPLACE_NAME])
+      result = install()
+    }
+    if (result.status === 0) return null
+    const registered = added.status === 0 || /already registered/i.test(`${added.stderr}\n${added.stdout}`)
+    return firstLine(registered ? result : added, "copilot")
+  }
   if (client === "claude-code") {
     const command = claudeCodeCommand()
     const install = (args: string[]) => {
@@ -233,18 +337,21 @@ function installSkillsPlugin(
  */
 export async function setUpSkills(
   client: SkillPluginClient,
-  overrides: Partial<SkillPluginDependencies> = {}
+  overrides: Partial<SkillPluginDependencies> = {},
+  /** The connected Worktable, which serves its skills. */
+  origin?: string
 ): Promise<SkillsReport> {
   const dependencies: SkillPluginDependencies = {
     run: runCommand,
     projectSkills,
     removeProjectedSkills,
+    installFromWorktable,
     env: process.env,
     ...overrides,
   }
   const label = LABELS[client]
   const target = TARGETS[client]
-  const folder = TARGET_FOLDERS[target]
+  const folder = target ? TARGET_FOLDERS[target] : null
   const marketplace =
     dependencies.env["WORKTABLE_PLUGIN_MARKETPLACE"]?.trim() ||
     DEFAULT_PLUGIN_MARKETPLACE
@@ -256,6 +363,7 @@ export async function setUpSkills(
   })
   const removeCopies = () => {
     // The plugin brings the skills, so an earlier copy would show each twice.
+    if (!target || !REMOVES_COPIES[client]) return
     const removal = dependencies.removeProjectedSkills(target)
     if (removal.error)
       lines.push(
@@ -269,6 +377,11 @@ export async function setUpSkills(
   const before = installedPlugins(client, dependencies)
   if ("names" in before && before.names.includes(FULL_PLUGIN)) {
     lines.push(`  ${label}: skills come with its Worktable plugin`)
+    // Copilot CLI takes a plugin's server over the user's one of the same name.
+    if (client === "copilot")
+      lines.push(
+        "  Its Worktable plugin connects Copilot CLI to Worktable Cloud in place of this connection. To use this Worktable instead, run copilot plugin uninstall worktable, then this command again with --replace."
+      )
     removeCopies()
     return report({ via: "full-plugin" })
   }
@@ -290,6 +403,22 @@ export async function setUpSkills(
     reason = failed ?? "the plugin didn't show up after installing"
   }
 
+  if (!target) {
+    // Antigravity: the same plugin, built from the skills this Worktable serves.
+    const failed =
+      origin && !/^no agy command/.test(reason)
+        ? await dependencies.installFromWorktable(origin)
+        : "no copy to install"
+    const after = failed ? null : installedPlugins(client, dependencies)
+    if (after && "names" in after && after.names.includes(SKILLS_PLUGIN)) {
+      lines.push(
+        `  Couldn't install the Worktable plugin in ${label} (${reason}), so it was installed from this Worktable's skills instead.`
+      )
+      return report({ via: "worktable", reason })
+    }
+    lines.push(`  Couldn't add Worktable's skills to ${label} (${reason}). See ${SKILLS_GUIDE}`)
+    return report({ via: "copy", reason, copied: false, copyError: failed ?? "it didn't show up after installing" })
+  }
   const copyError = await dependencies.projectSkills(target)
   lines.push(
     copyError
@@ -302,6 +431,72 @@ export async function setUpSkills(
     copied: copyError === null,
     ...(copyError ? { copyError } : {}),
   })
+}
+
+// ---- Antigravity's plugin from the skills a Worktable serves --------------------
+
+interface CatalogIndex {
+  skills: { name: string; version: string; files: string[] }[]
+}
+
+const SAFE_NAME = /^[a-z0-9][a-z0-9-]*$/
+const SAFE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+/**
+ * Builds Worktable Skills from the catalog at `<origin>/.well-known/skills/`
+ * (packages/server/src/skill-catalog.ts) and installs it with `agy`, which
+ * keeps its own copy. Null when it worked.
+ */
+export async function installFromWorktable(
+  origin: string,
+  run: (command: string, args: string[]) => CommandResult = runCommand
+): Promise<string | null> {
+  const base = `${new URL(origin).origin}/.well-known/skills/`
+  const directory = mkdtempSync(join(tmpdir(), "worktable-skills-plugin-"))
+  try {
+    const response = await fetch(new URL("index.json", base))
+    if (!response.ok) return `its skills address returned HTTP ${response.status}`
+    const index = (await response.json()) as CatalogIndex
+    const skills = Array.isArray(index.skills) ? index.skills : []
+    if (skills.length === 0) return "its skills address lists no skills"
+    for (const skill of skills) {
+      if (!SAFE_NAME.test(skill.name) || !skill.files.every((file) => SAFE_FILE.test(file)))
+        return `its skills address lists an unexpected skill`
+      mkdirSync(join(directory, "skills", skill.name), { recursive: true })
+      for (const file of skill.files) {
+        const fileResponse = await fetch(new URL(`${skill.name}/${file}`, base))
+        if (!fileResponse.ok) return `its skills address returned HTTP ${fileResponse.status}`
+        writeFileSync(
+          join(directory, "skills", skill.name, file),
+          Buffer.from(await fileResponse.arrayBuffer())
+        )
+      }
+    }
+    const version = createHash("sha256")
+      .update(skills.map((skill) => `${skill.name}@${skill.version}`).join("\n"))
+      .digest("hex")
+      .slice(0, 12)
+    mkdirSync(join(directory, ".antigravity-plugin"))
+    writeFileSync(
+      join(directory, ".antigravity-plugin", "plugin.json"),
+      `${JSON.stringify(
+        {
+          name: SKILLS_PLUGIN,
+          displayName: "Worktable",
+          description: "Worktable's skills, from the Worktable this agent connects to.",
+          version: `0.0.0-${version}`,
+        },
+        null,
+        2
+      )}\n`
+    )
+    const installed = run("agy", ["plugin", "install", directory])
+    return installed.status === 0 ? null : firstLine(installed, "agy")
+  } catch (error) {
+    return `couldn't read its skills address: ${(error as Error).message}`
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 }
 
 // ---- The skill copies install-skills makes ------------------------------------

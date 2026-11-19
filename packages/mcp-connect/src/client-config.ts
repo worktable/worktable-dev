@@ -190,7 +190,9 @@ function jsonEntry(root: Record<string, unknown>, places: JsonEntryPlaces): Reco
 
 export function readJsonUrl(path: string, places: JsonEntryPlaces): string | undefined {
   if (!existsSync(path)) return undefined;
-  const url = jsonEntry(readJsonObject(path), places)?.["url"];
+  const entry = jsonEntry(readJsonObject(path), places);
+  // Antigravity's own key is serverUrl.
+  const url = entry?.["url"] ?? entry?.["serverUrl"];
   return typeof url === "string" ? url : undefined;
 }
 
@@ -272,6 +274,21 @@ export function vscodePath(): string | null {
   return existsSync(candidate) ? candidate : null;
 }
 
+/** Copilot CLI's own servers; COPILOT_HOME moves its whole folder. */
+export function copilotPath(): string {
+  const explicit = process.env["WORKTABLE_COPILOT_MCP_CONFIG"]?.trim();
+  if (explicit) return explicit;
+  const home = process.env["COPILOT_HOME"]?.trim();
+  return join(home || join(homedir(), ".copilot"), "mcp-config.json");
+}
+
+/** Antigravity's global servers, which its app and agy CLI share. */
+export function antigravityPath(): string {
+  return (
+    process.env["WORKTABLE_ANTIGRAVITY_MCP_CONFIG"]?.trim() || join(homedir(), ".gemini", "config", "mcp_config.json")
+  );
+}
+
 export function cursorEntry(endpoint: string, token?: string): Record<string, unknown> {
   return { url: endpoint, ...(token ? { headers: bearerHeaders(token) } : {}) };
 }
@@ -296,6 +313,20 @@ export function vscodeEntry(endpoint: string, token?: string): Record<string, un
   };
 }
 
+/** `tools` is what `copilot mcp add` writes: every tool, as Copilot asks. */
+export function copilotEntry(endpoint: string, token?: string): Record<string, unknown> {
+  return {
+    type: "http",
+    url: endpoint,
+    ...(token ? { headers: bearerHeaders(token) } : {}),
+    tools: ["*"],
+  };
+}
+
+export function antigravityEntry(endpoint: string, token?: string): Record<string, unknown> {
+  return { serverUrl: endpoint, ...(token ? { headers: bearerHeaders(token) } : {}) };
+}
+
 /** Where each JSON-config client keeps its servers. */
 export const JSON_CLIENT_ENTRY_PLACES = {
   cursor: [["mcpServers"]],
@@ -303,6 +334,8 @@ export const JSON_CLIENT_ENTRY_PLACES = {
   opencode: [["mcp", "servers"], ["mcp"]],
   kilo: [["mcp", "servers"], ["mcp"]],
   vscode: [["servers"]],
+  copilot: [["mcpServers"]],
+  antigravity: [["mcpServers"]],
 } as const satisfies Record<string, JsonEntryPlaces>;
 
 // ---- Codex (TOML) ------------------------------------------------------------
@@ -758,6 +791,10 @@ function configSurface(id: ConnectorInstallableMcpClientId): ConfigSurface | nul
         kind: "json",
         places: JSON_CLIENT_ENTRY_PLACES.vscode,
       };
+    case "copilot":
+      return { path: copilotPath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.copilot };
+    case "antigravity":
+      return { path: antigravityPath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.antigravity };
   }
 }
 
@@ -779,6 +816,10 @@ function tokenlessEntry(id: ConnectorInstallableMcpClientId, endpoint: string): 
       return opencodeEntry(endpoint);
     case "vscode":
       return vscodeEntry(endpoint);
+    case "copilot":
+      return copilotEntry(endpoint);
+    case "antigravity":
+      return antigravityEntry(endpoint);
   }
 }
 
@@ -983,6 +1024,10 @@ export function detectClient(id: ConnectorInstallableMcpClientId): boolean {
       return commandExists("kilo") || existsSync(dirname(kiloPath()));
     case "vscode":
       return vscodePath() !== null || commandExists("code");
+    case "copilot":
+      return commandExists("copilot") || existsSync(copilotPath());
+    case "antigravity":
+      return commandExists("agy") || existsSync(dirname(antigravityPath()));
   }
 }
 
@@ -1071,6 +1116,16 @@ function installClientUnsafe(
         restartHint: "Reload VS Code windows to pick up the new server.",
       };
     }
+    case "copilot": {
+      const path = copilotPath();
+      setupJsonUrl(path, JSON_CLIENT_ENTRY_PLACES.copilot, copilotEntry(target.endpoint, target.token));
+      return { id, ok: true, configPath: path, restartHint: "Start a new Copilot CLI session to load Worktable." };
+    }
+    case "antigravity": {
+      const path = antigravityPath();
+      setupJsonUrl(path, JSON_CLIENT_ENTRY_PLACES.antigravity, antigravityEntry(target.endpoint, target.token));
+      return { id, ok: true, configPath: path, restartHint: "Start a new Antigravity conversation to load Worktable." };
+    }
   }
 }
 
@@ -1089,6 +1144,8 @@ function signInCommand(id: ConnectorInstallableMcpClientId): string[] | null {
       return commandExists("kilo") ? ["kilo", "mcp", "auth", "worktable"] : null;
     case "cursor":
     case "vscode":
+    case "copilot":
+    case "antigravity":
       return null;
   }
 }
@@ -1110,6 +1167,10 @@ export function signInInstruction(id: ConnectorInstallableMcpClientId): string {
       return "Open Cursor and sign in to worktable from its MCP settings.";
     case "vscode":
       return "In VS Code, start worktable from the MCP servers list and sign in.";
+    case "copilot":
+      return "In Copilot CLI, run /mcp and sign in to worktable.";
+    case "antigravity":
+      return "In Antigravity, open MCP servers and sign in to worktable.";
   }
 }
 
@@ -1178,6 +1239,8 @@ export async function connectClientOnce(id: ConnectorInstallableMcpClientId): Pr
     case "opencode":
     case "kilo":
     case "vscode":
+    case "copilot":
+    case "antigravity":
       return false;
   }
 }

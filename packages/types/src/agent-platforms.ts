@@ -17,6 +17,7 @@ export const AGENT_PLATFORM_IDS = [
   "opencode",
   "kilo",
   "vscode",
+  "copilot",
   "goose",
   "antigravity",
   // Before gemini, so a "Gemini CLI ..." sign-in name finds it first.
@@ -114,6 +115,12 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     mode: "on-demand",
     logo: "vscode.svg",
   },
+  copilot: {
+    id: "copilot",
+    name: "Copilot CLI",
+    mode: "on-demand",
+    logo: "github-copilot.svg",
+  },
   goose: { id: "goose", name: "Goose", mode: "on-demand", logo: "goose.png" },
   antigravity: {
     id: "antigravity",
@@ -155,6 +162,8 @@ const CLIENT_PLATFORMS: Record<string, AgentPlatformId> = {
   opencode: "opencode",
   kilo: "kilo",
   vscode: "vscode",
+  copilot: "copilot",
+  antigravity: "antigravity",
   goose: "goose",
   // Names these apps sign in with. The Gemini app registers as "Google"
   // (seen Nov 16, 2026).

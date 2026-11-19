@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
+  antigravitySource,
   removeProjectedSkills,
   setUpSkills,
   type CommandResult,
@@ -169,5 +170,98 @@ describe("Worktable's skills for a connected coding agent", () => {
     })
     expect(offline.outcome).toMatchObject({ via: "copy", copied: false })
     expect(offline.lines[0]).toContain("Couldn't add Worktable's skills to Claude Code (no claude command found;")
+  })
+
+  it("installs Worktable Skills with Copilot CLI for Copilot CLI and VS Code, and counts only installed plugins", async () => {
+    for (const client of ["copilot", "vscode"] as const) {
+      const installed = new Set<string>()
+      const calls: string[] = []
+      const run = (command: string, args: string[]): CommandResult => {
+        calls.push(`${command} ${args.join(" ")}`)
+        if (args[1] === "list")
+          // A marketplace in a local folder lists each plugin it offers.
+          return ok(
+            JSON.stringify([
+              { name: "worktable", enabled: false, source: "live" },
+              { name: "browser-use", enabled: false, source: "builtin" },
+              ...[...installed].map((name) => ({ name, enabled: true, source: "installed" })),
+            ])
+          )
+        if (args[1] === "marketplace")
+          return { status: 1, stdout: "", stderr: 'Failed to add marketplace: Marketplace "worktable" already registered' }
+        installed.add(args[2]!.split("@")[0]!)
+        return ok()
+      }
+      const report = await setUpSkills(client, {
+        run,
+        env: {},
+        removeProjectedSkills: () => {
+          throw new Error("~/.agents/skills is shared with other agents")
+        },
+      })
+      expect(report.outcome).toEqual({ via: "plugin", alreadyInstalled: false })
+      expect(calls).toContain("copilot plugin install worktable-skills@worktable")
+    }
+
+    // The full plugin's server replaces this connection in Copilot CLI.
+    const full = await setUpSkills("copilot", {
+      run: () => ok(JSON.stringify([{ name: "worktable", enabled: true, source: "installed" }])),
+      env: {},
+    })
+    expect(full.outcome).toEqual({ via: "full-plugin" })
+    expect(full.lines[1]).toContain("copilot plugin uninstall worktable")
+  })
+
+  it("installs Antigravity's plugin from the marketplace's folder, else from the Worktable's skills", async () => {
+    expect(antigravitySource("worktable/worktable-plugin")).toBe(
+      "https://github.com/worktable/worktable-plugin/tree/main/plugins/worktable-skills"
+    )
+    expect(antigravitySource("/mirror/plugin")).toBe("/mirror/plugin/plugins/worktable-skills")
+
+    const installed = new Set<string>()
+    const calls: string[] = []
+    const run = (_command: string, args: string[]): CommandResult => {
+      calls.push(args.join(" "))
+      if (args[1] === "list") return ok(JSON.stringify([...installed].map((name) => ({ name }))))
+      return { status: 1, stdout: "", stderr: "Error: install target must be a directory: /mirror/plugin/plugins/worktable-skills" }
+    }
+    const fromWorktable: string[] = []
+    const report = await setUpSkills(
+      "antigravity",
+      {
+        run,
+        env: { WORKTABLE_PLUGIN_MARKETPLACE: "/mirror/plugin" },
+        projectSkills: async () => {
+          throw new Error("Antigravity reads no folder install-skills writes")
+        },
+        installFromWorktable: async (origin) => {
+          fromWorktable.push(origin)
+          installed.add("worktable-skills")
+          return null
+        },
+      },
+      "http://127.0.0.1:7480"
+    )
+    expect(calls).toContain("plugin install /mirror/plugin/plugins/worktable-skills")
+    expect(fromWorktable).toEqual(["http://127.0.0.1:7480"])
+    expect(report.outcome).toMatchObject({ via: "worktable" })
+    expect(report.lines).toEqual([
+      "  Couldn't install the Worktable plugin in Antigravity (install target must be a directory: /mirror/plugin/plugins/worktable-skills), so it was installed from this Worktable's skills instead.",
+    ])
+
+    // Without agy there is nothing to install with: a line, and the connection stands.
+    const missing = await setUpSkills(
+      "antigravity",
+      {
+        run: () => ({ status: null, stdout: "", stderr: "spawnSync agy ENOENT" }),
+        env: {},
+        installFromWorktable: async () => {
+          throw new Error("needs agy")
+        },
+      },
+      "http://127.0.0.1:7480"
+    )
+    expect(missing.outcome).toMatchObject({ via: "copy", copied: false })
+    expect(missing.lines[0]).toContain("Couldn't add Worktable's skills to Antigravity (no agy command found).")
   })
 })

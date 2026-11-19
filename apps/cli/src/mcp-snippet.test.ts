@@ -10,7 +10,15 @@ const token = "wt_test_token"
 // Parse what each client consumes: formatting and explanatory prose can change.
 describe("MCP client configuration", () => {
   it("emits usable JSON for each client with optional bearer authentication", () => {
-    const clients = ["cursor", "opencode", "kilo", "vscode", "goose"] as const
+    const clients = [
+      "cursor",
+      "opencode",
+      "kilo",
+      "vscode",
+      "copilot",
+      "antigravity",
+      "goose",
+    ] as const
     for (const id of clients) {
       for (const bearer of [undefined, token, 'wt_quote"and\\slash']) {
         const url = `${endpoint}?label=quoted\"value`
@@ -18,18 +26,21 @@ describe("MCP client configuration", () => {
           mcpClientSnippet(id, { endpoint: url, token: bearer }).body
         )
         const server =
-          id === "cursor"
+          id === "cursor" || id === "copilot" || id === "antigravity"
             ? parsed.mcpServers.worktable
             : id === "opencode" || id === "kilo"
               ? parsed.mcp.servers.worktable
               : id === "vscode"
                 ? parsed.servers.worktable
                 : parsed
-        expect(server.url).toBe(url)
+        // Antigravity's own key; it also reads `url`, but documents this one.
+        expect(id === "antigravity" ? server.serverUrl : server.url).toBe(url)
         expect(server.headers).toEqual(
           bearer ? { Authorization: `Bearer ${bearer}` } : undefined
         )
-        if (id === "vscode") expect(server.type).toBe("http")
+        if (id === "vscode" || id === "copilot")
+          expect(server.type).toBe("http")
+        if (id === "copilot") expect(server.tools).toEqual(["*"])
         if (id === "opencode" || id === "kilo" || id === "goose")
           expect(server.type).toBe("remote")
         if (id === "goose") expect(server.enabled).toBe(true)

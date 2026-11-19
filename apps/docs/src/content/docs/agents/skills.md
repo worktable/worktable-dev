@@ -42,6 +42,12 @@ Plugins already include skills, so don't install a second copy:
 
 - The general Worktable plugin bundles every skill except Set up Worktable,
   along with its **Cloud** MCP connection.
+- Worktable Skills bundles the same skills without a connection. The connect
+  command for a local or self-hosted Worktable installs it in Claude Code and
+  Codex, where it shows as Worktable, unless the general plugin is already
+  there. It also removes skills an earlier command copied, so none show twice.
+  If the plugin can't be installed, the command copies the skills instead, as
+  below, and says so.
 - The Hermes plugin bundles the same skills except Check the Library. Hermes
   lists your team's skills itself.
 - The OpenClaw plugin bundles all of them except Check the Library, for the
@@ -67,7 +73,8 @@ worktable skills install agents
 Use `claude` instead of `agents` where needed. Worktable setup and MCP setup do
 not install skills.
 
-If Worktable runs on another computer, install only the skills:
+If Worktable runs on another computer and your agent isn't Claude Code or
+Codex, install only the skills:
 
 ```sh
 curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents

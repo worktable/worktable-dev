@@ -398,9 +398,14 @@ async function readResult(
   }
 }
 
+/**
+ * The delivery a list row shows for its thread. `lapsed` names the members
+ * whose open requests no longer wait: the agents of an archived thread.
+ */
 function latestThreadSummaryActivity(
   threadRequests: ThreadRequestDigest[],
-  activities: ThreadActivity[]
+  activities: ThreadActivity[],
+  lapsed?: ReadonlySet<string>
 ): ThreadActivity | undefined {
   if (activities.length === 0) return undefined
   const requests = new Map(
@@ -413,6 +418,9 @@ function latestThreadSummaryActivity(
     const activity = activities[index]!
     const request = requests.get(activity.messageId)
     if (!request || request.identityId !== activity.identityId) continue
+    if (request.status === "open" && lapsed?.has(activity.participantId)) {
+      continue
+    }
     if (
       request.status === "open" ||
       (request.status === "responded" && activity.state === "replied")
@@ -1221,7 +1229,15 @@ export async function listThreadSummaries(
     ...summary,
     activity: latestThreadSummaryActivity(
       requests,
-      activities(summary.location, summary.id)
+      activities(summary.location, summary.id),
+      // An archived thread's open requests to agents no longer wait.
+      isSummaryArchived(summary, nowMs)
+        ? new Set(
+            summary.members
+              .filter((member) => member.kind === "agent")
+              .map((member) => member.id)
+          )
+        : undefined
     ),
   }))
   return deliveryState

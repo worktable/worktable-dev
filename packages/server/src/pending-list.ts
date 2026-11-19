@@ -24,9 +24,10 @@ import type {
   AnnotationRequest,
   AnnotationStatus,
   SpaceFile,
+  ThreadLifetimeChoice,
   ThreadLocation,
 } from "@worktable/types"
-import { threadLocationKey } from "@worktable/types"
+import { isThreadArchived, threadLocationKey } from "@worktable/types"
 import { getAppDir } from "./app-storage.ts"
 import { askingTextHash } from "./annotation-requests.ts"
 import { logError } from "./debug-log.ts"
@@ -100,6 +101,13 @@ export interface PendingEntry {
   revision: number
   createdAt: string
   source: PendingCommentSource | PendingThreadRequestSource
+  /**
+   * On a thread request to an agent: its thread's newest message and lifetime
+   * choice. Once the thread archives the request stops waiting, and waits
+   * again when a message brings the thread back. A request to a person never
+   * lapses: it waits until it is answered.
+   */
+  lapsesWith?: { lastMessageAt: string; lifetime?: ThreadLifetimeChoice }
 }
 
 export type PendingCloseReason = "replied" | "resolved" | "withdrawn"
@@ -458,11 +466,22 @@ function threadItems(digest: ThreadDigest): Derived[] {
     const author = thread.identities.find(
       (candidate) => candidate.id === message.authorIdentityId
     )
+    const recipient = thread.members.find(
+      (candidate) => candidate.id === identity.memberId
+    )
     return [
       {
         itemId: `thr:${thread.id}:${message.id}:${identity.id}`,
         kind: "threadRequest" as const,
         recipient: { participantId: identity.memberId, identityId: identity.id },
+        ...(recipient?.kind === "agent"
+          ? {
+              lapsesWith: {
+                lastMessageAt: thread.lastMessage.createdAt,
+                ...(thread.lifetime ? { lifetime: thread.lifetime } : {}),
+              },
+            }
+          : {}),
         scope: {
           spaceId:
             thread.location.kind === "space" ? thread.location.spaceId : null,
@@ -631,21 +650,34 @@ async function settled(): Promise<void> {
   await Promise.all([...rescans.values(), ...commentRebuilds.values()])
 }
 
+/**
+ * Whether an open item still waits on its recipient. Archiving follows the
+ * clock, so it is decided when the list is read, not when it is indexed.
+ */
+function stillWaiting(entry: PendingEntry, nowMs: number): boolean {
+  return !entry.lapsesWith || !isThreadArchived(entry.lapsesWith, nowMs)
+}
+
 /** Open items for one participant, newest first. */
 export async function pendingFor(participantId: string): Promise<PendingEntry[]> {
   await settled()
   const current = state!
+  const nowMs = Date.now()
   return [...(current.byRecipient.get(participantId) ?? [])]
     .map((itemId) => current.entries.get(itemId)!)
-    .filter(Boolean)
+    .filter((entry) => entry && stillWaiting(entry, nowMs))
     .sort((a, b) => b.revision - a.revision)
 }
 
 /** Open items a participant asked of others, newest first. */
 export async function pendingFrom(participantId: string): Promise<PendingEntry[]> {
   await settled()
+  const nowMs = Date.now()
   return [...state!.entries.values()]
-    .filter((entry) => entry.source.from.id === participantId)
+    .filter(
+      (entry) =>
+        entry.source.from.id === participantId && stillWaiting(entry, nowMs)
+    )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 

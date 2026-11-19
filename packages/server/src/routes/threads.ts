@@ -4,6 +4,7 @@ import {
   ThreadDeliveryStateSchema,
   ConversationIdentityIdSchema,
   markdownPlainText,
+  ThreadLifetimeStateSchema,
   type ThreadListItem,
   type ThreadLocation,
   ThreadMessageIdSchema,
@@ -24,6 +25,7 @@ import {
   readThreadMessage,
   readThreadMessages,
   renameThreadTitle,
+  setThreadLifetimeChoice,
   waitForThreadReply,
 } from "../thread-service.ts"
 import { ThreadError } from "../thread-store.ts"
@@ -125,6 +127,20 @@ function listLocation(
   }
 }
 
+/** Whether the caller may rename, keep or archive threads at the route's location. */
+function canManageThreads(
+  c: Parameters<Parameters<Hono["onError"]>[0]>[1]
+): boolean {
+  const identity = c.get("identity")
+  const spaceId = c.req.param("spaceId")
+  return (
+    hasScope(identity.scopes, "threads:write") &&
+    (spaceId
+      ? canAccessSpace(spaceId, "edit", identity)
+      : canAccessWorktableThreads("edit", identity))
+  )
+}
+
 function managementResult(thread: { id: string; revision: number }) {
   return { threadId: thread.id, revision: thread.revision }
 }
@@ -199,12 +215,23 @@ threadsRouter.get("/", async (c) => {
       400
     )
   }
+  const parsedArchived = z
+    .enum(["exclude", "only"])
+    .optional()
+    .safeParse(c.req.query("archived"))
+  if (!parsedArchived.success) {
+    return c.json(
+      { error: "archived must be exclude or only", code: "VALIDATION_ERROR" },
+      400
+    )
+  }
   try {
     const summaries = await listThreadSummaries(
       c.get("identity"),
       parsedLocation.location,
       participantId,
-      parsedDeliveryState.data
+      parsedDeliveryState.data,
+      parsedArchived.data
     )
     return c.json({ threads: summaries.map(threadListItem) })
   } catch (error) {
@@ -292,11 +319,7 @@ threadsRouter.get("/:threadId", async (c) => {
         after,
         before,
       })),
-      canRename:
-        hasScope(c.get("identity").scopes, "threads:write") &&
-        (c.req.param("spaceId")
-          ? canAccessSpace(c.req.param("spaceId")!, "edit", c.get("identity"))
-          : canAccessWorktableThreads("edit", c.get("identity"))),
+      canRename: canManageThreads(c),
     })
   } catch (error) {
     return errorResponse(c, error)
@@ -322,6 +345,34 @@ threadsRouter.patch("/:threadId", async (c) => {
     return c.json(
       await renameThreadTitle({
         ...parsed.data,
+        location: routeLocation(c),
+        threadId: c.req.param("threadId"),
+      })
+    )
+  } catch (error) {
+    return errorResponse(c, error)
+  }
+})
+
+threadsRouter.put("/:threadId/lifetime", async (c) => {
+  if (!canManageThreads(c)) {
+    return c.json(
+      { error: "Forbidden", code: "FORBIDDEN", required: "threads:write" },
+      403
+    )
+  }
+  const parsed = z
+    .object({ state: ThreadLifetimeStateSchema })
+    .safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success)
+    return c.json(
+      { error: parsed.error.message, code: "VALIDATION_ERROR" },
+      400
+    )
+  try {
+    return c.json(
+      await setThreadLifetimeChoice({
+        state: parsed.data.state,
         location: routeLocation(c),
         threadId: c.req.param("threadId"),
       })

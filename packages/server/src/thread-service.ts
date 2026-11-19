@@ -12,7 +12,10 @@ import type {
   ParticipantRef,
   SpaceFile,
   ThreadActivity,
+  ThreadArchiveFilter,
   ThreadDeliveryState,
+  ThreadLifetimeResult,
+  ThreadLifetimeState,
   ThreadLocation,
   ThreadMessage,
   ThreadPostResult,
@@ -22,6 +25,9 @@ import type {
 } from "@worktable/types"
 import {
   defaultConversationIdentityId,
+  isStoredThreadArchived,
+  isThreadArchived,
+  threadLifetimeChoice,
   threadLocation,
   threadLocationKey,
   ThreadTitleSchema,
@@ -64,6 +70,7 @@ import {
   readThread,
   renameThread,
   scanAllThreadDigests,
+  setThreadLifetime,
   ThreadError,
   type ThreadDigestScan,
   type ThreadRequestDigest,
@@ -1151,11 +1158,24 @@ async function buildParticipantPresentations(): Promise<Record<string, Participa
   return presentations
 }
 
+/** Whether a listed thread has left lists; see `isThreadArchived`. */
+export function isSummaryArchived(
+  summary: Pick<ThreadSummary, "lastMessage" | "lifetime">,
+  nowMs: number = Date.now()
+): boolean {
+  return isThreadArchived(
+    { lastMessageAt: summary.lastMessage.createdAt, lifetime: summary.lifetime },
+    nowMs
+  )
+}
+
 export async function listThreadSummaries(
   identity: ThreadIdentity,
   locationInput?: ThreadLocation | string,
   participantId?: string,
-  deliveryState?: ThreadDeliveryState
+  deliveryState?: ThreadDeliveryState,
+  /** Leave archived threads out, or return only them. Everything by default. */
+  archived?: ThreadArchiveFilter
 ): Promise<ThreadSummary[]> {
   const location = locationInput
     ? normalizeThreadLocation(locationInput)
@@ -1181,9 +1201,14 @@ export async function listThreadSummaries(
       .map((space) => space.id)
   )
   const locationKey = location ? threadLocationKey(location) : undefined
+  // Archiving follows the clock, so it is decided per list rather than kept
+  // with the digest of a thread file.
+  const nowMs = Date.now()
   const threads = scan.threads.filter(({ summary }) => {
     const storedLocation = summary.location
     return (
+      (archived === undefined ||
+        isSummaryArchived(summary, nowMs) === (archived === "only")) &&
       (locationKey !== undefined
         ? threadLocationKey(storedLocation) === locationKey
         : storedLocation.kind === "worktable" ||
@@ -1378,6 +1403,26 @@ export async function renameThreadTitle(input: {
     title: thread.title,
     revision: thread.revision,
     updatedAt: thread.updatedAt,
+  }
+}
+
+/** Keep a thread, archive it, or return it to the usual quiet-period rule. */
+export async function setThreadLifetimeChoice(input: {
+  location: ThreadLocation
+  threadId: string
+  state: ThreadLifetimeState
+}): Promise<ThreadLifetimeResult> {
+  const thread = await setThreadLifetime(
+    input.location,
+    input.threadId,
+    input.state
+  )
+  const lifetime = threadLifetimeChoice(thread)!
+  return {
+    threadId: thread.id,
+    revision: thread.revision,
+    lifetime,
+    archived: isStoredThreadArchived(thread, Date.now()),
   }
 }
 

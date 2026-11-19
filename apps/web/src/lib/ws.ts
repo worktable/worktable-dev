@@ -21,7 +21,7 @@ import {
 } from "./documents-queries"
 import { patchDocumentRevision } from "./document-rows"
 import { recentQueryKeys } from "./lifetime"
-import { threadQueryKeys } from "./threads-queries"
+import { threadListKeys, threadQueryKeys } from "./threads-queries"
 import { refreshLive } from "./live-refresh"
 import { noteNavigationChanged } from "./personal-navigation"
 import { noteSetupChanged } from "./setup"
@@ -52,7 +52,7 @@ import type {
   ThreadListItem,
   AgentConnectionInventory,
 } from "@worktable/types"
-import { threadLocationKey } from "@worktable/types"
+import { isStoredThreadArchived, threadLocationKey } from "@worktable/types"
 
 /** Delivery activity changes only a Grok Bot's status. */
 function refreshGrokConnections(queryClient: QueryClient): void {
@@ -183,6 +183,9 @@ export function pruneInvisibleThreadDetails(
   })) {
     const threadId = threadDetailId(queryKey, spaceId)
     if (!threadId || visibleIds.has(threadId)) continue
+    // An archived thread is out of the list but still there to read.
+    const cached = queryClient.getQueryData<ThreadReadResult>(queryKey)
+    if (cached && isStoredThreadArchived(cached.thread, Date.now())) continue
     void queryClient.resetQueries({
       queryKey: threadQueryKeys.detail(location, threadId),
       exact: true,
@@ -202,6 +205,10 @@ export async function reconcileSpaceThreadQueries(
     ? Promise.all([
         queryClient.invalidateQueries({
           queryKey: threadQueryKeys.list(location),
+          exact: true,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: threadQueryKeys.archivedList(location),
           exact: true,
         }),
         queryClient.invalidateQueries({
@@ -255,10 +262,7 @@ export function applyThreadActivityToQueries(
   activity: ThreadActivity | undefined
 ): void {
   const detailKey = threadQueryKeys.detail(location, threadId)
-  const listKeys = [
-    threadQueryKeys.list({ kind: "all" }),
-    threadQueryKeys.list(location),
-  ]
+  const listKeys = threadListKeys(location)
   if (!activity?.messageId) {
     refreshLive(queryClient, [
       { queryKey: detailKey, exact: true },
@@ -302,6 +306,7 @@ export function applyThreadActivityToQueries(
       (current) =>
         current
           ? {
+              ...current,
               threads: current.threads.map((thread) =>
                 thread.id === threadId &&
                 threadLocationKey(thread.location) ===
@@ -383,10 +388,10 @@ export function applyThreadEvent(
   scope: ThreadLocation | null
 ): void {
   const location = messageLocation(message, scope ?? { kind: "worktable" })
-  const lists = [
-    { queryKey: threadQueryKeys.list({ kind: "all" }), exact: true },
-    { queryKey: threadQueryKeys.list(location), exact: true },
-  ]
+  const lists = threadListKeys(location).map((queryKey) => ({
+    queryKey,
+    exact: true,
+  }))
   const pending = { queryKey: activityQueryKeys.pending }
   const activity = { queryKey: activityQueryKeys.all }
   if (message.type === "thread_activity") {
@@ -759,9 +764,11 @@ export function revalidateSpaceAfterReconnect(
     { queryKey: activityQueryKeys.pending },
   ])
   if (!isSpaceLive(THREAD_STREAM)) {
-    // Activity's live replies read the workspace thread list.
+    // Activity's live replies read the workspace thread list; a missed
+    // message may also have brought a thread back out of the archive.
     refreshLive(queryClient, [
       { queryKey: threadQueryKeys.list({ kind: "all" }), exact: true },
+      { queryKey: threadQueryKeys.archivedList({ kind: "all" }), exact: true },
     ])
     void reconcileSpaceThreadQueries(queryClient, spaceId)
   }

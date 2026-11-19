@@ -40,6 +40,7 @@ import {
   writeManagedFixtureHtml,
 } from "../../packages/server/src/fixtures/managed-content.ts"
 import { fixtureThread } from "../../packages/server/src/fixtures/threads.ts"
+import { participantIdentityFingerprint } from "../../packages/server/src/participant-store.ts"
 import {
   clearedWorkspaceManifest,
   ensureWorkspaceManifest,
@@ -623,7 +624,11 @@ interface ThreadRef {
   spaceId: string | null
 }
 
-/** Owner and agent take turns; every tenth thread ends waiting on the owner. */
+/**
+ * Owner and agent take turns; every tenth thread ends waiting on the owner.
+ * The owner is the person who opens the fixture, so these are their own
+ * threads, and `fixtureThread` keeps each one however old its fixed dates get.
+ */
 function writeThreads(
   text: Text,
   count: number,
@@ -634,6 +639,10 @@ function writeThreads(
     id: "ptc_perf_owner0001",
     kind: "human" as const,
     name: "Owner",
+    identityFingerprint: participantIdentityFingerprint({
+      agent: null,
+      principal: { id: "local:owner", type: "human", displayName: "Owner" },
+    }),
   }
   const threads: ThreadRef[] = []
   for (let index = 0; index < count; index += 1) {

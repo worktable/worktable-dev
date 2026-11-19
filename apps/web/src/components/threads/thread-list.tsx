@@ -6,6 +6,7 @@ import {
   useVirtualizer,
 } from "@tanstack/react-virtual"
 import {
+  ArchiveIcon,
   CircleAlertIcon,
   LoaderCircleIcon,
   MessageCircleIcon,
@@ -45,6 +46,7 @@ import {
 } from "@worktable/ui/components/tooltip"
 
 import { useScrollFade } from "@/hooks/use-scroll-fade"
+import type { ThreadListView } from "@/lib/thread-list-view"
 import { RelativeTime } from "@/lib/time"
 import { deliveryPresentation } from "@/lib/thread-presentation"
 import { ThreadParticipantAvatar } from "./thread-participant-avatar"
@@ -54,11 +56,16 @@ export type ThreadLinkTarget =
   | {
       to: "/threads/$"
       params: { _splat: string }
-      search: { location: "all" | "worktable" | "space"; spaceId?: string }
+      search: {
+        location: "all" | "worktable" | "space"
+        spaceId?: string
+        view?: "archived"
+      }
     }
   | {
       to: "/spaces/$spaceId/threads/$"
       params: { spaceId: string; _splat: string }
+      search: { view?: "archived" }
     }
 
 export type ThreadLink = (
@@ -68,6 +75,10 @@ export type ThreadLink = (
 
 interface ThreadListProps {
   threads: ThreadListItem[]
+  /** Which threads the list shows; an empty list says so in its own words. */
+  view: ThreadListView
+  /** Set when no thread here has a person in it but agents' threads exist. */
+  onShowAgents?: () => void
   activeThreadId: string
   activeLocation: ThreadLocation
   loading: boolean
@@ -89,6 +100,8 @@ function sameLocation(left: ThreadLocation, right: ThreadLocation): boolean {
 
 export function ThreadList({
   threads,
+  view,
+  onShowAgents,
   activeThreadId,
   activeLocation,
   loading,
@@ -170,6 +183,19 @@ export function ThreadList({
             threadLink={threadLink}
           />
         </TooltipProvider>
+      ) : view === "archived" || view === "agents" ? (
+        <Empty className="min-h-72">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              {view === "archived" ? <ArchiveIcon /> : <MessageCircleIcon />}
+            </EmptyMedia>
+            <EmptyTitle>
+              {view === "archived"
+                ? "No archived threads"
+                : "No threads between agents"}
+            </EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <Empty className="min-h-72">
           <EmptyHeader>
@@ -177,11 +203,11 @@ export function ThreadList({
               <MessageCircleIcon />
             </EmptyMedia>
             <EmptyTitle>No threads yet</EmptyTitle>
-            <EmptyDescription>
-              Start a conversation here.
-            </EmptyDescription>
+            {onShowAgents ? null : (
+              <EmptyDescription>Start a conversation here.</EmptyDescription>
+            )}
           </EmptyHeader>
-          <EmptyContent>
+          <EmptyContent className="flex-row justify-center">
             <Button
               variant="outline"
               size="sm"
@@ -192,6 +218,11 @@ export function ThreadList({
               <PlusIcon />
               Thread
             </Button>
+            {onShowAgents ? (
+              <Button variant="ghost" size="sm" onClick={onShowAgents}>
+                Show Agents
+              </Button>
+            ) : null}
           </EmptyContent>
         </Empty>
       )}
@@ -349,7 +380,12 @@ function threadLinkElement(target: ThreadLinkTarget, active: boolean) {
       aria-current={current}
     />
   ) : (
-    <Link to={target.to} params={target.params} aria-current={current} />
+    <Link
+      to={target.to}
+      params={target.params}
+      search={target.search}
+      aria-current={current}
+    />
   )
 }
 

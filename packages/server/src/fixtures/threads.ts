@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
+  THREAD_LIFETIME_KEY,
   ThreadSchema,
   ThreadV3Schema,
   upgradeThreadToV3,
@@ -22,7 +23,11 @@ export interface FixtureThreadDef {
   >
 }
 
-/** Write a deterministic V3 thread into the active fixture workspace. */
+/**
+ * Write a deterministic V3 thread into the active fixture workspace. Fixture
+ * conversations carry fixed dates, so they are kept: otherwise every one of
+ * them would have archived by the time the fixture is opened.
+ */
 export function fixtureThread(def: FixtureThreadDef): void {
   const notifyParticipantsByMessage = new Map(
     def.messages.map((message) => [
@@ -78,6 +83,10 @@ export function fixtureThread(def: FixtureThreadDef): void {
         },
       }
     }),
+    [THREAD_LIFETIME_KEY]: {
+      state: "kept",
+      at: upgradedThread.updatedAt,
+    },
   })
   const dir =
     def.location.kind === "worktable"

@@ -5,8 +5,8 @@ import type {
   ThreadMessage,
   ThreadPostResponse,
   ThreadReadResult,
-  ThreadRenameResult,
   ThreadListItem,
+  ThreadRenameResult,
   ThreadWaitResult,
 } from "@worktable/types"
 import { fetchJSON, type ReadOptions } from "./http"
@@ -30,7 +30,7 @@ export function threadScopeContains(
   return location.kind === "space" && scope.spaceId === location.spaceId
 }
 
-function threadBase(location: ThreadLocation): string {
+export function threadBase(location: ThreadLocation): string {
   return location.kind === "worktable"
     ? "/api/threads"
     : `/api/spaces/${encodeURIComponent(location.spaceId)}/threads`
@@ -68,16 +68,19 @@ export function listCommentRecipients(
   )
 }
 
+/** The threads in lists now, or only the archived ones. */
 export function listThreads(
   scope: ThreadListScope,
+  archived: "exclude" | "only",
   options?: ReadOptions
 ): Promise<{ threads: ThreadListItem[] }> {
-  if (scope.kind === "all") return fetchJSON("/api/threads", options)
-  if (scope.kind === "worktable") {
-    return fetchJSON("/api/threads?location=worktable", options)
-  }
-  return fetchJSON(threadBase(scope), options)
+  const query = new URLSearchParams({ archived })
+  if (scope.kind === "worktable") query.set("location", "worktable")
+  const base = scope.kind === "space" ? threadBase(scope) : "/api/threads"
+  return fetchJSON(`${base}?${query}`, options)
 }
+
+
 
 export function readThread(
   location: ThreadLocation,

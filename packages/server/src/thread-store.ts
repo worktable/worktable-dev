@@ -16,6 +16,7 @@ import { nanoid } from "nanoid"
 import type {
   ParticipantRef,
   Thread,
+  ThreadLifetimeState,
   ThreadLocation,
   ThreadMessage,
   ThreadResponseRequest,
@@ -25,9 +26,11 @@ import {
   defaultConversationIdentityId,
   PortableThreadSchema,
   prospectiveDefaultConversationIdentities,
+  THREAD_LIFETIME_KEY,
   ThreadV3Schema,
   ThreadTitleSchema,
   threadBodyMentionsIdentity,
+  threadLifetimeChoice,
   threadLocation,
   threadLocationKey,
   uniqueConversationIdentityNames,
@@ -1284,6 +1287,23 @@ export async function renameThread(
   })
 }
 
+/**
+ * Record a Keep, Archive or back-to-temporary choice. The choice says nothing
+ * about the conversation, so `updatedAt` and the thread's place in lists by
+ * recency stay as they were.
+ */
+export async function setThreadLifetime(
+  location: ThreadLocation,
+  threadId: string,
+  state: ThreadLifetimeState
+): Promise<Thread> {
+  return persistThreadMutation(location, threadId, (thread, now) => ({
+    ...thread,
+    [THREAD_LIFETIME_KEY]: { state, at: now },
+    revision: thread.revision + 1,
+  }))
+}
+
 /** A thread deleted or moved since the scan no longer needs the new name. */
 async function renameInThread(
   ...args: Parameters<typeof persistThreadMutation>
@@ -1513,6 +1533,7 @@ export async function assignThreadMessage(
 
 function summarizeThread(thread: Thread): ThreadSummary {
   const location = threadLocation(thread)
+  const lifetime = threadLifetimeChoice(thread)
   return {
     id: thread.id,
     version: thread.version,
@@ -1524,6 +1545,7 @@ function summarizeThread(thread: Thread): ThreadSummary {
     revision: thread.revision,
     messageCount: thread.messages.length,
     lastMessage: thread.messages[thread.messages.length - 1]!,
+    ...(lifetime ? { lifetime } : {}),
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
   }

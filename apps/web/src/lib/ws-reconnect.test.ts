@@ -117,8 +117,19 @@ describe("Space WebSocket reconnect backoff", () => {
     queryClient.setQueryData(threadQueryKeys.detail(spaceA, "thr_visible"), { thread: { id: "thr_visible" } })
     queryClient.setQueryData(threadQueryKeys.detail(spaceB, "thr_other_space"), { thread: { id: "thr_other_space" } })
     queryClient.setQueryData(["threads", "participants"], [{ id: "person" }])
+    // Quiet long enough to have left the list, yet still there to read.
+    queryClient.setQueryData(threadQueryKeys.detail(spaceA, "thr_archived"), {
+      thread: {
+        id: "thr_archived",
+        messages: [{ createdAt: "2026-01-01T00:00:00.000Z" }],
+      },
+    })
     visibleThreads = [{ id: "thr_visible" }]
     await reconcileSpaceThreadQueries(queryClient, "space-a")
+
+    expect(
+      queryClient.getQueryData(threadQueryKeys.detail(spaceA, "thr_archived"))
+    ).toBeDefined()
 
     expect(
       queryClient.getQueryData(threadQueryKeys.detail(spaceA, "thr_removed"))

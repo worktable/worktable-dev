@@ -33,6 +33,8 @@ export const threadQueryKeys = {
   root: ["threads"] as const,
   list: (scope: ThreadListScope) =>
     ["threads", "list", scopeKey(scope)] as const,
+  archivedList: (scope: ThreadListScope) =>
+    ["threads", "list", scopeKey(scope), "archived"] as const,
   detail: (location: ThreadLocation, threadId: string) =>
     ["threads", "detail", threadLocationKey(location), threadId] as const,
   participants: ["threads", "participants"] as const,
@@ -53,12 +55,38 @@ export const threadQueryKeys = {
       : (["threads", "participants"] as const),
 }
 
-export const threadsQueryOptions = (scope: ThreadListScope) =>
-  queryOptions({
-    queryKey: threadQueryKeys.list(scope),
-    queryFn: () => listThreads(scope),
+/**
+ * Every list a thread at this location can be in: here and workspace-wide,
+ * in the lists or in the archive. A message or a Keep or Archive choice can
+ * move it from one to another.
+ */
+export function threadListKeys(
+  location: ThreadLocation
+): Array<readonly string[]> {
+  const scopes: ThreadListScope[] = [{ kind: "all" }, location]
+  return scopes.flatMap((scope) => [
+    threadQueryKeys.list(scope),
+    threadQueryKeys.archivedList(scope),
+  ])
+}
+
+/**
+ * The threads in lists now, or the archived ones, which are read only when
+ * someone opens the Archived view.
+ */
+export const threadsQueryOptions = (
+  scope: ThreadListScope,
+  archived = false
+) => {
+  const queryKey: readonly string[] = archived
+    ? threadQueryKeys.archivedList(scope)
+    : threadQueryKeys.list(scope)
+  return queryOptions({
+    queryKey,
+    queryFn: () => listThreads(scope, archived ? "only" : "exclude"),
     staleTime: 15_000,
   })
+}
 
 export const threadQueryOptions = (
   location: ThreadLocation,
@@ -87,8 +115,8 @@ export function preloadThread(
   })
 }
 
-export function useThreads(scope: ThreadListScope) {
-  return useQuery(threadsQueryOptions(scope))
+export function useThreads(scope: ThreadListScope, archived = false) {
+  return useQuery(threadsQueryOptions(scope, archived))
 }
 
 export function useThread(location: ThreadLocation, threadId: string) {
@@ -185,8 +213,7 @@ export function useThreadMutations(location: ThreadLocation) {
   const refresh = (target: ThreadLocation, threadId?: string) => {
     if (threadChangesLive(target)) return
     for (const queryKey of [
-      threadQueryKeys.list({ kind: "all" }),
-      threadQueryKeys.list(target),
+      ...threadListKeys(target),
       ...(threadId ? [threadQueryKeys.detail(target, threadId)] : []),
     ]) {
       void queryClient.invalidateQueries({ queryKey, exact: true })

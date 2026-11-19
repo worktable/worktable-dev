@@ -9,15 +9,20 @@ import {
 } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import {
+  ArchiveIcon,
   CircleAlertIcon,
+  Clock3Icon,
+  InfinityIcon,
   MessageCircleIcon,
   PlusIcon,
   PencilIcon,
+  RotateCcwIcon,
   XIcon,
 } from "lucide-react"
 import {
   threadBodyMentionsIdentity,
   threadLocationKey,
+  type ThreadLifetimeState,
   type ParticipantRef,
   type ThreadListItem,
   type ThreadLocation,
@@ -50,7 +55,7 @@ import { ResizeHandle } from "@worktable/ui/components/resize-handle"
 import { useResizable } from "@worktable/ui/hooks/use-resizable"
 import { toast } from "@worktable/ui/components/sonner"
 
-import { useSetPageMeta } from "@/hooks/use-page-meta"
+import { useSetPageMeta, type PageOverflowAction } from "@/hooks/use-page-meta"
 import type { ThreadListScope, ThreadParticipant } from "@/lib/threads-api"
 import {
   useThread,
@@ -87,6 +92,12 @@ import {
   type ThreadDraftState,
 } from "@/lib/thread-submission"
 import { THREAD_TITLE_MAX_LENGTH } from "@worktable/types/constants"
+import {
+  threadLifetime,
+  threadsInView,
+  useThreadLifetime,
+} from "@/lib/thread-lifetime"
+import type { ThreadListView } from "@/lib/thread-list-view"
 import { useThreadRename } from "@/lib/thread-naming"
 import { RenameDialog } from "@/components/docs/rename-dialog"
 import { NewThreadPanel } from "./new-thread-panel"
@@ -103,6 +114,9 @@ const NO_MEMBERS: ThreadMember[] = []
 
 export interface ThreadsViewProps {
   listScope: ThreadListScope
+  /** The remembered filter, or the archive when the URL names it. */
+  view: ThreadListView
+  onViewChange: (view: ThreadListView) => void
   threadId: string
   selectedLocation: ThreadLocation
   createLocation: ThreadLocation
@@ -155,6 +169,8 @@ export function ThreadsView({ ...props }: ThreadsViewProps) {
  */
 function ThreadsLayout({
   listScope,
+  view,
+  onViewChange,
   threadId,
   selectedLocation,
   createLocation,
@@ -172,7 +188,14 @@ function ThreadsLayout({
   mobileNewOpen: boolean
   setMobileNewOpen: (open: boolean) => void
 }) {
-  const threadsQuery = useThreads(listScope)
+  const threadsQuery = useThreads(listScope, view === "archived")
+  const threads = useMemo(
+    () =>
+      threadsQuery.data
+        ? threadsInView(threadsQuery.data.threads, view)
+        : NO_THREADS,
+    [threadsQuery.data, view]
+  )
   const onNavigateNewRef = useRef(onNavigateNew)
   const threadListResize = useResizable({
     edge: "right",
@@ -214,7 +237,15 @@ function ThreadsLayout({
         )}
 
         <ThreadList
-          threads={threadsQuery.data?.threads ?? NO_THREADS}
+          threads={threads}
+          view={view}
+          onShowAgents={
+            view === "people" &&
+            threads.length === 0 &&
+            (threadsQuery.data?.threads.length ?? 0) > 0
+              ? () => onViewChange("agents")
+              : undefined
+          }
           activeThreadId={threadId}
           activeLocation={selectedLocation}
           loading={threadsQuery.isLoading}
@@ -283,6 +314,7 @@ function ThreadDetail({
   const createMutations = useThreadMutations(createLocation)
   const replyMutations = useThreadMutations(selectedLocation)
   const renameMutation = useThreadRename(selectedLocation)
+  const lifetimeMutation = useThreadLifetime(selectedLocation)
   const draftLocation = threadId ? selectedLocation : createLocation
   const activeDraftKey = threadDraftKey(draftLocation, threadId)
   const [drafts, setDrafts] = useState<ThreadDraftCollection>(() =>
@@ -580,13 +612,14 @@ function ThreadDetail({
           idempotencyKey: submission.idempotencyKey,
         })
         const target = threadLink(result.location, result.threadId)
+        // A thread just started is not in the archive, so leave that view.
         void (target.to === "/threads/$"
           ? navigate({
               to: target.to,
               params: target.params,
-              search: target.search,
+              search: { ...target.search, view: undefined },
             })
-          : navigate({ to: target.to, params: target.params }))
+          : navigate({ to: target.to, params: target.params, search: {} }))
       }
 
       commitDrafts((current) => {
@@ -616,8 +649,63 @@ function ThreadDetail({
   const selectedLocationLabel = locationLabel(selectedLocation)
   const pageTitle = threadId ? thread?.title : "New thread"
   const canRename = threadQuery.data?.canRename === true
+  const chooseLifetime = lifetimeMutation.mutateAsync
 
   useEffect(() => {
+    const lifetimeActions = (): PageOverflowAction[] => {
+      if (!thread) return []
+      const choose = (
+        state: ThreadLifetimeState,
+        failure: string,
+        done?: string
+      ) =>
+        void chooseLifetime({ threadId: thread.id, state }).then(
+          () => {
+            if (done) toast.success(done)
+          },
+          () => toast.error(failure)
+        )
+      const { choice, archived } = threadLifetime(thread, Date.now())
+      if (archived) {
+        return [
+          {
+            id: "restore-thread",
+            label: "Restore",
+            icon: RotateCcwIcon,
+            onSelect: () =>
+              choose("temporary", "Couldn’t restore this thread.", "Restored"),
+          },
+        ]
+      }
+      return [
+        choice?.state === "kept"
+          ? {
+              id: "make-thread-temporary",
+              label: "Make Temporary",
+              icon: Clock3Icon,
+              onSelect: () =>
+                choose("temporary", "Couldn’t change this thread."),
+            }
+          : {
+              id: "keep-thread",
+              label: "Keep",
+              icon: InfinityIcon,
+              onSelect: () =>
+                choose(
+                  "kept",
+                  "Couldn’t keep this thread.",
+                  "Kept. It won't archive."
+                ),
+            },
+        {
+          id: "archive-thread",
+          label: "Archive",
+          icon: ArchiveIcon,
+          onSelect: () =>
+            choose("archived", "Couldn’t archive this thread.", "Archived"),
+        },
+      ]
+    }
     setPageMeta({
       titleOverride: pageTitle,
       parentTitleOverride: selectedLocationLabel,
@@ -630,6 +718,7 @@ function ThreadDetail({
                 icon: PencilIcon,
                 onSelect: () => setRenameTitle(pageTitle),
               },
+              ...lifetimeActions(),
             ]
           : [],
       primaryAction: {
@@ -640,7 +729,15 @@ function ThreadDetail({
       },
     })
     return () => setPageMeta(null)
-  }, [canRename, navigateNew, pageTitle, selectedLocationLabel, setPageMeta])
+  }, [
+    canRename,
+    chooseLifetime,
+    navigateNew,
+    pageTitle,
+    selectedLocationLabel,
+    setPageMeta,
+    thread,
+  ])
 
   const replyTarget = threadQuery.data
     ? resolveReplyTarget(threadQuery.data.thread.messages, replyTo)

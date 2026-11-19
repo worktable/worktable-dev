@@ -8,13 +8,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@worktable/ui/components/select"
+import { ThreadViewSelect } from "@/components/threads/thread-view-select"
 import { ThreadsView } from "@/components/threads/threads-view"
+import { useThreadListFilter } from "@/lib/thread-lifetime"
+import {
+  threadViewSearch,
+  type ThreadListView,
+  type ThreadViewSearch,
+} from "@/lib/thread-list-view"
 import { useSpaces } from "@/lib/queries"
 import { threadScopeContains, type ThreadListScope } from "@/lib/threads-api"
 import { preloadThread, threadsQueryOptions } from "@/lib/threads-queries"
 import { useWorktableThreadSubscription } from "@/lib/ws"
 
-interface ThreadsSearch {
+interface ThreadsSearch extends ThreadViewSearch {
   location: "all" | "worktable" | "space"
   spaceId?: string
 }
@@ -33,11 +40,14 @@ export const Route = createFileRoute("/threads/$")({
     return {
       location: spaceId ? location : location === "space" ? "all" : location,
       spaceId,
+      ...threadViewSearch(search.view),
     }
   },
   beforeLoad: ({ context, search, params, preload }) => {
     const scope = searchToScope(search)
-    void context.queryClient.prefetchQuery(threadsQueryOptions(scope))
+    void context.queryClient.prefetchQuery(
+      threadsQueryOptions(scope, search.view === "archived")
+    )
     const selected = parseSelectedThread(params._splat)
     if (preload && selected.threadId) {
       preloadThread(context.queryClient, selected.location, selected.threadId)
@@ -124,15 +134,14 @@ function GlobalThreadsPage() {
       : (spaceNames.get(location.spaceId) ?? "Space")
 
   const setFilter = (value: string) => {
-    const next =
-      value === "worktable"
-        ? { location: "worktable" as const }
+    const next: ThreadsSearch = {
+      ...(value === "worktable"
+        ? { location: "worktable" }
         : value.startsWith("space:")
-          ? {
-              location: "space" as const,
-              spaceId: value.slice("space:".length),
-            }
-          : { location: "all" as const }
+          ? { location: "space", spaceId: value.slice("space:".length) }
+          : { location: "all" }),
+      ...(search.view ? { view: search.view } : {}),
+    }
     const nextScope = searchToScope(next)
     const keepSelection =
       Boolean(selected.threadId) &&
@@ -141,6 +150,22 @@ function GlobalThreadsPage() {
       to: "/threads/$",
       params: { _splat: keepSelection ? _splat : "" },
       search: next,
+    })
+  }
+
+  const [filter, rememberFilter] = useThreadListFilter()
+  const view: ThreadListView = search.view ?? filter
+  const setView = (next: ThreadListView) => {
+    if (next !== "archived") rememberFilter(next)
+    if ((next === "archived") === (search.view === "archived")) return
+    void navigate({
+      to: "/threads/$",
+      params: { _splat },
+      search: {
+        location: search.location,
+        ...(search.spaceId ? { spaceId: search.spaceId } : {}),
+        ...threadViewSearch(next),
+      },
     })
   }
 
@@ -154,37 +179,49 @@ function GlobalThreadsPage() {
   return (
     <ThreadsView
       listScope={scope}
+      view={view}
+      onViewChange={setView}
       threadId={selected.threadId}
       selectedLocation={selected.location}
       createLocation={createLocation}
       showLocations={scope.kind === "all"}
       locationLabel={locationLabel}
       headerControl={
-        <Select
-          value={filterValue}
-          onValueChange={(value) => {
-            if (value) setFilter(value)
-          }}
-        >
-          <SelectTrigger aria-label="Thread location filter" className="w-full">
-            <SelectValue>
-              {scope.kind === "all"
-                ? "All threads"
-                : scope.kind === "worktable"
-                  ? "Worktable"
-                  : (spaceNames.get(scope.spaceId) ?? "Space")}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All threads</SelectItem>
-            <SelectItem value="worktable">Worktable</SelectItem>
-            {activeSpaces.map((space) => (
-              <SelectItem key={space.id} value={`space:${space.id}`}>
-                {space.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-2">
+          <ThreadViewSelect
+            value={view}
+            onChange={setView}
+            className="w-auto shrink-0"
+          />
+          <Select
+            value={filterValue}
+            onValueChange={(value) => {
+              if (value) setFilter(value)
+            }}
+          >
+            <SelectTrigger
+              aria-label="Thread location filter"
+              className="min-w-0 flex-1"
+            >
+              <SelectValue>
+                {scope.kind === "all"
+                  ? "All Spaces"
+                  : scope.kind === "worktable"
+                    ? "Worktable"
+                    : (spaceNames.get(scope.spaceId) ?? "Space")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Spaces</SelectItem>
+              <SelectItem value="worktable">Worktable</SelectItem>
+              {activeSpaces.map((space) => (
+                <SelectItem key={space.id} value={`space:${space.id}`}>
+                  {space.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       }
       locationControl={
         <ThreadLocationControl

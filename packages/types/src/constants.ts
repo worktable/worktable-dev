@@ -6,6 +6,90 @@ import type { ThreadLocation } from "./threads"
 /** The longest chosen thread topic. */
 export const THREAD_TITLE_MAX_LENGTH = 160
 
+/**
+ * A thread leaves lists after this many days without a new message. The same
+ * period a temporary Doc gets (TEMPORARY_DOCUMENT_GRACE_DAYS).
+ */
+export const THREAD_QUIET_DAYS = 7
+
+/**
+ * What someone last chose for a thread's place in lists. Without a choice a
+ * thread is temporary from its last message.
+ * - kept: stays in lists however quiet it gets.
+ * - archived: out of lists until its next message.
+ * - temporary: back to the usual rule, counting quiet days from `at`.
+ */
+export const THREAD_LIFETIME_STATES = ["kept", "archived", "temporary"] as const
+export type ThreadLifetimeState = (typeof THREAD_LIFETIME_STATES)[number]
+export interface ThreadLifetimeChoice {
+  state: ThreadLifetimeState
+  at: string
+}
+
+/**
+ * Where a thread file keeps its lifetime choice: a namespaced key beside the
+ * portable fields, so other tools' metadata is never mistaken for it.
+ */
+export const THREAD_LIFETIME_KEY = "worktable.threadLifetime"
+
+/**
+ * A thread's lifetime choice; undefined when unset or not understood. A choice
+ * whose time cannot be read is not understood: compared with a message's time
+ * it would hold the thread in the archive for good.
+ */
+export function threadLifetimeChoice(
+  thread: object
+): ThreadLifetimeChoice | undefined {
+  const value = (thread as Record<string, unknown>)[THREAD_LIFETIME_KEY]
+  if (typeof value !== "object" || value === null) return undefined
+  const { state, at } = value as Record<string, unknown>
+  return typeof at === "string" &&
+    Number.isFinite(Date.parse(at)) &&
+    THREAD_LIFETIME_STATES.includes(state as ThreadLifetimeState)
+    ? { state: state as ThreadLifetimeState, at }
+    : undefined
+}
+
+const THREAD_QUIET_MS = THREAD_QUIET_DAYS * 86_400_000
+
+/**
+ * Whether a thread has left lists: someone archived it and nothing was posted
+ * since, or it has been quiet for THREAD_QUIET_DAYS. A kept thread never
+ * leaves, and a new message always brings a thread back.
+ */
+export function isThreadArchived(
+  thread: { lastMessageAt: string; lifetime?: ThreadLifetimeChoice },
+  nowMs: number
+): boolean {
+  const choice = thread.lifetime
+  if (choice?.state === "kept") return false
+  const lastMessageMs = Date.parse(thread.lastMessageAt)
+  const chosenMs = choice ? Date.parse(choice.at) : Number.NaN
+  if (choice?.state === "archived" && !(lastMessageMs > chosenMs)) return true
+  const quietSinceMs =
+    choice?.state === "temporary" && chosenMs > lastMessageMs
+      ? chosenMs
+      : lastMessageMs
+  return nowMs - quietSinceMs >= THREAD_QUIET_MS
+}
+
+/** The same for a thread as stored or read, from its newest message. */
+export function isStoredThreadArchived(
+  thread: { messages: ReadonlyArray<{ createdAt: string }> },
+  nowMs: number
+): boolean {
+  const lastMessage = thread.messages.at(-1)
+  return lastMessage
+    ? isThreadArchived(
+        {
+          lastMessageAt: lastMessage.createdAt,
+          lifetime: threadLifetimeChoice(thread),
+        },
+        nowMs
+      )
+    : false
+}
+
 /** A Space shows at most this many pinned starting points. */
 export const START_HERE_LIMIT = 7
 

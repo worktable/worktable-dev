@@ -1,5 +1,9 @@
 import { z } from "zod"
-import { THREAD_TITLE_MAX_LENGTH } from "./constants"
+import {
+  THREAD_LIFETIME_STATES,
+  THREAD_TITLE_MAX_LENGTH,
+  type ThreadLifetimeChoice,
+} from "./constants"
 
 export const THREAD_IDENTITY_NAME_MAX_LENGTH = 120
 export const ThreadTitleSchema = z
@@ -23,6 +27,8 @@ export const ThreadLocationSchema = z.discriminatedUnion("kind", [
 export const ThreadMessageIdSchema = z
   .string()
   .regex(/^msg_[A-Za-z0-9_-]{12,}$/)
+
+export const ThreadLifetimeStateSchema = z.enum(THREAD_LIFETIME_STATES)
 export const ConversationIdentityIdSchema = z
   .string()
   .regex(/^idt_[A-Za-z0-9_-]{12,}$/)
@@ -708,13 +714,25 @@ export interface ThreadSummary {
   messageCount: number
   lastMessage: ThreadMessage
   activity?: ThreadActivity
+  /** The last Keep or Archive choice; absent while nobody has made one. */
+  lifetime?: ThreadLifetimeChoice
   createdAt: string
   updatedAt: string
 }
 
+/** Which threads a list returns; every thread when omitted. */
+export type ThreadArchiveFilter = "exclude" | "only"
+
 /** A thread list row in the app: a plain-text excerpt of the last message. */
 export interface ThreadListItem extends Omit<ThreadSummary, "lastMessage"> {
   lastMessage: { id: string; excerpt: string }
+}
+
+export interface ThreadLifetimeResult {
+  threadId: string
+  revision: number
+  lifetime: ThreadLifetimeChoice
+  archived: boolean
 }
 
 export interface ThreadReadResult {

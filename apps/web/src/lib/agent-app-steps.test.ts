@@ -89,16 +89,15 @@ describe("agent app ways", () => {
 
   it("connects coding agents directly outside Cloud, with skills only where they install", () => {
     for (const place of ["computer", "server"] as const) {
-      const claudeCode = best("claude-code", at(place))
-      expect(claudeCode).toMatchObject({
-        kind: "pairing",
-        skills: { via: "url", target: "claude" },
-      })
-      expect(bringsSkills(claudeCode)).toBe(true)
-      expect(best("codex", at(place)).skills).toEqual({
-        via: "url",
-        target: "agents",
-      })
+      // The connect command installs the skills plugin itself.
+      for (const app of ["claude-code", "codex"] as const) {
+        const way = best(app, at(place))
+        expect(way).toMatchObject({
+          kind: "pairing",
+          skills: { via: "connect-plugin" },
+        })
+        expect(bringsSkills(way)).toBe(true)
+      }
       // Not claimed for an agent whose skills folder isn't one we install to.
       expect(bringsSkills(best("cursor", at(place)))).toBe(false)
     }
@@ -116,7 +115,7 @@ describe("agent app ways", () => {
         code: "ABCDE-FGHJK",
       })
     ).toBe(
-      "curl -fsSL http://127.0.0.1:7480/connect.sh | sh -s -- ABCDE-FGHJK --client claude-code && curl -fsSL https://worktable.dev/install-skills | sh -s -- --target claude"
+      "curl -fsSL http://127.0.0.1:7480/connect.sh | sh -s -- ABCDE-FGHJK --client claude-code"
     )
     const cloud = best("codex", at("cloud", false))
     if (cloud.kind !== "cloud-command") throw new Error("expected a command")

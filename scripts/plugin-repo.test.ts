@@ -63,11 +63,45 @@ describe("plugin repository tree", () => {
       logo: "assets/logo.png",
     })
     expect(paths).toContain("assets/logo.png")
-    // Claude's Add marketplace installs the repository itself.
+    // Claude's Add marketplace installs the repository itself, and the
+    // connect command installs Worktable Skills from its folder.
     const marketplace = JSON.parse(text(tree.files.get(".claude-plugin/marketplace.json")))
     expect(marketplace.plugins).toEqual([
       expect.objectContaining({ name: "worktable", source: "./", version: plugin.version }),
+      expect.objectContaining({
+        name: "worktable-skills",
+        source: "./plugins/worktable-skills",
+        version: plugin.version,
+      }),
     ])
+    const codex = JSON.parse(text(tree.files.get(".agents/plugins/marketplace.json")))
+    expect(codex.plugins.map((entry: any) => [entry.name, entry.source.path])).toEqual([
+      ["worktable", "./"],
+      ["worktable-skills", "./plugins/worktable-skills"],
+    ])
+  })
+
+  test("builds Worktable Skills from the same skills, shown as Worktable, with no MCP server", async () => {
+    const tree = await buildPluginRepositoryTree({ sourceDirectory: await sourceCopy() })
+    const skillsPlugin = "plugins/worktable-skills/"
+    const inPlugin = [...tree.files.keys()]
+      .filter((path) => path.startsWith(skillsPlugin))
+      .map((path) => path.slice(skillsPlugin.length))
+    // Every skill file, byte for byte.
+    const skills = [...tree.files.keys()].filter((path) => path.startsWith("skills/"))
+    expect(skills.length).toBeGreaterThan(0)
+    for (const path of skills) {
+      expect(text(tree.files.get(`${skillsPlugin}${path}`))).toBe(text(tree.files.get(path)))
+    }
+    expect(inPlugin.filter((path) => path.startsWith("skills/")).sort()).toEqual(skills.sort())
+    expect(inPlugin.some((path) => /(^|\/)\.?mcp(_config)?\.json$/.test(path))).toBe(false)
+
+    const claude = JSON.parse(text(tree.files.get(`${skillsPlugin}.claude-plugin/plugin.json`)))
+    const codex = JSON.parse(text(tree.files.get(`${skillsPlugin}.codex-plugin/plugin.json`)))
+    expect(claude).toMatchObject({ name: "worktable-skills", displayName: "Worktable", version: tree.version })
+    expect(codex).toMatchObject({ name: "worktable-skills", version: tree.version, interface: { displayName: "Worktable" } })
+    expect(claude.mcpServers).toBeUndefined()
+    expect(codex.mcpServers).toBeUndefined()
   })
 
   test("refuses credential-shaped content in any carried file", async () => {

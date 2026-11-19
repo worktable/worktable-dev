@@ -575,7 +575,7 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
   await expect(claudeCode.getByText("On this computer")).toBeVisible()
   await expect(
     claudeCode.getByText(
-      /--client claude-code && curl -fsSL https:\/\/worktable\.dev\/install-skills \| sh -s -- --target claude$/
+      /\/connect\.sh \| sh -s -- [A-Z0-9]{5}-[A-Z0-9]{5} --client claude-code$/
     )
   ).toBeVisible()
   await claudeCode.getByRole("button", { name: "Change", exact: true }).click()
@@ -583,7 +583,7 @@ test("a new owner creates their Worktable, connects agents and finishes their fi
     pickApp(page, "Codex").then(() => {})
   )
   const codex = page.getByRole("region", { name: "Connect Codex" })
-  await expect(codex.getByText(/--target agents$/)).toBeVisible()
+  await expect(codex.getByText(/--client codex$/)).toBeVisible()
   const codexToken = await completePairing(cliPairing, {
     hostname: "browser-devbox",
     client: "codex",

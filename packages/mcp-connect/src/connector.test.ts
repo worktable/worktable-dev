@@ -58,6 +58,11 @@ function fakeHost(options: FakeHostOptions = {}): {
     dependencies: {
       hostname: () => "test-agent",
       detectClient: (id) => id === "codex",
+      setUpSkills: async () => ({
+        outcome: { via: "plugin", alreadyInstalled: false },
+        lines: ["  Codex: Worktable skills plugin installed"],
+        restartHint: "Start a new Codex session to load Worktable.",
+      }),
       sleep: async (delayMs) => {
         delays.push(delayMs)
       },
@@ -303,6 +308,31 @@ describe("connector transaction model", () => {
     ).toMatchObject({ hostname: "test-agent" })
     expect(host.delays).toEqual([250])
     expect(output.stderr).toEqual([])
+    expect(output.stdout).toContain("  Codex: Worktable skills plugin installed")
+    expect(output.stdout.at(-1)).toBe(
+      "  Note: Start a new Codex session to load Worktable."
+    )
+  })
+
+  it("keeps a verified connection when adding the skills breaks", async () => {
+    const host = fakeHost()
+    const output = captureIo()
+    expect(
+      await runConnector(
+        ["PAIR-CODE", "--server", "https://worktable.example", "--client", "codex"],
+        output.io,
+        {
+          ...host.dependencies,
+          setUpSkills: async () => {
+            throw new Error("plugin list hung")
+          },
+        }
+      )
+    ).toBe(0)
+    expect(readFileSync(configPath, "utf8")).toContain("Bearer wt_replacement")
+    expect(output.stdout.join("\n")).toContain(
+      "Couldn't add Worktable's skills: plugin list hung"
+    )
   })
 
   it("preflights conflicts before redeeming or changing bytes", async () => {

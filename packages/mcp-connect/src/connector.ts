@@ -18,6 +18,7 @@ import {
   type InstallOutcome,
   type PreflightOutcome,
 } from "./client-config.ts"
+import { isSkillPluginClient, setUpSkills } from "./skill-plugin.ts"
 import { verifyMcpEndpoint } from "./verify.ts"
 
 // ============================================================
@@ -30,6 +31,8 @@ import { verifyMcpEndpoint } from "./verify.ts"
 // MCP path end to end, and reports progress back to the pairing session so
 // the Settings flow shows live status. On Cloud (--oauth) it writes a
 // tokenless entry and starts the client's own OAuth sign-in instead.
+// Paired with Claude Code or Codex, it then gives the agent Worktable's skills
+// as a plugin (skill-plugin.ts); the connection never depends on that step.
 // Must run under plain Node 18+ or Bun.
 //
 // Usage:
@@ -201,6 +204,7 @@ export interface ConnectorDependencies {
   verifyMcpEndpoint: typeof verifyMcpEndpoint
   signInClient: typeof signInClient
   connectClientOnce: typeof connectClientOnce
+  setUpSkills: typeof setUpSkills
 }
 
 const DEFAULT_CONNECTOR_DEPENDENCIES: ConnectorDependencies = {
@@ -219,6 +223,7 @@ const DEFAULT_CONNECTOR_DEPENDENCIES: ConnectorDependencies = {
   verifyMcpEndpoint,
   signInClient,
   connectClientOnce,
+  setUpSkills,
 }
 
 /** Commit verified rotation with retries. */
@@ -799,8 +804,23 @@ export async function runConnector(
   io.log(
     `Connected to workspace "${session.workspaceName}". MCP verified (${verify.toolCount} tools).`
   )
+  // The command for one coding agent brings its skills too. Its plugin
+  // install comes last, so nothing about it can undo the connection.
+  const skills =
+    explicit && !args.all && isSkillPluginClient(explicit)
+      ? await dependencies
+          .setUpSkills(explicit)
+          .catch((error: unknown) => ({
+            lines: [
+              `  Couldn't add Worktable's skills: ${(error as Error).message}`,
+            ],
+            restartHint: undefined,
+          }))
+      : null
+  for (const line of skills?.lines ?? []) io.log(line)
   for (const outcome of written) {
-    if (outcome.restartHint) io.log(`  Note: ${outcome.restartHint}`)
+    const hint = skills?.restartHint ?? outcome.restartHint
+    if (hint) io.log(`  Note: ${hint}`)
   }
   return 0
 }

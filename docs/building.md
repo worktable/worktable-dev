@@ -116,7 +116,9 @@ for directories that read a plugin only from a repository root, such as the
 Gemini CLI gallery, Kiro Powers and Grok Build. That repository pulls rather
 than being pushed to, so no credential for it is stored here. Its Sync workflow
 runs hourly or by hand: it builds the tree with `bun scripts/plugin-repo.ts`
-from this repository's `main`, adds `gemini-extension.json`, commits any change,
+from this repository's `main`, adds `gemini-extension.json` and Worktable
+Skills (`plugins/worktable-skills`, the same skills with no MCP server, which
+the connect command installs in Claude Code and Codex), commits any change,
 and releases a new `plugin.json` version as `v<version>` from its
 `CHANGELOG.md` entry. A workflow token can't change workflow files, so when the
 generated `.github/workflows/sync.yml` changes, push it there by hand. Edit the

@@ -505,9 +505,9 @@ test("on this computer, each app says how it connects here, and Manual Setup say
 
   const claudeCode = await pick(page, "Claude Code")
   await expect(claudeCode.getByText("On this computer")).toBeVisible()
-  // One command: the skills install only once the connection works.
+  // One command: it installs the skills plugin once the connection works.
   await expect(claudeCode.locator("code")).toHaveText(
-    /^curl -fsSL http:\/\/127\.0\.0\.1:\d+\/connect\.sh \| sh -s -- [A-Z0-9]{5}-[A-Z0-9]{5} --client claude-code && curl -fsSL https:\/\/worktable\.dev\/install-skills \| sh -s -- --target claude$/
+    /^curl -fsSL http:\/\/127\.0\.0\.1:\d+\/connect\.sh \| sh -s -- [A-Z0-9]{5}-[A-Z0-9]{5} --client claude-code$/
   )
   await claudeCode.getByRole("button", { name: "Change", exact: true }).click()
 

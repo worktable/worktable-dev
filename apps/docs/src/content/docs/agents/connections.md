@@ -22,8 +22,9 @@ from `worktable mcp print-config goose`.
 For an agent on another computer, choose it under **Connect App** and copy its
 command, or run `worktable agent invite` on the Worktable host. The command
 redeems a single-use pairing code. For Claude Code and Codex, the same command
-then installs Worktable's [skills](/agents/skills/). The host must be reachable
-from that computer; see [Remote access](/guides/remote-access/).
+then installs Worktable's [skills](/agents/skills/) as a plugin, which the agent
+updates with its other plugins. The host must be reachable from that computer;
+see [Remote access](/guides/remote-access/).
 
 For **Worktable Cloud**, Claude Code and Codex install the [plugin](#plugins).
 When the plugin would work in another of your Worktables, Settings shows this
@@ -42,9 +43,11 @@ there, or later with **Edit** under **Connected Agents**.
 ## Plugins
 
 The general Worktable plugin bundles skills and a **Cloud connection** to
-`https://app.worktable.cloud/api/mcp`. For local or self-hosted Worktable, use
-that installation's MCP configuration and install [skills](/agents/skills/)
-separately if your client supports them.
+`https://app.worktable.cloud/api/mcp`. For local or self-hosted Worktable, the
+connect command sets up Claude Code and Codex with this Worktable's connection
+and Worktable Skills, the same skills without the Cloud connection. For other
+clients, use that installation's MCP configuration and install
+[skills](/agents/skills/) separately if your client supports them.
 
 For Claude Code:
 

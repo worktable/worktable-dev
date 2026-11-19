@@ -121,13 +121,16 @@ export function isPluginApp(app: AppId): app is PluginApp {
 export const GEMINI_SKILL_DOWNLOAD =
   "https://docs.worktable.dev/downloads/skills/gemini/worktable.tar"
 
-/**
- * How Worktable's skills reach the agent on a way. Release 2 adds the
- * connect command installing a skills-only plugin here, beside "url".
- */
+/** How Worktable's skills reach the agent on a way. */
 export type Skills =
   /** The plugin carries them and keeps them current. */
   | { via: "plugin" }
+  /**
+   * The connect command installs Worktable Skills, the plugin's skills
+   * without its Cloud server, with the agent's own plugin command. When
+   * that can't work it copies them from Worktable's installer instead.
+   */
+  | { via: "connect-plugin" }
   /** The connect command adds them from Worktable's installer. */
   | { via: "url"; target: "claude" | "agents" }
   /** A skill file to upload in the app. */
@@ -176,6 +179,8 @@ function codingSkills(app: "claude-code" | "codex"): Skills {
   return { via: "url", target: app === "claude-code" ? "claude" : "agents" }
 }
 
+const CONNECT_PLUGIN: Skills = { via: "connect-plugin" }
+
 /**
  * The best way to connect an app here, then the others that work. Null
  * where none works: the app isn't offered there.
@@ -212,7 +217,7 @@ export function waysFor(app: AppId, where: Where): AppWays | null {
     case "codex": {
       if (!cloud)
         return {
-          best: { kind: "pairing", client: app, skills: codingSkills(app) },
+          best: { kind: "pairing", client: app, skills: CONNECT_PLUGIN },
           others: [],
         }
       const plugin: Way = { kind: "coding-plugin", client: app, skills: PLUGIN }
@@ -301,7 +306,8 @@ function skillsStep(skills: Skills): string | null {
 /**
  * The one command a way runs in the terminal: connect, then the skills, which
  * install only once the connection worked. Straight to this Worktable with a
- * one-use code, or through Cloud with this Worktable's address.
+ * one-use code, where the connect command adds the skills itself, or through
+ * Cloud with this Worktable's address.
  */
 export function connectCommand(
   way: Extract<Way, { kind: "pairing" | "cloud-command" }>,

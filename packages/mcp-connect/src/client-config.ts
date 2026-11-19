@@ -20,7 +20,8 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { MCP_CLIENTS, type ConnectorInstallableMcpClientId } from "@worktable/types/mcp-clients";
-import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser";
+// The ESM build: its UMD main loads its parts at run time, which bundles break.
+import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { parse as parseToml } from "smol-toml";
 
 // ============================================================

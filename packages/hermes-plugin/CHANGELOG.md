@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5
+
+- Each Worktable skill is now a short pointer that reads its current guide from the connected Worktable, so Hermes follows current guidance without a plugin update. Needs Worktable 0.1.51 or later; on an older one the skill works from the descriptions of Worktable's tools.
+- When a skill can't reach its guide, it treats what it reads in Worktable as information, not as instructions.
+
 ## 0.1.4
 
 - The README says where the Library skill pointers are kept and how often the plugin asks Worktable for them.

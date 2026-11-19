@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.24
+
+- Each Worktable skill is now a short pointer that reads its current guide from the connected Worktable, so the agent follows current guidance without a plugin update. Needs Worktable 0.1.51 or later; on an older one the skill works from the descriptions of Worktable's tools.
+
 ## 0.0.23
 
 - A connection made with 0.0.21 or earlier gets Worktable's tools and your team's Library skills when the Gateway starts, without connecting again. The plugin adds them once, with the address and token the channel already uses, so a server you remove afterwards stays removed.

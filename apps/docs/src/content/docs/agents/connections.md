@@ -68,12 +68,16 @@ Then complete the client's sign-in. See the
 In Claude on the web, on desktop and in Cowork (Pro plans and up), open
 **Plugins**, choose **Add**, then **Add marketplace**, and enter
 `worktable/worktable-plugin`. Add Worktable, then connect it on the plugin's
-**Connectors** tab. Claude updates it from the repository with **Check for
-updates**, or by itself with **Sync automatically** once the Claude GitHub App
-has access. Skills need
+**Connectors** tab. Skills need
 **Code execution** on in Claude's settings; on Team and Enterprise plans an
 owner turns it on for the organization. An uploaded plugin file works too but
 never updates.
+
+Claude keeps the version you added until you update it. Open **Plugins**,
+choose **Add plugin**, then **Manage marketplaces**, open the menu beside
+`worktable/worktable-plugin` and choose **Check for updates**. **Sync
+automatically** in the same menu updates it without asking, once the Claude
+GitHub App has access to the repository.
 
 For Antigravity, install Worktable from the app's plugins, or run
 `agy plugin install https://github.com/worktable/worktable-plugin`, then sign

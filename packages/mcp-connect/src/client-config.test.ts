@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 import {
   captureClientConfigMutation,
   codexPath,
+  detectClient,
   installClient,
   preflightClient,
   readCodexAuth,
@@ -78,6 +79,17 @@ afterEach(() => {
 });
 
 const TARGET = { endpoint: "https://wt.example.com/mcp", token: "wt_x_y" };
+
+describe("detectClient", () => {
+  it("finds Cline where CLINE_DIR moved it, even before its data folder exists", () => {
+    const root = useTempRuntime();
+    const moved = join(root, "custom-cline");
+    process.env["CLINE_DIR"] = moved;
+    expect(detectClient("cline")).toBe(false);
+    mkdirSync(moved, { recursive: true });
+    expect(detectClient("cline")).toBe(true);
+  });
+});
 
 describe("codexPath", () => {
   it("prefers the Worktable-specific override over CODEX_HOME", () => {

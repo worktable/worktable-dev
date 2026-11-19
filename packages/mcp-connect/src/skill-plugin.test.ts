@@ -379,6 +379,19 @@ describe("Worktable's skills for a connected coding agent", () => {
       expect(piPackages).toEqual([piSource(marketplace ?? "worktable/worktable-plugin")])
       expect(pi.outcome).toEqual({ via: "plugin", alreadyInstalled: false })
     }
+    // A package that only shares part of the name isn't Worktable's.
+    const unrelated: string[] = []
+    const other = await setUpSkills("pi", {
+      run: (_command, args) => {
+        if (args[0] === "list")
+          return ok(`User packages:\n  git:github.com/acme/not-worktable-plugin\n    /home/.pi/agent/git/github.com/acme/not-worktable-plugin\n${unrelated.length ? "  /mirror/plugin\n    /mirror/plugin\n" : ""}`)
+        unrelated.push(args[1]!)
+        return ok()
+      },
+      env: { WORKTABLE_PLUGIN_MARKETPLACE: "/mirror/plugin" },
+    })
+    expect(unrelated).toEqual(["/mirror/plugin"])
+    expect(other.outcome).toEqual({ via: "plugin", alreadyInstalled: false })
 
     // Droid names the marketplace after its repository, already added or not.
     const droidCalls: string[] = []

@@ -318,7 +318,8 @@ function piPackages(dependencies: SkillPluginDependencies): { names: string[] } 
     entries.push(line.trim().replace(/ \(filtered\)$/, ""))
   }
   const source = piSource(selectedMarketplace(dependencies.env))
-  const listed = entries.some((entry) => entry === source || /\bworktable-plugin\b/.test(entry))
+  // The chosen source, or the plugin repository itself installed earlier.
+  const listed = entries.some((entry) => entry === source || WORKTABLE_PI_SOURCE.test(entry))
   return { names: listed ? [SKILLS_PLUGIN] : [] }
 }
 
@@ -417,6 +418,10 @@ export function devinSource(marketplace: string): string {
  * Pi installs a package from a folder, which it reads in place, or from a
  * Git repository: `git:github.com/<owner>/<repo>` for GitHub's.
  */
+/** The plugin repository as Pi lists it, optionally pinned to a ref. */
+const WORKTABLE_PI_SOURCE =
+  /^(?:git:github\.com\/worktable\/worktable-plugin|https:\/\/github\.com\/worktable\/worktable-plugin(?:\.git)?)(?:@[\w./-]+)?$/
+
 export function piSource(marketplace: string): string {
   if (isAbsolute(marketplace) || marketplace.startsWith(".") || existsSync(marketplace)) return resolve(marketplace)
   if (/^[\w.-]+\/[\w.-]+$/.test(marketplace)) return `git:github.com/${marketplace}`

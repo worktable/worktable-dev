@@ -1249,8 +1249,13 @@ export function detectClient(id: ConnectorInstallableMcpClientId): boolean {
     case "zed":
       return commandExists("zed") || commandExists("zeditor") || existsSync(dirname(zedPath()));
     case "cline":
-      // Its data folder, wherever CLINE_DIR or CLINE_DATA_DIR moved it.
-      return commandExists("cline") || existsSync(join(homedir(), ".cline")) || existsSync(dirname(dirname(clinePath())));
+      // Its folder or data folder, wherever CLINE_DIR or CLINE_DATA_DIR moved them.
+      return (
+        commandExists("cline") ||
+        existsSync(join(homedir(), ".cline")) ||
+        Boolean(process.env["CLINE_DIR"]?.trim() && existsSync(process.env["CLINE_DIR"].trim())) ||
+        existsSync(dirname(dirname(clinePath())))
+      );
     // Warp has no command of its own; its folder appears once it runs.
     case "warp":
       return existsSync(dirname(warpPath()));

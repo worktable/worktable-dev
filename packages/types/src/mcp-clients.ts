@@ -31,6 +31,7 @@ export const CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS = [
   "codex",
   "cursor",
   "opencode",
+  "kilo",
   "vscode",
 ] as const
 
@@ -126,6 +127,13 @@ export const MCP_CLIENTS: Record<McpClientId, McpClientMeta> = {
     maturity: "supported",
     setupKind: "connector",
     configPathHint: "~/.config/opencode/opencode.json",
+  },
+  kilo: {
+    id: "kilo",
+    label: "Kilo",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.config/kilo/kilo.jsonc",
   },
   vscode: {
     id: "vscode",
@@ -248,17 +256,20 @@ export function mcpClientSnippet(
           },
         }),
       }
+    // OpenCode 2 and Kilo read servers from `mcp.servers` only.
     case "opencode":
+    case "kilo":
       return {
         ...base,
         language: "json",
         body: jsonBody({
           mcp: {
-            worktable: {
-              type: "remote",
-              url: endpoint,
-              enabled: true,
-              ...(token ? { headers: bearerHeaders(token) } : {}),
+            servers: {
+              worktable: {
+                type: "remote",
+                url: endpoint,
+                ...(token ? { headers: bearerHeaders(token) } : {}),
+              },
             },
           },
         }),

@@ -65,6 +65,8 @@ export interface SkillPluginDependencies {
 export type SkillsOutcome =
   | { via: "full-plugin" }
   | { via: "plugin"; alreadyInstalled: boolean }
+  /** OpenCode and Kilo load them from the Worktable's skills address. */
+  | { via: "catalog"; alreadyAdded: boolean }
   | { via: "copy"; reason: string; copied: boolean; copyError?: string }
 
 export interface SkillsReport {

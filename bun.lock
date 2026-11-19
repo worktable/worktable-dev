@@ -44,7 +44,7 @@
     },
     "apps/desktop": {
       "name": "@worktable/desktop",
-      "version": "0.1.41",
+      "version": "0.1.51",
       "devDependencies": {
         "@playwright/test": "1.61.1",
         "@tauri-apps/cli": "2.12.1",
@@ -175,6 +175,7 @@
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.27.1",
         "@worktable/types": "workspace:*",
+        "jsonc-parser": "^3.3.1",
         "smol-toml": "^1.7.0",
       },
       "devDependencies": {
@@ -189,7 +190,7 @@
     },
     "packages/openclaw-plugin": {
       "name": "@worktable/openclaw",
-      "version": "0.0.21",
+      "version": "0.0.24",
       "devDependencies": {
         "@types/bun": "1.3.10",
         "openclaw": "2026.7.1-2",

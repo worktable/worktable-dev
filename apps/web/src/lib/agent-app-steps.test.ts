@@ -7,6 +7,7 @@ import {
   connectCommand,
   placeOf,
   sharedAddressLandsHere,
+  SKILL_CATALOG,
   waysFor,
   type AppId,
   type Place,
@@ -98,8 +99,26 @@ describe("agent app ways", () => {
         })
         expect(bringsSkills(way)).toBe(true)
       }
+      // OpenCode and Kilo get this Worktable's skills address from it.
+      for (const app of ["opencode", "kilo"] as const) {
+        const way = best(app, at(place))
+        expect(way).toMatchObject({ kind: "pairing", client: app })
+        expect(way.skills.via).toBe("catalog")
+      }
       // Not claimed for an agent whose skills folder isn't one we install to.
       expect(bringsSkills(best("cursor", at(place)))).toBe(false)
+    }
+    // On Cloud they paste the server and the skills address together.
+    const pinned = "https://app.worktable.cloud/api/mcp/w/wt_123"
+    for (const app of ["opencode", "kilo"] as const) {
+      expect(best(app, at("cloud"))).toMatchObject({
+        kind: "address",
+        skills: { via: "catalog" },
+      })
+      expect(JSON.parse(addressStep(app, pinned).value)).toEqual({
+        mcp: { servers: { worktable: { type: "remote", url: pinned } } },
+        skills: [SKILL_CATALOG],
+      })
     }
     // An address alone is tools without skills; the Gemini app takes a file.
     expect(best("gemini", at("cloud")).skills.via).toBe("files")

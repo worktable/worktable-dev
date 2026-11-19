@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import type { AuthorizationServerMetadataName } from "@worktable/hosted-contract";
 import { getAuthServerUrl } from "../auth.ts";
 import { authServerScopes, fetchAsWellKnown } from "../oauth-jwt.ts";
+import { getSkillCatalog } from "../skill-catalog.ts";
 
 // ============================================================
 // OAuth discovery (RFC 9728 Protected Resource Metadata)
@@ -76,6 +77,35 @@ for (const name of [
   wellKnownRouter.get(`/${name}`, asDocumentPassthrough(name));
   wellKnownRouter.get(`/${name}/*`, asDocumentPassthrough(name));
 }
+
+// Worktable's built-in skills, for agents that load skills from a URL
+// (skill-catalog.ts). Public like /connect.sh: the same files every install
+// of this version ships.
+const SKILLS_UNAVAILABLE = {
+  error: "Worktable's skills are unavailable in this install.",
+  code: "SKILLS_UNAVAILABLE",
+} as const;
+
+wellKnownRouter.get("/skills/index.json", (c) => {
+  const catalog = getSkillCatalog();
+  if (!catalog) return c.json(SKILLS_UNAVAILABLE, 404);
+  return c.json(catalog.index, 200, { "Cache-Control": "no-cache" });
+});
+
+wellKnownRouter.get("/skills/:name/:file", (c) => {
+  const contents = getSkillCatalog()?.files.get(
+    `${c.req.param("name")}/${c.req.param("file")}`
+  );
+  if (!contents) return c.json({ error: "Not found", code: "NOT_FOUND" }, 404);
+  return new Response(new Uint8Array(contents), {
+    headers: {
+      "Cache-Control": "no-cache",
+      "Content-Type": c.req.param("file").endsWith(".md")
+        ? "text/markdown; charset=utf-8"
+        : "text/plain; charset=utf-8",
+    },
+  });
+});
 
 // Unknown well-known paths are 404 JSON, NEVER the SPA shell: discovery
 // clients probe several specs here and treat a 200 text/html as a broken

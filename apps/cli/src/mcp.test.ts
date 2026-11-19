@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -34,6 +33,7 @@ function useTempRuntime(): string {
   process.env["WORKTABLE_WORKSPACE"] = join(root, "workspace");
   process.env["WORKTABLE_CURSOR_MCP_CONFIG"] = join(root, ".cursor", "mcp.json");
   process.env["WORKTABLE_OPENCODE_CONFIG"] = join(root, ".config", "opencode", "opencode.json");
+  process.env["WORKTABLE_KILO_CONFIG"] = join(root, ".config", "kilo", "kilo.jsonc");
   process.env["WORKTABLE_CODEX_CONFIG"] = join(root, ".codex", "config.toml");
   return root;
 }
@@ -150,21 +150,30 @@ describe("MCP adapters", () => {
     expect(line.endsWith(`--header "Authorization: Bearer ${token}"`)).toBe(true);
   });
 
-  it("writes opencode config in the expected shape", () => {
+  it("writes opencode config under mcp.servers, moving an earlier entry and keeping other servers", () => {
     const root = useTempRuntime();
     writeConfig(createDefaultConfig());
+    const path = join(root, ".config", "opencode", "opencode.json");
+    mkdirSync(join(root, ".config", "opencode"), { recursive: true });
+    const other = { type: "remote", url: "http://example.test/mcp" };
+    writeFileSync(
+      path,
+      JSON.stringify({
+        mcp: {
+          other,
+          worktable: { type: "remote", url: "http://127.0.0.1:7480/mcp", enabled: true },
+        },
+      })
+    );
 
     setupClients(["opencode"], true);
 
-    const path = join(root, ".config", "opencode", "opencode.json");
-    expect(existsSync(path)).toBe(true);
     const parsed = JSON.parse(readFileSync(path, "utf8")) as {
-      mcp: Record<string, { type: string; url: string; enabled: boolean }>;
+      mcp: Record<string, unknown> & { servers: Record<string, unknown> };
     };
-    expect(parsed.mcp.worktable).toEqual({
-      type: "remote",
-      url: "http://127.0.0.1:7480/mcp",
-      enabled: true,
+    expect(parsed.mcp).toEqual({
+      other,
+      servers: { worktable: { type: "remote", url: "http://127.0.0.1:7480/mcp" } },
     });
   });
 
@@ -231,9 +240,9 @@ describe("token injection into agent configs", () => {
     const opencode = JSON.parse(
       readFileSync(join(root, ".config", "opencode", "opencode.json"), "utf8")
     ) as {
-      mcp: Record<string, { headers?: Record<string, string> }>;
+      mcp: { servers: Record<string, { headers?: Record<string, string> }> };
     };
-    expect(opencode.mcp.worktable?.headers?.Authorization).toBe("Bearer wt_test_token");
+    expect(opencode.mcp.servers.worktable?.headers?.Authorization).toBe("Bearer wt_test_token");
 
     const vscode = JSON.parse(readFileSync(join(root, "vscode", "mcp.json"), "utf8")) as {
       servers: Record<string, { headers?: Record<string, string> }>;

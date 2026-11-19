@@ -25,6 +25,7 @@ import {
   restoreClientConfig,
   validateClientConfigSnapshot,
 } from "./client-config.ts";
+import { parse as parseJsonc } from "jsonc-parser";
 import { parseConnectorArgs } from "./connector.ts";
 
 const originalEnv = { ...process.env };
@@ -38,6 +39,7 @@ function useTempRuntime(): string {
   process.env["CLAUDE_CONFIG_DIR"] = root;
   process.env["WORKTABLE_CURSOR_MCP_CONFIG"] = join(root, ".cursor", "mcp.json");
   process.env["WORKTABLE_OPENCODE_CONFIG"] = join(root, ".config", "opencode", "opencode.json");
+  process.env["WORKTABLE_KILO_CONFIG"] = join(root, ".config", "kilo", "kilo.jsonc");
   process.env["WORKTABLE_CODEX_CONFIG"] = join(root, ".codex", "config.toml");
   process.env["WORKTABLE_VSCODE_MCP_CONFIG"] = join(root, "vscode", "mcp.json");
   return root;
@@ -110,6 +112,37 @@ describe("installClient", () => {
     expect(config.mcpServers["worktable"]!.url).toBe(TARGET.endpoint);
     expect(config.mcpServers["worktable"]!.headers!["Authorization"]).toBe("Bearer wt_x_y");
     expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it("edits a commented Kilo config in place, keeping its comments and settings", () => {
+    useTempRuntime();
+    const path = process.env["WORKTABLE_KILO_CONFIG"]!;
+    mkdirSync(dirname(path), { recursive: true });
+    const original = `{
+  // My model
+  "model": "kilo/auto",
+  "mcp": {
+    "servers": {
+      "other": { "type": "remote", "url": "http://other" }, // keep me
+    },
+  },
+}
+`;
+    writeFileSync(path, original);
+
+    expect(preflightClient("kilo", { replace: false }).ok).toBe(true);
+    expect(installClient("kilo", TARGET).ok).toBe(true);
+
+    const text = readFileSync(path, "utf8");
+    expect(text).toContain("// My model");
+    expect(text).toContain("// keep me");
+    const config = parseJsonc(text) as {
+      model: string;
+      mcp: { servers: Record<string, { url: string }> };
+    };
+    expect(config.model).toBe("kilo/auto");
+    expect(config.mcp.servers["other"]!.url).toBe("http://other");
+    expect(config.mcp.servers["worktable"]!.url).toBe(TARGET.endpoint);
   });
 
   it("writes the codex TOML block and preserves other sections", () => {
@@ -193,6 +226,20 @@ describe("connector config transaction", () => {
     expect(allowed.ok).toBe(true);
     expect(allowed.existing).toBe(true);
     expect(allowed.snapshot?.contents).toEqual(readFileSync(path));
+  });
+
+  it("counts an OpenCode entry an earlier version wrote directly under mcp", () => {
+    useTempRuntime();
+    const path = process.env["WORKTABLE_OPENCODE_CONFIG"]!;
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify({ mcp: { worktable: { type: "remote", url: "https://old.test/mcp", enabled: true } } })
+    );
+
+    const blocked = preflightClient("opencode", { replace: false });
+    expect(blocked.ok).toBe(false);
+    expect(blocked.message).toContain("Worktable at https://old.test/mcp");
   });
 
   it("blocks a higher-priority Claude scope even when replacing the user entry", () => {

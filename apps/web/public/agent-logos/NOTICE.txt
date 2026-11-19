@@ -35,6 +35,10 @@ opencode.svg  OpenCode symbol for light backgrounds, unmodified SVG from the
               downloads on https://opencode.ai/brand.
               OpenCode and its mark belong to Anomaly.
 
+kilo.svg      Kilo mark, unmodified, from Kilo's own site icon
+              (https://kilo.ai/favicon/favicon.svg).
+              Kilo and its mark belong to Kilo Code, Inc.
+
 vscode.svg    Visual Studio Code stable icon, unmodified, from
               https://code.visualstudio.com/brand (visual-studio-code-icons.zip).
               Visual Studio Code and its icon are trademarks of Microsoft.

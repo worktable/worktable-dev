@@ -14,8 +14,10 @@ import {
   type ConnectorDependencies,
   type ConnectorIo,
 } from "./connector.ts"
+import { setUpCatalogSkills } from "./skill-catalog.ts"
 
 interface FakeHostOptions {
+  client?: string
   completeFailures?: number
   redeemStatus?: number
   verification?: { ok: boolean; toolCount?: number; message?: string }
@@ -72,7 +74,7 @@ function fakeHost(options: FakeHostOptions = {}): {
         const path = new URL(url).pathname
         requests.push({ path, body })
         if (path === "/api/pairing/target") {
-          return { status: 200, json: { client: "codex" } }
+          return { status: 200, json: { client: options.client ?? "codex" } }
         }
         if (path === "/api/pairing/redeem") {
           const status = options.redeemStatus ?? 200
@@ -82,7 +84,7 @@ function fakeHost(options: FakeHostOptions = {}): {
                 json: {
                   mcpUrl: "https://worktable.example/mcp",
                   token: "wt_replacement",
-                  client: "codex",
+                  client: options.client ?? "codex",
                   scopes: ["docs:*"],
                   workspaceName: "Test workspace",
                 },
@@ -332,6 +334,102 @@ describe("connector transaction model", () => {
     expect(readFileSync(configPath, "utf8")).toContain("Bearer wt_replacement")
     expect(output.stdout.join("\n")).toContain(
       "Couldn't add Worktable's skills: plugin list hung"
+    )
+  })
+
+  it("moves OpenCode to mcp.servers and points it at the Worktable's skills once", async () => {
+    const opencodePath = join(root, "opencode", "opencode.json")
+    mkdirSync(join(root, "opencode"), { recursive: true })
+    const other = { type: "remote", url: "https://other.example/mcp" }
+    writeFileSync(
+      opencodePath,
+      JSON.stringify({
+        mcp: { other, worktable: { type: "remote", url: "https://old.example/mcp", enabled: true } },
+        skills: ["./team-skills"],
+      })
+    )
+    process.env["WORKTABLE_OPENCODE_CONFIG"] = opencodePath
+    const checked: string[] = []
+    const dependencies: Partial<ConnectorDependencies> = {
+      ...fakeHost({ client: "opencode" }).dependencies,
+      detectClient: (id) => id === "opencode",
+      setUpCatalogSkills: (client, target) =>
+        setUpCatalogSkills(client, target, {
+          checkCatalog: async (url) => {
+            checked.push(url)
+            return null
+          },
+          projectSkills: async () => {
+            throw new Error("copied instead")
+          },
+        }),
+    }
+    const command = ["PAIR-CODE", "--server", "https://worktable.example", "--client", "opencode", "--replace"]
+    try {
+      for (const run of [1, 2]) {
+        const output = captureIo()
+        expect(await runConnector(command, output.io, dependencies)).toBe(0)
+        expect(output.stdout).toContain(
+          run === 1
+            ? "  OpenCode: Worktable skills added from https://worktable.example/.well-known/skills/"
+            : "  OpenCode: Worktable skills already added"
+        )
+        expect(output.stdout.at(-1)).toBe("  Note: Restart OpenCode to load Worktable.")
+      }
+    } finally {
+      delete process.env["WORKTABLE_OPENCODE_CONFIG"]
+    }
+    expect(checked).toEqual([
+      "https://worktable.example/.well-known/skills/",
+      "https://worktable.example/.well-known/skills/",
+    ])
+    expect(JSON.parse(readFileSync(opencodePath, "utf8"))).toEqual({
+      mcp: {
+        other,
+        servers: {
+          worktable: {
+            type: "remote",
+            url: "https://worktable.example/mcp",
+            headers: { Authorization: "Bearer wt_replacement" },
+          },
+        },
+      },
+      skills: ["./team-skills", "https://worktable.example/.well-known/skills/"],
+    })
+  })
+
+  it("copies Kilo's skills when the Worktable's skills address can't be used", async () => {
+    const kiloPath = join(root, "kilo", "kilo.jsonc")
+    process.env["WORKTABLE_KILO_CONFIG"] = kiloPath
+    const copied: string[] = []
+    const output = captureIo()
+    try {
+      expect(
+        await runConnector(
+          ["PAIR-CODE", "--server", "https://worktable.example", "--client", "kilo"],
+          output.io,
+          {
+            ...fakeHost({ client: "kilo" }).dependencies,
+            setUpCatalogSkills: (client, target) =>
+              setUpCatalogSkills(client, target, {
+                checkCatalog: async () => "its skills address returned HTTP 404",
+                projectSkills: async (skillTarget) => {
+                  copied.push(skillTarget)
+                  return null
+                },
+              }),
+          }
+        )
+      ).toBe(0)
+    } finally {
+      delete process.env["WORKTABLE_KILO_CONFIG"]
+    }
+    expect(copied).toEqual(["agents"])
+    const config = JSON.parse(readFileSync(kiloPath, "utf8"))
+    expect(config.mcp.servers.worktable.url).toBe("https://worktable.example/mcp")
+    expect(config.skills).toBeUndefined()
+    expect(output.stdout).toContain(
+      "  Couldn't add Worktable's skills address to Kilo (its skills address returned HTTP 404), so its skills were copied to ~/.agents/skills instead."
     )
   })
 

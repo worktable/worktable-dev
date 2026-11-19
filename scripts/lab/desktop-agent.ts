@@ -8,7 +8,12 @@ import {
 } from "node:fs"
 import { createInterface } from "node:readline/promises"
 import { join } from "node:path"
-import { readCodexUrl, readJsonUrl, runConnector } from "@worktable/mcp-connect"
+import {
+  JSON_CLIENT_ENTRY_PLACES,
+  readCodexUrl,
+  readJsonUrl,
+  runConnector,
+} from "@worktable/mcp-connect"
 import type { AgentOptions, DesktopLabAgent } from "./types.ts"
 import {
   assertDesktopRunPathsSafe,
@@ -40,6 +45,7 @@ const CONFIG_OVERRIDE_KEYS = [
   "WORKTABLE_CODEX_CONFIG",
   "WORKTABLE_CURSOR_MCP_CONFIG",
   "WORKTABLE_OPENCODE_CONFIG",
+  "WORKTABLE_KILO_CONFIG",
   "WORKTABLE_VSCODE_MCP_CONFIG",
   "WORKTABLE_MCP_TOKEN",
   "WORKTABLE_OWNER_PASSWORD",
@@ -81,11 +87,13 @@ function configuredEndpoint(
     case "codex":
       return readCodexUrl(join(home, ".codex", "config.toml"))
     case "claude-code":
-      return readJsonUrl(join(home, ".claude", ".claude.json"), "mcpServers")
+      return readJsonUrl(join(home, ".claude", ".claude.json"), [
+        ["mcpServers"],
+      ])
     case "opencode":
       return readJsonUrl(
         join(home, ".config", "opencode", "opencode.json"),
-        "mcp"
+        JSON_CLIENT_ENTRY_PLACES.opencode
       )
   }
 }

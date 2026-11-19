@@ -20,6 +20,8 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { MCP_CLIENTS, type ConnectorInstallableMcpClientId } from "@worktable/types/mcp-clients";
+// The ESM build: its UMD main loads its parts at run time, which bundles break.
+import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { parse as parseToml } from "smol-toml";
 
 // ============================================================
@@ -61,28 +63,64 @@ export function commandExists(command: string): boolean {
 
 // ---- JSON config files -----------------------------------------------------
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * A client config's contents. Many clients (Kilo, OpenCode, VS Code) accept
+ * comments and trailing commas, so read JSON with comments; undefined when
+ * the text isn't valid even then.
+ */
+function parseJsonText(text: string): unknown {
+  const errors: ParseError[] = [];
+  const parsed: unknown = parseJsonc(text, errors, { allowTrailingComma: true });
+  return errors.length > 0 ? undefined : parsed;
+}
+
 export function readJsonObject(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
+  const parsed = parseJsonText(readFileSync(path, "utf8"));
+  return isJsonObject(parsed) ? parsed : {};
 }
 
 function readJsonObjectForMutation(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
-  } catch {
+  const parsed = parseJsonText(readFileSync(path, "utf8"));
+  if (parsed === undefined) {
     throw new Error(`${path} is not valid JSON; it was left unchanged.`);
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isJsonObject(parsed)) {
     throw new Error(`${path} must contain a JSON object; it was left unchanged.`);
   }
-  return parsed as Record<string, unknown>;
+  return parsed;
+}
+
+/**
+ * The file's text with only what changed between `before` and `after`
+ * edited, so its comments and layout stay where the person put them.
+ */
+function editJsonText(
+  text: string,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  path: string[] = []
+): string {
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    const was = before[key];
+    const now = after[key];
+    if (isJsonObject(was) && isJsonObject(now)) {
+      text = editJsonText(text, was, now, [...path, key]);
+    } else if (JSON.stringify(was) !== JSON.stringify(now)) {
+      text = applyEdits(
+        text,
+        modify(text, [...path, key], now, {
+          formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" },
+        })
+      );
+    }
+  }
+  return text;
 }
 
 function writeFilePrivate(path: string, contents: string | Buffer, mode = 0o600): void {
@@ -111,57 +149,87 @@ function writeFilePrivate(path: string, contents: string | Buffer, mode = 0o600)
 }
 
 export function writeJsonObject(path: string, value: Record<string, unknown>): void {
-  writeFilePrivate(path, JSON.stringify(value, null, 2) + "\n");
+  const text = existsSync(path) ? readFileSync(path, "utf8") : null;
+  const before = text === null ? undefined : parseJsonText(text);
+  writeFilePrivate(
+    path,
+    text !== null && isJsonObject(before)
+      ? editJsonText(text, before, value)
+      : JSON.stringify(value, null, 2) + "\n"
+  );
 }
 
 export function bearerHeaders(token?: string): Record<string, string> | undefined {
   return token ? { Authorization: `Bearer ${token}` } : undefined;
 }
 
-export function readJsonUrl(path: string, parentKey: string): string | undefined {
+/**
+ * Where a JSON client keeps its servers, as key paths from the file's root:
+ * where Worktable writes first, then older places the client still reads,
+ * which a write moves the entry out of.
+ */
+export type JsonEntryPlaces = readonly (readonly string[])[];
+
+function objectAt(root: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> | undefined {
+  let node: unknown = root;
+  for (const key of keys) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return undefined;
+    node = (node as Record<string, unknown>)[key];
+  }
+  return node && typeof node === "object" && !Array.isArray(node) ? (node as Record<string, unknown>) : undefined;
+}
+
+/** The worktable entry, from the first place that has one. */
+function jsonEntry(root: Record<string, unknown>, places: JsonEntryPlaces): Record<string, unknown> | undefined {
+  for (const keys of places) {
+    const entry = objectAt(root, keys)?.["worktable"];
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) return entry as Record<string, unknown>;
+  }
+  return undefined;
+}
+
+export function readJsonUrl(path: string, places: JsonEntryPlaces): string | undefined {
   if (!existsSync(path)) return undefined;
-  const root = readJsonObject(path);
-  const parent = root[parentKey];
-  if (!parent || typeof parent !== "object") return undefined;
-  const worktable = (parent as Record<string, unknown>)["worktable"];
-  if (!worktable || typeof worktable !== "object") return undefined;
-  const url = (worktable as Record<string, unknown>)["url"];
+  const url = jsonEntry(readJsonObject(path), places)?.["url"];
   return typeof url === "string" ? url : undefined;
 }
 
 /** True if the worktable entry carries a non-empty Authorization header. */
-export function readJsonAuth(path: string, parentKey: string): boolean {
+export function readJsonAuth(path: string, places: JsonEntryPlaces): boolean {
   if (!existsSync(path)) return false;
-  const root = readJsonObject(path);
-  const parent = root[parentKey];
-  if (!parent || typeof parent !== "object") return false;
-  const worktable = (parent as Record<string, unknown>)["worktable"];
-  if (!worktable || typeof worktable !== "object") return false;
-  const headers = (worktable as Record<string, unknown>)["headers"];
+  const headers = jsonEntry(readJsonObject(path), places)?.["headers"];
   if (!headers || typeof headers !== "object") return false;
   const auth = (headers as Record<string, unknown>)["Authorization"];
   return typeof auth === "string" && auth.trim().length > 0;
 }
 
-export function setupJsonUrl(path: string, parentKey: string, entry: Record<string, unknown>): void {
+function removeEntries(root: Record<string, unknown>, places: JsonEntryPlaces): void {
+  for (const keys of places) {
+    const parent = objectAt(root, keys);
+    if (parent) delete parent["worktable"];
+  }
+}
+
+export function setupJsonUrl(path: string, places: JsonEntryPlaces, entry: Record<string, unknown>): void {
   // The same-machine CLI intentionally repairs malformed client JSON. The
   // remote connector is fail-closed because strict preflight and its TOCTOU
   // recheck run before this shared writer is called.
   const root = readJsonObject(path);
-  const parent =
-    root[parentKey] && typeof root[parentKey] === "object" ? (root[parentKey] as Record<string, unknown>) : {};
+  removeEntries(root, places);
+  let parent = root;
+  for (const key of places[0]!) {
+    const next = parent[key];
+    parent[key] = next && typeof next === "object" && !Array.isArray(next) ? next : {};
+    parent = parent[key] as Record<string, unknown>;
+  }
   parent["worktable"] = entry;
-  root[parentKey] = parent;
   writeJsonObject(path, root);
 }
 
-export function removeJsonUrl(path: string, parentKey: string): void {
+export function removeJsonUrl(path: string, places: JsonEntryPlaces): void {
   if (!existsSync(path)) return;
   const root = readJsonObject(path);
-  const parent = root[parentKey];
-  if (parent && typeof parent === "object") {
-    delete (parent as Record<string, unknown>)["worktable"];
-  }
+  removeEntries(root, places);
   writeJsonObject(path, root);
 }
 
@@ -171,8 +239,24 @@ export function cursorPath(): string {
   return process.env["WORKTABLE_CURSOR_MCP_CONFIG"]?.trim() || join(homedir(), ".cursor", "mcp.json");
 }
 
+/** Where XDG apps such as OpenCode and Kilo keep their settings. */
+function xdgConfigDir(): string {
+  const xdg = process.env["XDG_CONFIG_HOME"]?.trim();
+  return xdg || join(homedir(), ".config");
+}
+
 export function opencodePath(): string {
-  return process.env["WORKTABLE_OPENCODE_CONFIG"]?.trim() || join(homedir(), ".config", "opencode", "opencode.json");
+  return process.env["WORKTABLE_OPENCODE_CONFIG"]?.trim() || join(xdgConfigDir(), "opencode", "opencode.json");
+}
+
+/** Kilo's own file is kilo.jsonc; one who keeps kilo.json keeps it. */
+export function kiloPath(): string {
+  const explicit = process.env["WORKTABLE_KILO_CONFIG"]?.trim();
+  if (explicit) return explicit;
+  const dir = join(xdgConfigDir(), "kilo");
+  const json = join(dir, "kilo.json");
+  const jsonc = join(dir, "kilo.jsonc");
+  return existsSync(json) && !existsSync(jsonc) ? json : jsonc;
 }
 
 export function defaultVscodePath(): string {
@@ -192,11 +276,14 @@ export function cursorEntry(endpoint: string, token?: string): Record<string, un
   return { url: endpoint, ...(token ? { headers: bearerHeaders(token) } : {}) };
 }
 
+/**
+ * OpenCode and Kilo list servers under `mcp.servers`; OpenCode 2 ignores one
+ * directly under `mcp` and rejects keys such as `enabled` there.
+ */
 export function opencodeEntry(endpoint: string, token?: string): Record<string, unknown> {
   return {
     type: "remote",
     url: endpoint,
-    enabled: true,
     ...(token ? { headers: bearerHeaders(token) } : {}),
   };
 }
@@ -209,12 +296,14 @@ export function vscodeEntry(endpoint: string, token?: string): Record<string, un
   };
 }
 
-/** The JSON parent key each JSON-config client nests MCP servers under. */
-export const JSON_CLIENT_PARENT_KEYS = {
-  cursor: "mcpServers",
-  opencode: "mcp",
-  vscode: "servers",
-} as const;
+/** Where each JSON-config client keeps its servers. */
+export const JSON_CLIENT_ENTRY_PLACES = {
+  cursor: [["mcpServers"]],
+  // Earlier Worktable versions wrote the entry directly under `mcp`.
+  opencode: [["mcp", "servers"], ["mcp"]],
+  kilo: [["mcp", "servers"], ["mcp"]],
+  vscode: [["servers"]],
+} as const satisfies Record<string, JsonEntryPlaces>;
 
 // ---- Codex (TOML) ------------------------------------------------------------
 
@@ -645,31 +734,35 @@ export function captureClientConfigMutation(snapshot: ClientConfigSnapshot): Res
   }
 }
 
-function configSurface(id: ConnectorInstallableMcpClientId): {
+interface ConfigSurface {
   path: string;
   kind: "codex" | "json";
-  parentKey?: string;
-} | null {
+  places?: JsonEntryPlaces;
+}
+
+function configSurface(id: ConnectorInstallableMcpClientId): ConfigSurface | null {
   switch (id) {
     case "claude-code":
-      return { path: claudeCodePath(), kind: "json", parentKey: "mcpServers" };
+      return { path: claudeCodePath(), kind: "json", places: [["mcpServers"]] };
     case "codex":
       return { path: codexPath(), kind: "codex" };
     case "cursor":
-      return { path: cursorPath(), kind: "json", parentKey: "mcpServers" };
+      return { path: cursorPath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.cursor };
     case "opencode":
-      return { path: opencodePath(), kind: "json", parentKey: "mcp" };
+      return { path: opencodePath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.opencode };
+    case "kilo":
+      return { path: kiloPath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.kilo };
     case "vscode":
       return {
         path: vscodePath() ?? defaultVscodePath(),
         kind: "json",
-        parentKey: "servers",
+        places: JSON_CLIENT_ENTRY_PLACES.vscode,
       };
   }
 }
 
-function configuredUrl(surface: { path: string; kind: "codex" | "json"; parentKey?: string }): string | undefined {
-  return surface.kind === "codex" ? readCodexUrl(surface.path) : readJsonUrl(surface.path, surface.parentKey!);
+function configuredUrl(surface: ConfigSurface): string | undefined {
+  return surface.kind === "codex" ? readCodexUrl(surface.path) : readJsonUrl(surface.path, surface.places!);
 }
 
 /** The entry the connector writes for a tokenless target. */
@@ -682,13 +775,14 @@ function tokenlessEntry(id: ConnectorInstallableMcpClientId, endpoint: string): 
     case "cursor":
       return cursorEntry(endpoint);
     case "opencode":
+    case "kilo":
       return opencodeEntry(endpoint);
     case "vscode":
       return vscodeEntry(endpoint);
   }
 }
 
-function storedEntry(surface: { path: string; kind: "codex" | "json"; parentKey?: string }): unknown {
+function storedEntry(surface: ConfigSurface): unknown {
   if (surface.kind === "codex") {
     try {
       return codexWorktableConfig(readFileSync(surface.path, "utf8"));
@@ -696,8 +790,7 @@ function storedEntry(surface: { path: string; kind: "codex" | "json"; parentKey?
       return undefined;
     }
   }
-  const parent = readJsonObject(surface.path)[surface.parentKey!];
-  return parent && typeof parent === "object" ? (parent as Record<string, unknown>)["worktable"] : undefined;
+  return jsonEntry(readJsonObject(surface.path), surface.places!);
 }
 
 function sameValue(left: unknown, right: unknown): boolean {
@@ -750,11 +843,19 @@ export function preflightClient(
       existing = hasCodexWorktable(surface.path);
     } else if (surface.kind === "json" && existsSync(surface.path)) {
       const root = readJsonObjectForMutation(surface.path);
-      const parent = root[surface.parentKey!];
-      if (parent !== undefined && (!parent || typeof parent !== "object" || Array.isArray(parent))) {
-        throw new Error(`${surface.path} has a non-object ${surface.parentKey} value; it was left unchanged.`);
+      for (const keys of surface.places!) {
+        let node: unknown = root;
+        for (const [depth, key] of keys.entries()) {
+          node = (node as Record<string, unknown>)[key];
+          if (node === undefined) break;
+          if (!node || typeof node !== "object" || Array.isArray(node)) {
+            throw new Error(
+              `${surface.path} has a non-object ${keys.slice(0, depth + 1).join(".")} value; it was left unchanged.`
+            );
+          }
+        }
+        if (node && hasOwn(node as Record<string, unknown>, "worktable")) existing = true;
       }
-      existing = Boolean(parent && hasOwn(parent as Record<string, unknown>, "worktable"));
     }
 
     if (id === "claude-code") {
@@ -878,6 +979,8 @@ export function detectClient(id: ConnectorInstallableMcpClientId): boolean {
       return existsSync(cursorPath()) || existsSync(join(homedir(), ".cursor"));
     case "opencode":
       return commandExists("opencode") || existsSync(opencodePath());
+    case "kilo":
+      return commandExists("kilo") || existsSync(dirname(kiloPath()));
     case "vscode":
       return vscodePath() !== null || commandExists("code");
   }
@@ -941,7 +1044,7 @@ function installClientUnsafe(
       };
     }
     case "cursor": {
-      setupJsonUrl(cursorPath(), "mcpServers", cursorEntry(target.endpoint, target.token));
+      setupJsonUrl(cursorPath(), JSON_CLIENT_ENTRY_PLACES.cursor, cursorEntry(target.endpoint, target.token));
       return {
         id,
         ok: true,
@@ -950,12 +1053,17 @@ function installClientUnsafe(
       };
     }
     case "opencode": {
-      setupJsonUrl(opencodePath(), "mcp", opencodeEntry(target.endpoint, target.token));
-      return { id, ok: true, configPath: opencodePath() };
+      setupJsonUrl(opencodePath(), JSON_CLIENT_ENTRY_PLACES.opencode, opencodeEntry(target.endpoint, target.token));
+      return { id, ok: true, configPath: opencodePath(), restartHint: "Restart OpenCode to load Worktable." };
+    }
+    case "kilo": {
+      const path = kiloPath();
+      setupJsonUrl(path, JSON_CLIENT_ENTRY_PLACES.kilo, opencodeEntry(target.endpoint, target.token));
+      return { id, ok: true, configPath: path, restartHint: "Run /reload in Kilo, or start a new session, to load Worktable." };
     }
     case "vscode": {
       const path = vscodePath() ?? defaultVscodePath();
-      setupJsonUrl(path, "servers", vscodeEntry(target.endpoint, target.token));
+      setupJsonUrl(path, JSON_CLIENT_ENTRY_PLACES.vscode, vscodeEntry(target.endpoint, target.token));
       return {
         id,
         ok: true,
@@ -977,6 +1085,8 @@ function signInCommand(id: ConnectorInstallableMcpClientId): string[] | null {
       return commandExists("codex") ? ["codex", "mcp", "login", "worktable"] : null;
     case "opencode":
       return commandExists("opencode") ? ["opencode", "mcp", "auth", "worktable"] : null;
+    case "kilo":
+      return commandExists("kilo") ? ["kilo", "mcp", "auth", "worktable"] : null;
     case "cursor":
     case "vscode":
       return null;
@@ -994,6 +1104,8 @@ export function signInInstruction(id: ConnectorInstallableMcpClientId): string {
         : "Open Codex, then sign in to worktable from its MCP settings.";
     case "opencode":
       return "Run: opencode mcp auth worktable";
+    case "kilo":
+      return "Run: kilo mcp auth worktable";
     case "cursor":
       return "Open Cursor and sign in to worktable from its MCP settings.";
     case "vscode":
@@ -1064,6 +1176,7 @@ export async function connectClientOnce(id: ConnectorInstallableMcpClientId): Pr
       return codexConnectOnce();
     case "cursor":
     case "opencode":
+    case "kilo":
     case "vscode":
       return false;
   }

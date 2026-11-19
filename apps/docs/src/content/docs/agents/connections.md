@@ -16,22 +16,24 @@ worktable mcp setup
 ```
 
 To set up one client, run `worktable mcp setup <client>` with `claude-code`,
-`codex`, `cursor`, `vscode`, `opencode`, or `kilo`. For Goose, use the
+`codex`, `cursor`, `vscode`, `copilot`, `antigravity`, `opencode`, or `kilo`.
+For Goose, use the
 configuration from `worktable mcp print-config goose`.
 
 For an agent on another computer, choose it under **Connect App** and copy its
 command, or run `worktable agent invite` on the Worktable host. The command
-redeems a single-use pairing code. For Claude Code and Codex, the same command
-then installs Worktable's [skills](/agents/skills/) as a plugin, which the agent
-updates with its other plugins. For OpenCode and Kilo, it adds this Worktable's
+redeems a single-use pairing code. For Claude Code, Codex, Copilot CLI, VS Code
+and Antigravity, the same command then installs Worktable's
+[skills](/agents/skills/) as a plugin. For OpenCode and Kilo, it adds this Worktable's
 [skills address](/agents/skills/#skills-address), so they load the skills from
 it. The host must be reachable from that computer; see
 [Remote access](/guides/remote-access/).
 
-For **Worktable Cloud**, Claude Code and Codex install the [plugin](#plugins).
+For **Worktable Cloud**, Claude Code, Codex, Copilot CLI, VS Code and
+Antigravity install the [plugin](#plugins).
 When the plugin would work in another of your Worktables, Settings shows this
 Worktable's own command instead: run it, then approve sign-in in the browser
-that opens. Cursor and VS Code sign in from the app instead. If the command
+that opens. Cursor signs in from the app instead. If the command
 can't sign in, for example when an agent runs it, it prints the step that
 finishes the connection.
 
@@ -66,13 +68,31 @@ sign in. They name Cloud's address and the
 }
 ```
 
+### Copilot CLI, VS Code and Antigravity
+
+On local or self-hosted Worktable, choose the app and run the command shown:
+
+- **Copilot CLI**: the server goes in `~/.copilot/mcp-config.json`.
+- **VS Code**: the server goes in VS Code's user `mcp.json`. With Copilot CLI
+  on the same computer, the skills plugin is installed with it, into
+  `~/.copilot/installed-plugins`, which VS Code loads too.
+- **Antigravity**: the server goes in `~/.gemini/config/mcp_config.json`,
+  which the app and `agy` share, and the skills plugin is installed with
+  `agy plugin install`.
+
+Then start a new session, or reload VS Code. If the Worktable plugin for Cloud
+is already installed in Copilot CLI, its Cloud server takes the place of this
+connection: run `copilot plugin uninstall worktable`, then the command again
+with `--replace`.
+
 ## Plugins
 
 The general Worktable plugin bundles skills and a **Cloud connection** to
 `https://app.worktable.cloud/api/mcp`. For local or self-hosted Worktable, the
-connect command sets up Claude Code and Codex with this Worktable's connection
-and Worktable Skills, the same skills without the Cloud connection, and
-OpenCode and Kilo with its skills address. For other clients, use that installation's MCP configuration and install
+connect command sets up Claude Code, Codex, Copilot CLI, VS Code and
+Antigravity with this Worktable's connection and Worktable Skills, the same
+skills without the Cloud connection, and OpenCode and Kilo with its skills
+address. For other clients, use that installation's MCP configuration and install
 [skills](/agents/skills/) separately if your client supports them.
 
 For Claude Code:
@@ -110,7 +130,22 @@ GitHub App has access to the repository.
 
 For Antigravity, install Worktable from the app's plugins, or run
 `agy plugin install https://github.com/worktable/worktable-plugin`, then sign
-in from `/plugin`. For Gemini CLI, run
+in from `/plugin`.
+
+For Copilot CLI:
+
+```sh
+copilot plugin marketplace add worktable/worktable-plugin
+copilot plugin install worktable@worktable
+```
+
+Then run `/mcp` in Copilot CLI and sign in to `worktable`. VS Code loads
+plugins Copilot CLI installs. In VS Code itself, run
+**Chat: Install Plugin from Source** and enter
+`https://github.com/worktable/worktable-plugin`, then start `worktable` from
+the MCP servers list and sign in. Update it with **Chat: Update Plugins**.
+
+For Gemini CLI, run
 `gemini extensions install https://github.com/worktable/worktable-plugin --auto-update`.
 
 In Perplexity, open **Plugins**, choose **Add custom**, then
@@ -119,7 +154,8 @@ In Perplexity, open **Plugins**, choose **Add custom**, then
 for a newer version, remove the plugin and import it again.
 
 When the plugin would work in another of your Worktables, Settings shows this
-Worktable's own address for Antigravity, Gemini CLI and Perplexity instead.
+Worktable's own address for Copilot CLI, VS Code, Antigravity, Gemini CLI and
+Perplexity instead.
 Add it as an MCP server or custom connector, then sign in. The plugin stays
 under **Other Ways**.
 

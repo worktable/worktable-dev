@@ -295,6 +295,8 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
     "Cursor",
     "OpenCode",
     "Kilo",
+    "VS Code",
+    "Copilot CLI",
     "Gemini",
     "Gemini CLI",
     "Antigravity",
@@ -832,8 +834,9 @@ test("an agent connected from its card is named and narrowed there, keeps its lo
     ["Codex", "codex", "Codex CLI", "codex.svg"],
     ["Cursor", "cursor", "Cursor", "cursor.svg"],
     ["Kilo", "kilo", "Kilo", "kilo.svg"],
+    ["VS Code", "vscode", "VS Code", "vscode.svg"],
+    ["Copilot CLI", "copilot", "Copilot CLI", "github-copilot.svg"],
     ["Other", "opencode", "opencode", "opencode.svg"],
-    ["Other", "vscode", "VS Code", "vscode.svg"],
   ] as const) {
     const response = page.waitForResponse(
       (item) =>

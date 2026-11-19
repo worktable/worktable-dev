@@ -184,6 +184,8 @@ Support maturity and configuration method are separate:
 | `opencode`       | OpenCode                                           | Connector-installable                                   |
 | `kilo`           | Kilo CLI                                           | Connector-installable                                   |
 | `vscode`         | VS Code                                            | Connector-installable                                   |
+| `copilot`        | GitHub Copilot CLI                                 | Connector-installable                                   |
+| `antigravity`    | Antigravity app and CLI                            | Connector-installable                                   |
 | `goose`          | Goose                                              | Manual snippet                                          |
 | `claude-desktop` | Claude Desktop and supported local Cowork releases | Desktop extension or Cloud OAuth                        |
 | `openclaw`       | OpenClaw                                           | ClawHub plugin plus pairing                             |

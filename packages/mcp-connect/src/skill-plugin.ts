@@ -16,16 +16,18 @@ import {
 // Worktable's skills for a connected coding agent
 // ============================================================
 //
-// After the connect command sets up Claude Code, Codex, Copilot CLI, VS Code
-// or Antigravity, it installs Worktable Skills (the skills-only build of the
-// Worktable plugin) with the agent's own plugin command: `claude`, `codex`,
-// `agy`, and `copilot` for both Copilot CLI and VS Code, which loads Copilot
-// CLI's plugins. The full Worktable plugin already carries the skills, so it
-// is left alone. When the plugin can't be installed, the skills are copied
-// as before, by the same installer `curl https://worktable.dev/install-skills
-// | sh` runs; Antigravity, which reads no folder that installer writes, gets
-// the plugin built from the skills the Worktable serves instead. Nothing here
-// can fail the connection: every outcome is a line to show.
+// After the connect command sets up Claude Code, Codex, Copilot CLI, VS Code,
+// Antigravity or Devin, it installs Worktable Skills (the skills-only build of
+// the Worktable plugin) with the agent's own plugin command: `claude`,
+// `codex`, `agy`, `devin`, and `copilot` for both Copilot CLI and VS Code,
+// which loads Copilot CLI's plugins. The full Worktable plugin already
+// carries the skills, so it is left alone. When the plugin can't be
+// installed, the skills are copied as before, by the same installer `curl
+// https://worktable.dev/install-skills | sh` runs; Antigravity, which reads no
+// folder that installer writes, gets the plugin built from the skills the
+// Worktable serves instead. Junie installs plugins only from its own prompt,
+// so it always gets the copy. Nothing here can fail the connection: every
+// outcome is a line to show.
 //
 // Must stay runnable under plain Node 18+, like the rest of the connector.
 
@@ -35,6 +37,8 @@ export type SkillPluginClient =
   | "copilot"
   | "vscode"
   | "antigravity"
+  | "devin"
+  | "junie"
 
 export const SKILL_PLUGIN_CLIENTS: readonly SkillPluginClient[] = [
   "claude-code",
@@ -42,6 +46,8 @@ export const SKILL_PLUGIN_CLIENTS: readonly SkillPluginClient[] = [
   "copilot",
   "vscode",
   "antigravity",
+  "devin",
+  "junie",
 ]
 
 /** Where the plugins are listed. Self-hosted mirrors and tests point elsewhere. */
@@ -100,6 +106,8 @@ const LABELS: Record<SkillPluginClient, string> = {
   copilot: "Copilot CLI",
   vscode: "VS Code",
   antigravity: "Antigravity",
+  devin: "Devin",
+  junie: "Junie",
 }
 
 /** Where each copies to; Antigravity reads neither, so it never copies. */
@@ -109,12 +117,13 @@ const TARGETS: Record<SkillPluginClient, SkillProjectionTargetId | null> = {
   copilot: "agents",
   vscode: "agents",
   antigravity: null,
+  devin: "agents",
+  junie: "agents",
 }
 
 /**
  * Copies a plugin makes redundant, removed so each skill shows once. Copilot
- * shares ~/.agents/skills with other agents and shows a skill once by name,
- * so its copies stay.
+ * and Devin share ~/.agents/skills with other agents, so their copies stay.
  */
 const REMOVES_COPIES: Record<SkillPluginClient, boolean> = {
   "claude-code": true,
@@ -122,10 +131,15 @@ const REMOVES_COPIES: Record<SkillPluginClient, boolean> = {
   copilot: false,
   vscode: false,
   antigravity: false,
+  devin: false,
+  junie: false,
 }
 
-/** The command that installs plugins: VS Code loads Copilot CLI's. */
-function pluginCommand(client: SkillPluginClient): string {
+/**
+ * The command that installs plugins: VS Code loads Copilot CLI's. Null for
+ * Junie, which installs them only from its own /extensions prompt.
+ */
+function pluginCommand(client: SkillPluginClient): string | null {
   switch (client) {
     case "claude-code":
       return claudeCodeCommand()
@@ -136,6 +150,10 @@ function pluginCommand(client: SkillPluginClient): string {
       return "copilot"
     case "antigravity":
       return "agy"
+    case "devin":
+      return "devin"
+    case "junie":
+      return null
   }
 }
 
@@ -151,6 +169,8 @@ const RESTART_HINTS: Record<SkillPluginClient, string> = {
   copilot: "Start a new Copilot CLI session to load Worktable.",
   vscode: "Reload VS Code windows to load Worktable.",
   antigravity: "Start a new Antigravity conversation to load Worktable.",
+  devin: "Start a new Devin session to load Worktable.",
+  junie: "Start a new Junie session to load Worktable.",
 }
 
 function runCommand(command: string, args: string[]): CommandResult {
@@ -206,12 +226,26 @@ function firstLine(result: CommandResult, command?: string): string {
   return sentence.length > 160 ? `${sentence.slice(0, 157)}...` : sentence
 }
 
+/**
+ * Devin lists a plugin's skills as `/<plugin>:<skill>` in `devin skills
+ * list`, which works signed out too; `devin plugins` needs a Devin sign-in.
+ */
+function devinPlugins(dependencies: SkillPluginDependencies): { names: string[] } | { error: string } {
+  const result = dependencies.run("devin", ["skills", "list"])
+  if (result.status !== 0) return { error: firstLine(result, "devin") }
+  const names = new Set<string>()
+  for (const match of result.stdout.matchAll(/^\s*\/?([\w.-]+):worktable-library\b/gm)) names.add(match[1]!)
+  return { names: [...names] }
+}
+
 /** Installed plugin names, or an error. */
 function installedPlugins(
   client: SkillPluginClient,
   dependencies: SkillPluginDependencies
 ): { names: string[] } | { error: string } {
+  if (client === "devin") return devinPlugins(dependencies)
   const command = pluginCommand(client)
+  if (!command) return { names: [] }
   const result = dependencies.run(command, ["plugin", "list", "--json"])
   if (result.status !== 0) return { error: firstLine(result, command) }
   const parsed = parseJson(result.stdout)
@@ -263,11 +297,26 @@ export function antigravitySource(marketplace: string): string | null {
   return repository ? `${repository}/tree/main/${SKILLS_PLUGIN_PATH}` : null
 }
 
+/**
+ * Devin installs a plugin from a folder, a GitHub `owner/repo`, or a Git
+ * address, with `#<folder>` for one below the repository's root.
+ */
+export function devinSource(marketplace: string): string {
+  if (isAbsolute(marketplace) || marketplace.startsWith(".") || existsSync(marketplace))
+    return join(resolve(marketplace), SKILLS_PLUGIN_PATH)
+  return `${marketplace.replace(/\/+$/, "")}#${SKILLS_PLUGIN_PATH}`
+}
+
 function installSkillsPlugin(
   client: SkillPluginClient,
   marketplace: string,
   dependencies: SkillPluginDependencies
 ): string | null {
+  if (client === "devin") {
+    // On this computer only, like the connection, not in the Devin account's plugins.
+    const result = dependencies.run("devin", ["plugins", "install", "--local", "--yes", devinSource(marketplace)])
+    return result.status === 0 ? null : firstLine(result, "devin")
+  }
   if (client === "antigravity") {
     const source = antigravitySource(marketplace)
     if (!source) return `it can't install from ${marketplace}`
@@ -371,6 +420,20 @@ export async function setUpSkills(
       )
     else if (removal.removed)
       lines.push(`  Removed Worktable's earlier skill copies from ${folder}`)
+  }
+
+  if (!pluginCommand(client) && target) {
+    const copyError = await dependencies.projectSkills(target)
+    lines.push(
+      copyError
+        ? `  Couldn't add Worktable's skills to ${label} (${copyError}). See ${SKILLS_GUIDE}`
+        : `  ${label}: skills copied to ${folder}`
+    )
+    return report(
+      copyError
+        ? { via: "copy", reason: "no plugin command", copied: false, copyError }
+        : { via: "copy", reason: "no plugin command", copied: true }
+    )
   }
 
   let reason: string

@@ -14,8 +14,12 @@ import {
   cursorEntry,
   cursorPath,
   defaultVscodePath,
+  devinEntry,
+  devinPath,
   installClient,
   JSON_CLIENT_ENTRY_PLACES,
+  junieEntry,
+  juniePath,
   type JsonEntryPlaces,
   kiloPath,
   opencodeEntry,
@@ -228,12 +232,15 @@ function makeJsonAdapter(
   info: McpClientInfo<ConnectorInstallableMcpClientId>,
   path: () => string,
   places: JsonEntryPlaces,
-  entry: (endpoint: string, token?: string) => Record<string, unknown>
+  entry: (endpoint: string, token?: string) => Record<string, unknown>,
+  /** A client whose command can be installed before it has a config file. */
+  command?: string
 ): Adapter {
   return {
     ...info,
     configPath: path,
-    detect: () => existsSync(path()),
+    detect: () =>
+      (command !== undefined && commandExists(command)) || existsSync(path()),
     status: (config) =>
       baseStatus(
         info,
@@ -386,6 +393,20 @@ export const adapters: Record<ConnectorInstallableMcpClientId, Adapter> = {
     antigravityPath,
     JSON_CLIENT_ENTRY_PLACES.antigravity,
     antigravityEntry
+  ),
+  devin: makeJsonAdapter(
+    CLIENTS.devin,
+    devinPath,
+    JSON_CLIENT_ENTRY_PLACES.devin,
+    devinEntry,
+    "devin"
+  ),
+  junie: makeJsonAdapter(
+    CLIENTS.junie,
+    juniePath,
+    JSON_CLIENT_ENTRY_PLACES.junie,
+    junieEntry,
+    "junie"
   ),
 }
 

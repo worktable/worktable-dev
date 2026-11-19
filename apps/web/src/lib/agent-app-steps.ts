@@ -74,6 +74,8 @@ export type AppId =
   | "gemini"
   | "gemini-cli"
   | "antigravity"
+  | "devin"
+  | "junie"
   | "perplexity"
   | "other"
 
@@ -106,6 +108,8 @@ export const AGENT_APPS: AgentApp[] = [
   { id: "gemini", name: "Gemini", platform: "gemini" },
   { id: "gemini-cli", name: "Gemini CLI", platform: "gemini-cli" },
   { id: "antigravity", name: "Antigravity", platform: "antigravity" },
+  { id: "devin", name: "Devin", platform: "devin" },
+  { id: "junie", name: "Junie", platform: "junie" },
   { id: "perplexity", name: "Perplexity", platform: "perplexity" },
   { id: "other", name: "Other", platform: "other" },
 ]
@@ -153,10 +157,13 @@ export type Skills =
    * without its Cloud server, with the agent's own plugin command (VS Code
    * gets Copilot CLI's). When that can't work it copies them from
    * Worktable's installer instead; Antigravity builds the plugin from the
-   * skills this Worktable serves.
+   * skills this Worktable serves. Junie, with no plugin command, gets the copy.
    */
   | { via: "connect-plugin" }
-  /** The connect command adds them from Worktable's installer. */
+  /**
+   * Worktable's installer adds them: after the connect command, or as its
+   * own command beside an address.
+   */
   | { via: "url"; target: "claude" | "agents" }
   /**
    * The app loads them from a skills address and keeps them current: the
@@ -174,7 +181,8 @@ const NONE: Skills = { via: "none" }
 /** One way to connect an app, and how its skills arrive. */
 export type Way =
   /** The Worktable plugin in Claude. `link` when it reaches this Worktable through Link. */
-  (| { kind: "claude-plugin"; link: boolean }
+  (
+    | { kind: "claude-plugin"; link: boolean }
     /** The official Worktable app in ChatGPT. */
     | { kind: "chatgpt-app"; link: boolean }
     /** A coding agent's plugin, installed from the terminal. */
@@ -282,6 +290,20 @@ export function waysFor(app: AppId, where: Where): AppWays | null {
         ? { best: { kind: "address", skills: CATALOG }, others: [] }
         : {
             best: { kind: "pairing", client: app, skills: CATALOG },
+            others: [],
+          }
+    // Cloud's connect command doesn't know Devin or Junie, so on Cloud they
+    // add the address with their own command or file, and the skills with
+    // Worktable's installer.
+    case "devin":
+    case "junie":
+      return cloud
+        ? {
+            best: { kind: "address", skills: { via: "url", target: "agents" } },
+            others: [],
+          }
+        : {
+            best: { kind: "pairing", client: app, skills: CONNECT_PLUGIN },
             others: [],
           }
     case "openclaw":
@@ -435,6 +457,20 @@ export function addressStep(
       return {
         step: "Add this to ~/.config/kilo/kilo.jsonc. Then run kilo mcp auth worktable and sign in.",
         value: catalogConfig(mcpUrl),
+      }
+    case "devin":
+      return {
+        step: "Run this in your terminal, then sign in at the link it opens.",
+        value: `devin mcp add --scope user worktable ${mcpUrl} && devin mcp login worktable`,
+      }
+    case "junie":
+      return {
+        step: "Add this to ~/.junie/mcp/mcp.json. Then in Junie, run /mcp, choose worktable and Authorize.",
+        value: JSON.stringify(
+          { mcpServers: { worktable: { url: mcpUrl } } },
+          null,
+          2
+        ),
       }
     case "perplexity":
       return {

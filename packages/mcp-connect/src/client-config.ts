@@ -289,6 +289,26 @@ export function antigravityPath(): string {
   );
 }
 
+/**
+ * Devin's user servers, which Devin Desktop and Devin CLI share. On Windows
+ * Devin keeps them in %APPDATA%; elsewhere under XDG_CONFIG_HOME or ~/.config.
+ */
+export function devinPath(): string {
+  const explicit = process.env["WORKTABLE_DEVIN_MCP_CONFIG"]?.trim();
+  if (explicit) return explicit;
+  const appData = process.env["APPDATA"]?.trim();
+  const base = process.platform === "win32" && appData ? appData : xdgConfigDir();
+  return join(base, "devin", "mcp_config.json");
+}
+
+/** Junie's user servers, shared by Junie CLI and Junie in JetBrains IDEs. JUNIE_HOME moves its folder. */
+export function juniePath(): string {
+  const explicit = process.env["WORKTABLE_JUNIE_MCP_CONFIG"]?.trim();
+  if (explicit) return explicit;
+  const home = process.env["JUNIE_HOME"]?.trim();
+  return join(home || join(homedir(), ".junie"), "mcp", "mcp.json");
+}
+
 export function cursorEntry(endpoint: string, token?: string): Record<string, unknown> {
   return { url: endpoint, ...(token ? { headers: bearerHeaders(token) } : {}) };
 }
@@ -327,6 +347,15 @@ export function antigravityEntry(endpoint: string, token?: string): Record<strin
   return { serverUrl: endpoint, ...(token ? { headers: bearerHeaders(token) } : {}) };
 }
 
+/** What `devin mcp add --scope user` writes. */
+export function devinEntry(endpoint: string, token?: string): Record<string, unknown> {
+  return { url: endpoint, transport: "http", ...(token ? { headers: bearerHeaders(token) } : {}) };
+}
+
+export function junieEntry(endpoint: string, token?: string): Record<string, unknown> {
+  return { url: endpoint, ...(token ? { headers: bearerHeaders(token) } : {}) };
+}
+
 /** Where each JSON-config client keeps its servers. */
 export const JSON_CLIENT_ENTRY_PLACES = {
   cursor: [["mcpServers"]],
@@ -336,6 +365,8 @@ export const JSON_CLIENT_ENTRY_PLACES = {
   vscode: [["servers"]],
   copilot: [["mcpServers"]],
   antigravity: [["mcpServers"]],
+  devin: [["mcpServers"]],
+  junie: [["mcpServers"]],
 } as const satisfies Record<string, JsonEntryPlaces>;
 
 // ---- Codex (TOML) ------------------------------------------------------------
@@ -795,6 +826,10 @@ function configSurface(id: ConnectorInstallableMcpClientId): ConfigSurface | nul
       return { path: copilotPath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.copilot };
     case "antigravity":
       return { path: antigravityPath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.antigravity };
+    case "devin":
+      return { path: devinPath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.devin };
+    case "junie":
+      return { path: juniePath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.junie };
   }
 }
 
@@ -820,6 +855,10 @@ function tokenlessEntry(id: ConnectorInstallableMcpClientId, endpoint: string): 
       return copilotEntry(endpoint);
     case "antigravity":
       return antigravityEntry(endpoint);
+    case "devin":
+      return devinEntry(endpoint);
+    case "junie":
+      return junieEntry(endpoint);
   }
 }
 
@@ -1028,6 +1067,10 @@ export function detectClient(id: ConnectorInstallableMcpClientId): boolean {
       return commandExists("copilot") || existsSync(copilotPath());
     case "antigravity":
       return commandExists("agy") || existsSync(dirname(antigravityPath()));
+    case "devin":
+      return commandExists("devin") || existsSync(dirname(devinPath()));
+    case "junie":
+      return commandExists("junie") || existsSync(dirname(dirname(juniePath())));
   }
 }
 
@@ -1126,6 +1169,16 @@ function installClientUnsafe(
       setupJsonUrl(path, JSON_CLIENT_ENTRY_PLACES.antigravity, antigravityEntry(target.endpoint, target.token));
       return { id, ok: true, configPath: path, restartHint: "Start a new Antigravity conversation to load Worktable." };
     }
+    case "devin": {
+      const path = devinPath();
+      setupJsonUrl(path, JSON_CLIENT_ENTRY_PLACES.devin, devinEntry(target.endpoint, target.token));
+      return { id, ok: true, configPath: path, restartHint: "Start a new Devin session to load Worktable." };
+    }
+    case "junie": {
+      const path = juniePath();
+      setupJsonUrl(path, JSON_CLIENT_ENTRY_PLACES.junie, junieEntry(target.endpoint, target.token));
+      return { id, ok: true, configPath: path, restartHint: "Start a new Junie session to load Worktable." };
+    }
   }
 }
 
@@ -1142,6 +1195,9 @@ function signInCommand(id: ConnectorInstallableMcpClientId): string[] | null {
       return commandExists("opencode") ? ["opencode", "mcp", "auth", "worktable"] : null;
     case "kilo":
       return commandExists("kilo") ? ["kilo", "mcp", "auth", "worktable"] : null;
+    case "devin":
+      return commandExists("devin") ? ["devin", "mcp", "login", "worktable"] : null;
+    case "junie":
     case "cursor":
     case "vscode":
     case "copilot":
@@ -1171,6 +1227,12 @@ export function signInInstruction(id: ConnectorInstallableMcpClientId): string {
       return "In Copilot CLI, run /mcp and sign in to worktable.";
     case "antigravity":
       return "In Antigravity, open MCP servers and sign in to worktable.";
+    case "devin":
+      return commandExists("devin")
+        ? "Run: devin mcp login worktable"
+        : "Open Devin, then sign in to worktable from its MCP settings.";
+    case "junie":
+      return "In Junie, run /mcp, choose worktable and Authorize.";
   }
 }
 
@@ -1241,6 +1303,8 @@ export async function connectClientOnce(id: ConnectorInstallableMcpClientId): Pr
     case "vscode":
     case "copilot":
     case "antigravity":
+    case "devin":
+    case "junie":
       return false;
   }
 }

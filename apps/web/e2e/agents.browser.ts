@@ -300,6 +300,8 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
     "Gemini",
     "Gemini CLI",
     "Antigravity",
+    "Devin",
+    "Junie",
     "Perplexity",
     "Other",
   ]
@@ -836,6 +838,8 @@ test("an agent connected from its card is named and narrowed there, keeps its lo
     ["Kilo", "kilo", "Kilo", "kilo.svg"],
     ["VS Code", "vscode", "VS Code", "vscode.svg"],
     ["Copilot CLI", "copilot", "Copilot CLI", "github-copilot.svg"],
+    ["Devin", "devin", "Devin", "devin.svg"],
+    ["Junie", "junie", "Junie", "junie.svg"],
     ["Other", "opencode", "opencode", "opencode.svg"],
   ] as const) {
     const response = page.waitForResponse(

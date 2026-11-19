@@ -32,9 +32,10 @@ import { verifyMcpEndpoint } from "./verify.ts"
 // MCP path end to end, and reports progress back to the pairing session so
 // the Settings flow shows live status. On Cloud (--oauth) it writes a
 // tokenless entry and starts the client's own OAuth sign-in instead.
-// Paired with Claude Code, Codex, Copilot CLI, VS Code or Antigravity, it then
-// gives the agent Worktable's skills as a plugin (skill-plugin.ts); OpenCode
-// and Kilo get the Worktable's skills address (skill-catalog.ts). The connection never depends on that step.
+// Paired with Claude Code, Codex, Copilot CLI, VS Code, Antigravity or Devin,
+// it then gives the agent Worktable's skills as a plugin, and Junie a copy of
+// them (skill-plugin.ts); OpenCode and Kilo get the Worktable's skills address
+// (skill-catalog.ts). The connection never depends on that step.
 // Must run under plain Node 18+ or Bun.
 //
 // Usage:

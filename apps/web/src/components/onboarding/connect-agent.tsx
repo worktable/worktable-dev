@@ -10,6 +10,7 @@ import {
   isPluginApp,
   placeOf,
   sharedAddressLandsHere,
+  skillsCommand,
   waysFor,
   type AgentApp,
   type AppId,
@@ -601,7 +602,8 @@ function signedInHere(
     app.id === "other" ||
     platform === app.platform ||
     // These apps sign in under names we may not know yet, by plugin or address.
-    (isPluginApp(app.id) && platform === "other") ||
+    ((isPluginApp(app.id) || app.id === "devin" || app.id === "junie") &&
+      platform === "other") ||
     // Codex CLI signs in as the Codex client, which ChatGPT Desktop shares.
     (app.id === "codex" && agentConnectionOnCodexHost(connection))
   )
@@ -718,11 +720,15 @@ function CloudStatus(props: PanelProps) {
 function SignInPanel(props: PanelProps) {
   const { app, way, connection } = props
   const { step, value, open } = cloudStep(app, way, connection.remoteMcpUrl)
+  const { skills } = way
+  // An address brings no skills, so they are a step of their own.
+  const skillsStep = skills.via === "files" || skills.via === "url"
+  const back = props.primary ? " Then return to Worktable." : null
   return (
     <>
       <Instruction>
         {step}
-        {props.primary ? " Then return to Worktable." : null}
+        {skillsStep ? null : back}
       </Instruction>
       <CommandBlock value={value} />
       {open ? (
@@ -730,17 +736,25 @@ function SignInPanel(props: PanelProps) {
           <ExternalButton href={open.href}>{open.label}</ExternalButton>
         </div>
       ) : null}
-      {way.skills.via === "files" ? (
-        <p className="mt-3 text-sm text-muted-foreground">
-          For skills, upload the{" "}
-          <a
-            href={way.skills.href}
-            className="font-medium text-primary-text hover:underline"
-          >
-            Worktable skill
-          </a>{" "}
-          in Gemini.
-        </p>
+      {skills.via === "files" ? (
+        <div className="mt-3">
+          <Instruction>
+            Then download the{" "}
+            <a
+              href={skills.href}
+              className="font-medium text-primary-text hover:underline"
+            >
+              Worktable skill
+            </a>
+            , unpack it, and upload its worktable folder in Customize, then
+            Skills.{back}
+          </Instruction>
+        </div>
+      ) : skills.via === "url" ? (
+        <div className="mt-3">
+          <Instruction>Then run this for Worktable’s skills.{back}</Instruction>
+          <CommandBlock value={skillsCommand(skills.target)} />
+        </div>
       ) : null}
       {props.primary ? <CloudStatus {...props} /> : null}
     </>
@@ -1201,6 +1215,13 @@ function SetupCard({
             active={active}
             onRenamed={(name) => onRenamed(connected, name)}
           />
+          {/* Signing in can finish before the skills command was run. */}
+          {ways.best.kind === "address" && ways.best.skills.via === "url" ? (
+            <div className="mt-5">
+              <Instruction>Run this for Worktable’s skills.</Instruction>
+              <CommandBlock value={skillsCommand(ways.best.skills.target)} />
+            </div>
+          ) : null}
           {onDone ? (
             <div className="mt-5 flex justify-end">
               <Button onClick={onDone}>Done</Button>

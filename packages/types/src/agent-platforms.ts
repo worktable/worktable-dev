@@ -20,6 +20,8 @@ export const AGENT_PLATFORM_IDS = [
   "copilot",
   "goose",
   "antigravity",
+  "devin",
+  "junie",
   // Before gemini, so a "Gemini CLI ..." sign-in name finds it first.
   "gemini-cli",
   "gemini",
@@ -128,6 +130,10 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     mode: "on-demand",
     logo: "antigravity.svg",
   },
+  // Devin Desktop and Devin CLI share their servers and skills.
+  devin: { id: "devin", name: "Devin", mode: "on-demand", logo: "devin.svg" },
+  // Junie in JetBrains IDEs and Junie CLI.
+  junie: { id: "junie", name: "Junie", mode: "on-demand", logo: "junie.svg" },
   "gemini-cli": {
     id: "gemini-cli",
     name: "Gemini CLI",
@@ -164,12 +170,17 @@ const CLIENT_PLATFORMS: Record<string, AgentPlatformId> = {
   vscode: "vscode",
   copilot: "copilot",
   antigravity: "antigravity",
+  devin: "devin",
+  junie: "junie",
   goose: "goose",
   // Names these apps sign in with. The Gemini app registers as "Google"
   // (seen Nov 16, 2026).
   google: "gemini",
   "google-antigravity": "antigravity",
   "google-gemini": "gemini",
+  // Devin Desktop was Windsurf.
+  windsurf: "devin",
+  "jetbrains-junie": "junie",
 }
 
 /** The platform of an always-on adapter, such as `openclaw` or `hermes`. */

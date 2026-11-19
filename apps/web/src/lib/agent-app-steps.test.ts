@@ -77,13 +77,20 @@ describe("agent app ways", () => {
       expect(ways.others.map((way) => way.kind)).toEqual(["coding-plugin"])
     }
     const pinned = "https://app.worktable.cloud/api/mcp/w/wt_123"
-    for (const app of [
-      "gemini-cli",
-      "antigravity",
-      "vscode",
-      "copilot",
-      "perplexity",
-    ] as const) {
+    // The connect command for this Worktable, which adds the skills, where
+    // the connector knows the app; the address for the others.
+    for (const app of ["antigravity", "vscode", "copilot"] as const) {
+      expect(best(app, at("cloud"))).toMatchObject({ kind: "app-plugin", app })
+      expect(waysFor(app, at("cloud"))!.others).toEqual([
+        { kind: "cloud-command", client: app, skills: { via: "connect-plugin" } },
+      ])
+      const ways = waysFor(app, at("cloud", false))!
+      expect(ways.best).toMatchObject({ kind: "cloud-command", client: app })
+      expect(ways.others).toEqual([
+        { kind: "app-plugin", app, skills: { via: "plugin" } },
+      ])
+    }
+    for (const app of ["gemini-cli", "perplexity"] as const) {
       expect(best(app, at("cloud"))).toMatchObject({ kind: "app-plugin", app })
       const ways = waysFor(app, at("cloud", false))!
       expect(ways.best.kind).toBe("address")
@@ -127,43 +134,48 @@ describe("agent app ways", () => {
       // Not claimed for an agent whose skills folder isn't one we install to.
       expect(bringsSkills(best("cursor", at(place)))).toBe(false)
     }
-    // On Cloud they paste the server and the skills address together.
+    // On Cloud the connect command brings the skills too, with the app's
+    // own command or file under Other Ways.
     const pinned = "https://app.worktable.cloud/api/mcp/w/wt_123"
-    for (const app of ["opencode", "kilo"] as const) {
-      expect(best(app, at("cloud"))).toMatchObject({
-        kind: "address",
-        skills: { via: "catalog" },
+    for (const app of [
+      "opencode",
+      "kilo",
+      "devin",
+      "junie",
+      "pi",
+      "droid",
+      "cline",
+      "amp",
+      "zed",
+      "warp",
+    ] as const) {
+      const ways = waysFor(app, at("cloud"))!
+      expect(ways.best).toMatchObject({
+        kind: "cloud-command",
+        client: app,
+        skills: {
+          via: app === "opencode" || app === "kilo" ? "catalog" : "connect-plugin",
+        },
       })
+      expect(ways.others.map((way) => way.kind)).toEqual(["address"])
+      expect(addressStep(app, pinned).value).toContain(pinned)
+    }
+    // OpenCode and Kilo paste the server and the skills address together.
+    for (const app of ["opencode", "kilo"] as const)
       expect(JSON.parse(addressStep(app, pinned).value)).toEqual({
         mcp: { servers: { worktable: { type: "remote", url: pinned } } },
         skills: [SKILL_CATALOG],
       })
-    }
-    // Devin and Junie add the address with their own command or file, and
-    // the skills with Worktable's installer.
-    for (const app of ["devin", "junie"] as const)
-      expect(best(app, at("cloud"))).toMatchObject({
-        kind: "address",
-        skills: { via: "url", target: "agents" },
-      })
-    expect(addressStep("devin", pinned).value).toContain(pinned)
+    // Pi's and Droid's own commands add the skills plugin; the others take
+    // Worktable's installer beside the address.
+    expect(waysFor("pi", at("cloud"))!.others[0]!.skills.via).toBe("plugin")
+    expect(waysFor("zed", at("cloud"))!.others[0]!.skills).toEqual({
+      via: "url",
+      target: "agents",
+    })
     expect(JSON.parse(addressStep("junie", pinned).value)).toEqual({
       mcpServers: { worktable: { url: pinned } },
     })
-    // Pi's and Droid's commands add the server and the skills plugin; Cline,
-    // Amp, Zed and Warp take the address and Worktable's installer.
-    for (const app of ["pi", "droid"] as const) {
-      expect(best(app, at("cloud"))).toMatchObject({
-        kind: "address",
-        skills: { via: "plugin" },
-      })
-      expect(addressStep(app, pinned).value).toContain(pinned)
-    }
-    for (const app of ["cline", "amp", "zed", "warp"] as const)
-      expect(best(app, at("cloud"))).toMatchObject({
-        kind: "address",
-        skills: { via: "url", target: "agents" },
-      })
     expect(JSON.parse(addressStep("zed", pinned).value)).toEqual({
       context_servers: { worktable: { url: pinned } },
     })
@@ -172,7 +184,7 @@ describe("agent app ways", () => {
     expect(bringsSkills(best("other", at("cloud")))).toBe(false)
   })
 
-  it("runs one command that installs skills only after the connection works", () => {
+  it("runs one command that connects and installs the skills, with Cloud's connector from this Worktable's release", () => {
     const pairing = best("claude-code", at("computer"))
     if (pairing.kind !== "pairing") throw new Error("expected a pairing")
     expect(
@@ -187,22 +199,19 @@ describe("agent app ways", () => {
     if (cloud.kind !== "cloud-command") throw new Error("expected a command")
     const command = connectCommand(cloud, {
       mcpUrl: "https://app.worktable.cloud/api/mcp/w/wt_123",
+      release: "v0.1.52-dev.529",
     })
-    expect(command).toContain(
-      "--mcp-url 'https://app.worktable.cloud/api/mcp/w/wt_123'"
+    // Quoted, so zsh doesn't read the ? as a pattern.
+    expect(command).toBe(
+      "curl -fsSL 'https://app.worktable.cloud/connect.sh?release=v0.1.52-dev.529' | sh -s -- --oauth --server https://app.worktable.cloud --mcp-url 'https://app.worktable.cloud/api/mcp/w/wt_123' --client codex"
     )
-    expect(command).toEndWith(
-      " && curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents"
-    )
-    // Without skills, the command is the connection alone.
-    const cursor = best("cursor", at("server"))
-    if (cursor.kind !== "pairing") throw new Error("expected a pairing")
+    // A build that isn't a release runs the latest connector.
     expect(
-      connectCommand(cursor, {
-        connectScript: "https://w.example/connect.sh",
-        code: "X",
+      connectCommand(cloud, {
+        mcpUrl: "https://app.worktable.cloud/api/mcp",
+        release: null,
       })
-    ).not.toContain("&&")
+    ).toStartWith("curl -fsSL https://app.worktable.cloud/connect.sh | sh")
   })
 
   it("shows every app at once, in order, where its setup works", () => {

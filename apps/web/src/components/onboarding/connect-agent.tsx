@@ -29,7 +29,9 @@ import {
   AGENT_PLATFORMS,
   agentConnectionOnCodexHost,
   DEFAULT_AGENT_ACCESS,
+  IN_APP_SIGN_IN,
   platformForClient,
+  signsInInApp,
   type AgentAccess,
   type AgentConnection,
   type DirectAgentLabel,
@@ -621,12 +623,17 @@ const SIGN_IN_BY_ADDRESS: readonly AppId[] = [
   "warp",
 ]
 
+/** Copilot CLI's full Worktable plugin brings a server that wins over the one the command adds. */
+const COPILOT_FULL_PLUGIN =
+  "If Copilot has the Worktable plugin, remove it first with copilot plugin uninstall worktable."
+
 /** What a Cloud way has you do, and the value to copy. */
 function cloudStep(
   app: AgentApp,
   way: Way,
-  url: string
+  connection: ConnectionInfo
 ): { step: string; value: string; open?: { label: string; href: string } } {
+  const url = connection.remoteMcpUrl
   switch (way.kind) {
     case "coding-plugin":
       return {
@@ -645,13 +652,15 @@ function cloudStep(
       return addressStep(app.id, url)
     case "cloud-command":
       return {
-        step:
-          way.client === "cursor"
-            ? "Run this in your terminal, then open Cursor and sign in."
-            : way.client
-              ? "Run this in your terminal, then choose Allow access when your browser opens."
-              : "Run this in your terminal and sign in when asked. It adds Worktable to the agents it finds, such as OpenCode and VS Code.",
-        value: connectCommand(way, { mcpUrl: url }),
+        step: !way.client
+          ? "Run this in your terminal and sign in when asked. It adds Worktable to the agents it finds, such as OpenCode and VS Code."
+          : signsInInApp(way.client)
+            ? `${way.client === "copilot" ? `${COPILOT_FULL_PLUGIN} ` : ""}Run this in your terminal. ${IN_APP_SIGN_IN[way.client]}`
+            : "Run this in your terminal, then choose Allow access when your browser opens.",
+        value: connectCommand(way, {
+          mcpUrl: url,
+          release: connection.connectorRelease,
+        }),
       }
     case "always-on": {
       const agent = ALWAYS_ON[way.adapter]
@@ -731,16 +740,22 @@ function CloudStatus(props: PanelProps) {
 /** On Cloud, agents sign in with the Worktable's address or the plugin. */
 function SignInPanel(props: PanelProps) {
   const { app, way, connection } = props
-  const { step, value, open } = cloudStep(app, way, connection.remoteMcpUrl)
+  const { step, value, open } = cloudStep(app, way, connection)
   const { skills } = way
-  // An address brings no skills, so they are a step of their own.
-  const skillsStep = skills.via === "files" || skills.via === "url"
+  // An address brings no skills, so they are a step of their own. The
+  // installer's comes first: this card settles once the agent signs in.
   const back = props.primary ? " Then return to Worktable." : null
   return (
     <>
+      {skills.via === "url" ? (
+        <div className="mb-3">
+          <Instruction>First run this for Worktable’s skills.</Instruction>
+          <CommandBlock value={skillsCommand(skills.target)} />
+        </div>
+      ) : null}
       <Instruction>
         {step}
-        {skillsStep ? null : back}
+        {skills.via === "files" ? null : back}
       </Instruction>
       <CommandBlock value={value} />
       {open ? (
@@ -761,11 +776,6 @@ function SignInPanel(props: PanelProps) {
             , unpack it, and upload its worktable folder in Customize, then
             Skills.{back}
           </Instruction>
-        </div>
-      ) : skills.via === "url" ? (
-        <div className="mt-3">
-          <Instruction>Then run this for Worktable’s skills.{back}</Instruction>
-          <CommandBlock value={skillsCommand(skills.target)} />
         </div>
       ) : null}
       {props.primary ? <CloudStatus {...props} /> : null}
@@ -1227,13 +1237,6 @@ function SetupCard({
             active={active}
             onRenamed={(name) => onRenamed(connected, name)}
           />
-          {/* Signing in can finish before the skills command was run. */}
-          {ways.best.kind === "address" && ways.best.skills.via === "url" ? (
-            <div className="mt-5">
-              <Instruction>Run this for Worktable’s skills.</Instruction>
-              <CommandBlock value={skillsCommand(ways.best.skills.target)} />
-            </div>
-          ) : null}
           {onDone ? (
             <div className="mt-5 flex justify-end">
               <Button onClick={onDone}>Done</Button>

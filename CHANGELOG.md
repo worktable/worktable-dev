@@ -22,6 +22,7 @@ infrastructure and personal context out of release notes.
 - **Next Steps:** Home shows your next steps as one row of tiles, in order, with a progress bar. Steps you finished before leave the row, and later ones scroll into view.
 - **Connect an agent:** Pick your app from one set of tiles, and its setup says which Worktable it works in and how. Once the agent connects, name it and set its access in the same place. Claude Code and Codex get Worktable's skills from the same command.
 - **Skills in Claude Code and Codex:** For a Worktable on your computer or server, the connect command installs Worktable's skills as a plugin, so they update with the agent's other plugins, and removes skill copies an earlier command made.
+- **Connect on Cloud:** On Worktable Cloud, the connect command sets up OpenCode, Kilo, Devin, Junie, Pi, Factory Droid, Cline, Amp, Zed and Warp too, with Worktable's skills.
 
 ### Fixed
 

@@ -34,10 +34,16 @@ it. The host must be reachable from that computer; see
 For **Worktable Cloud**, Claude Code, Codex, Copilot CLI, VS Code and
 Antigravity install the [plugin](#plugins).
 When the plugin would work in another of your Worktables, Settings shows this
-Worktable's own command instead: run it, then approve sign-in in the browser
-that opens. Cursor signs in from the app instead. If the command
-can't sign in, for example when an agent runs it, it prints the step that
-finishes the connection.
+Worktable's own command instead. Every other coding agent gets that command
+too. It adds Cloud's address for this Worktable, without a token, installs
+the skills the way it does on local Worktable, then starts the agent's own
+sign-in: approve it in the browser that opens. OpenCode and Kilo get the
+[skills address](/agents/skills/#skills-address) on this site. Cursor, VS Code,
+Copilot CLI, Antigravity, Junie, Cline, Amp, Zed and Warp sign in from the
+app, and the command ends with the step that does it. If the command can't
+sign in, for example when an agent runs it, it prints that step too. The
+command needs Node.js 18 or later, or Bun; without either, it connects Claude
+Code and Codex only.
 
 For any other MCP agent, choose **Other**. On Cloud, add the address to your
 agent and sign in. On local or self-hosted Worktable, run the command shown,
@@ -54,10 +60,11 @@ command shown. It writes the server to `~/.config/opencode/opencode.json` or
 earlier version wrote directly under `mcp`, and keeps your other servers. Then
 restart OpenCode, or run `/reload` in Kilo.
 
-On Worktable Cloud, add the settings shown under **Connect App** to the same
-file, then run `opencode mcp auth worktable` or `kilo mcp auth worktable` and
-sign in. They name Cloud's address and the
-[skills address](/agents/skills/#skills-address) on this site:
+On Worktable Cloud, run the command shown, which signs in too. Or, under
+**Other Ways**, add the settings shown to the same file, then run
+`opencode mcp auth worktable` or `kilo mcp auth worktable` and sign in. They
+name Cloud's address and the [skills address](/agents/skills/#skills-address)
+on this site:
 
 ```json
 {
@@ -102,8 +109,9 @@ in JetBrains IDEs and Junie CLI. On local or self-hosted Worktable, choose
 
 Then start a new session.
 
-On Worktable Cloud, add the server and sign in, then add the skills. For
-Devin, run this and sign in at the link it opens:
+On Worktable Cloud, run the command shown, which does the same with Cloud's
+address. Or, under **Other Ways**, add the server and sign in, then add the
+skills. For Devin, run this and sign in at the link it opens:
 
 ```sh
 devin mcp add --scope user worktable https://app.worktable.cloud/api/mcp && devin mcp login worktable
@@ -137,8 +145,10 @@ Your other servers and settings stay as they are. Without `pi` or `droid`,
 and always for Cline and Amp, the skills are copied to `~/.agents/skills`,
 which each of them reads. Then start a new session.
 
-On Worktable Cloud, choose the app under **Connect App**. For Pi, run this and
-sign in when your browser opens:
+On Worktable Cloud, choose the app under **Connect App** and run the command
+shown, which does the same with Cloud's address. Or use the app's own
+commands under **Other Ways**. For Pi, run this and sign in when your browser
+opens:
 
 ```sh
 pi mcp add worktable --url https://app.worktable.cloud/api/mcp
@@ -171,9 +181,13 @@ then sign in when a new thread asks. For Cline, open **MCP Servers**, then
 
 ### Zed, Warp and Kiro
 
-On Worktable Cloud, add Cloud's address and sign in when the app asks, then
-run `curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents`
-for the skills, which Zed and Warp read from `~/.agents/skills`:
+On Worktable Cloud, choose **Zed** or **Warp** and run the command shown. It
+writes the server to Zed's `settings.json`, keeping its comments, or to
+`~/.warp/.mcp.json`, and copies the skills to `~/.agents/skills`, which both
+read. Then sign in when the app asks. Or, under **Other Ways**, add Cloud's
+address in the app and run
+`curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents`
+for the skills:
 
 - **Zed**: add this to your settings.
 

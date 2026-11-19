@@ -127,9 +127,18 @@ function captureIo(): {
 }
 
 describe("connector transaction model", () => {
-  it("writes a tokenless Cloud config, signs the client in, and runs again as already set up", async () => {
+  it("writes a tokenless Cloud config, adds the skills, signs the client in, and runs again as already set up", async () => {
     const host = fakeHost()
     const signIns: string[] = []
+    const skillCalls: unknown[][] = []
+    const setUpSkills: ConnectorDependencies["setUpSkills"] = async (...args) => {
+      skillCalls.push(args)
+      return {
+        outcome: { via: "plugin", alreadyInstalled: skillCalls.length > 1 },
+        lines: ["  Codex: Worktable skills plugin installed"],
+        restartHint: "Start a new Codex session to load Worktable.",
+      }
+    }
     const cloud = [
       "--oauth",
       "--server",
@@ -141,6 +150,7 @@ describe("connector transaction model", () => {
     expect(
       await runConnector(cloud, first.io, {
         ...host.dependencies,
+        setUpSkills,
         signInClient: async (id, onStart) => {
           onStart?.()
           signIns.push(id)
@@ -154,9 +164,17 @@ describe("connector transaction model", () => {
     expect(config).not.toContain("Authorization")
     expect(host.requests).toEqual([])
     expect(signIns).toEqual(["codex"])
-    expect(first.stdout.join("\n")).toContain(
-      "Codex CLI is connected to Worktable."
+    // Cloud's own address needs a sign-in, so the skills come from the
+    // public one, before the browser opens.
+    expect(skillCalls).toEqual([["codex", {}, "https://docs.worktable.dev"]])
+    const lines = first.stdout
+    expect(lines.indexOf("  Codex: Worktable skills plugin installed")).toBeLessThan(
+      lines.findIndex((line) => line.startsWith("Signing Codex CLI in"))
     )
+    expect(lines.slice(-2)).toEqual([
+      "Codex CLI is connected to Worktable.",
+      "  Note: Start a new Codex session to load Worktable.",
+    ])
 
     // Run again, as someone does when they aren't sure it worked. Without a
     // terminal to sign in on, it says how to finish.
@@ -164,13 +182,18 @@ describe("connector transaction model", () => {
     expect(
       await runConnector(cloud, again.io, {
         ...host.dependencies,
+        setUpSkills,
         signInClient: async () => "no-terminal",
       })
     ).toBe(0)
     expect(readFileSync(configPath, "utf8")).toBe(config)
     expect(again.stdout.join("\n")).toContain("already set up")
     expect(again.stdout.join("\n")).toContain("To finish, sign in:")
+    expect(again.stdout.at(-1)).toBe(
+      "    Note: Start a new Codex session to load Worktable."
+    )
     expect(again.stderr).toEqual([])
+    expect(skillCalls).toHaveLength(2)
 
     // With several agents, sign-ins run one at a time. Ctrl+C in one stops
     // the rest, and each still gets the step that finishes it.
@@ -181,6 +204,7 @@ describe("connector transaction model", () => {
       expect(
         await runConnector(cloud.slice(0, 3), stopped.io, {
           ...host.dependencies,
+          setUpSkills,
           detectClient: (id) => id === "codex" || id === "opencode",
           signInClient: async (id) => {
             attempted.push(id)
@@ -192,6 +216,8 @@ describe("connector transaction model", () => {
       delete process.env["WORKTABLE_OPENCODE_CONFIG"]
     }
     expect(attempted).toEqual(["codex"])
+    // Several agents at once get the connection only, as with a pairing code.
+    expect(skillCalls).toHaveLength(2)
     const steps = stopped.stdout.join("\n")
     expect(steps).toContain("Signing in didn't finish.")
     expect(steps).toContain("Codex CLI: ")
@@ -396,6 +422,23 @@ describe("connector transaction model", () => {
       },
       skills: ["./team-skills", "https://worktable.example/.well-known/skills/"],
     })
+
+    // On Cloud, whose own address needs a sign-in, OpenCode gets the public skills address.
+    process.env["WORKTABLE_OPENCODE_CONFIG"] = opencodePath
+    try {
+      const cloud = ["--oauth", "--server", "https://app.worktable.cloud", "--client", "opencode", "--replace"]
+      expect(
+        await runConnector(cloud, captureIo().io, { ...dependencies, signInClient: async () => "no-terminal" })
+      ).toBe(0)
+    } finally {
+      delete process.env["WORKTABLE_OPENCODE_CONFIG"]
+    }
+    expect(checked.at(-1)).toBe("https://docs.worktable.dev/.well-known/skills/")
+    expect(JSON.parse(readFileSync(opencodePath, "utf8")).skills).toEqual([
+      "./team-skills",
+      "https://worktable.example/.well-known/skills/",
+      "https://docs.worktable.dev/.well-known/skills/",
+    ])
   })
 
   it("copies Kilo's skills when the Worktable's skills address can't be used", async () => {

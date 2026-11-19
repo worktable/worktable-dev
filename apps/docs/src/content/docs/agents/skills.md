@@ -46,7 +46,7 @@ Plugins already include skills, so don't install a second copy:
 - The general Worktable plugin bundles every skill except Set up Worktable,
   along with its **Cloud** MCP connection.
 - Worktable Skills bundles the same skills without a connection. The connect
-  command for a local or self-hosted Worktable installs it in Claude Code,
+  command, for a Worktable on Cloud or anywhere else, installs it in Claude Code,
   Codex, Copilot CLI, VS Code (with Copilot CLI), Antigravity, Devin (when
   signed in) and Factory Droid, where it shows as Worktable, unless the
   general plugin is already there. Pi installs the plugin's repository as a
@@ -54,8 +54,8 @@ Plugins already include skills, so don't install a second copy:
   Code and Codex it also removes skills an earlier command copied, so none
   show twice. If the plugin can't be installed, the command copies the skills
   instead, as below, and says so. Antigravity gets Worktable Skills built from
-  the skills the Worktable serves instead, and Kiro gets them the same way as
-  a Power, with `kiro-cli`.
+  the skills the Worktable serves instead, or on Cloud the ones this site
+  serves, and Kiro gets them the same way as a Power, with `kiro-cli`.
 - OpenCode and Kilo load the same skills from a [skills address](#skills-address).
   The connect command adds it.
 - The Hermes plugin bundles the same skills except Check the Library. Hermes
@@ -100,9 +100,9 @@ for example `http://localhost:7480/.well-known/skills/`, matching its release.
 For Worktable Cloud, use this site's
 `https://docs.worktable.dev/.well-known/skills/`.
 
-The connect command for a local or self-hosted Worktable adds the address to
-the `skills` setting in `~/.config/opencode/opencode.json` or
-`~/.config/kilo/kilo.jsonc`. If the Worktable doesn't serve it, the command
+The connect command adds the address to the `skills` setting in
+`~/.config/opencode/opencode.json` or `~/.config/kilo/kilo.jsonc`: the
+Worktable's own, or on Cloud this site's. If the Worktable doesn't serve it, the command
 copies the skills to `~/.agents/skills` instead, which both read, and says so.
 To add it yourself:
 

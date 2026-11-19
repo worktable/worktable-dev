@@ -171,19 +171,17 @@ export type Skills =
    * without its Cloud server, with the agent's own plugin command (VS Code
    * gets Copilot CLI's). When that can't work it copies them from
    * Worktable's installer instead; Antigravity builds the plugin from the
-   * skills this Worktable serves. Pi takes the plugin's repository as a
-   * package. Junie, Cline and Amp, with no plugin command, get the copy.
+   * skills this Worktable serves, or on Cloud the public ones. Pi takes the
+   * plugin's repository as a package. Junie, Cline, Amp, Zed and Warp, with
+   * no plugin command, get the copy.
    */
   | { via: "connect-plugin" }
-  /**
-   * Worktable's installer adds them: after the connect command, or as its
-   * own command beside an address.
-   */
+  /** Worktable's installer adds them, as its own command beside an address. */
   | { via: "url"; target: "claude" | "agents" }
   /**
    * The app loads them from a skills address and keeps them current: the
-   * connect command adds this Worktable's, or Cloud's setup has you paste
-   * SKILL_CATALOG with the server.
+   * connect command adds this Worktable's, or on Cloud SKILL_CATALOG, which
+   * Cloud's address setup has you paste with the server.
    */
   | { via: "catalog" }
   /** A skill file to upload in the app. */
@@ -228,13 +226,44 @@ export interface AppWays {
   others: Way[]
 }
 
-/** Coding agents read skills from Claude's folder or the shared agents one. */
-function codingSkills(app: "claude-code" | "codex"): Skills {
-  return { via: "url", target: app === "claude-code" ? "claude" : "agents" }
-}
-
 const CONNECT_PLUGIN: Skills = { via: "connect-plugin" }
 const CATALOG: Skills = { via: "catalog" }
+
+/** Clients the connect command connects and gives Worktable's skills. */
+type CommandClient = Exclude<
+  ConnectorInstallableMcpClientId,
+  "cursor" | "kiro"
+>
+
+/**
+ * The connect command first: with a one-use code off Cloud, through Cloud
+ * with this Worktable's own address on it, where an app's own command or
+ * file with the address is the other way, if it has one.
+ */
+function commandFirst(app: CommandClient, place: Place): AppWays {
+  const skills =
+    app === "opencode" || app === "kilo" ? CATALOG : CONNECT_PLUGIN
+  if (place !== "cloud")
+    return { best: { kind: "pairing", client: app, skills }, others: [] }
+  const best: Way = { kind: "cloud-command", client: app, skills }
+  const address = ADDRESS_SKILLS[app]
+  return { best, others: address ? [{ kind: "address", skills: address }] : [] }
+}
+
+/** Apps whose own command or file adds Cloud's address, with their skills step. */
+const ADDRESS_SKILLS: Partial<Record<CommandClient, Skills>> = {
+  opencode: CATALOG,
+  kilo: CATALOG,
+  // Pi's and Droid's commands add the skills too.
+  pi: PLUGIN,
+  droid: PLUGIN,
+  devin: { via: "url", target: "agents" },
+  junie: { via: "url", target: "agents" },
+  cline: { via: "url", target: "agents" },
+  amp: { via: "url", target: "agents" },
+  zed: { via: "url", target: "agents" },
+  warp: { via: "url", target: "agents" },
+}
 
 /**
  * The best way to connect an app here, then the others that work. Null
@@ -270,19 +299,11 @@ export function waysFor(app: AppId, where: Where): AppWays | null {
           }
     case "claude-code":
     case "codex": {
-      if (!cloud)
-        return {
-          best: { kind: "pairing", client: app, skills: CONNECT_PLUGIN },
-          others: [],
-        }
+      if (!cloud) return commandFirst(app, place)
       const plugin: Way = { kind: "coding-plugin", client: app, skills: PLUGIN }
       // This Worktable's own address, so it works here whichever Worktable
       // the shared address picks.
-      const command: Way = {
-        kind: "cloud-command",
-        client: app,
-        skills: codingSkills(app),
-      }
+      const command = commandFirst(app, place).best
       return where.sharedHere
         ? { best: plugin, others: [command] }
         : { best: command, others: [plugin] }
@@ -297,64 +318,25 @@ export function waysFor(app: AppId, where: Where): AppWays | null {
             best: { kind: "pairing", client: "cursor", skills: NONE },
             others: [],
           }
-    // Cloud's connect command doesn't know Kilo or the skills address yet,
-    // so on Cloud both paste the server and the skills address.
+    // The connect command adds the skills: from a skills address for OpenCode
+    // and Kilo, as a plugin or Pi package for Devin, Droid and Pi, and as a
+    // copy for Junie, Cline and Amp. On Cloud, the app's own command or file
+    // with the address stays under Other Ways.
     case "opencode":
     case "kilo":
-      return cloud
-        ? { best: { kind: "address", skills: CATALOG }, others: [] }
-        : {
-            best: { kind: "pairing", client: app, skills: CATALOG },
-            others: [],
-          }
-    // Cloud's connect command doesn't know Devin or Junie, so on Cloud they
-    // add the address with their own command or file, and the skills with
-    // Worktable's installer.
     case "devin":
     case "junie":
-      return cloud
-        ? {
-            best: { kind: "address", skills: { via: "url", target: "agents" } },
-            others: [],
-          }
-        : {
-            best: { kind: "pairing", client: app, skills: CONNECT_PLUGIN },
-            others: [],
-          }
-    // The connect command installs the skills as a Pi package or a Droid
-    // plugin, and copies them for Cline and Amp. On Cloud each adds the
-    // address with its own command or file; Pi's and Droid's commands add
-    // the skills too, the others run Worktable's installer.
     case "pi":
     case "droid":
     case "cline":
     case "amp":
-      if (!cloud)
-        return {
-          best: { kind: "pairing", client: app, skills: CONNECT_PLUGIN },
-          others: [],
-        }
-      return {
-        best: {
-          kind: "address",
-          skills:
-            app === "pi" || app === "droid"
-              ? PLUGIN
-              : { via: "url", target: "agents" },
-        },
-        others: [],
-      }
+      return commandFirst(app, place)
     // Zed and Warp have no command to see a connection work on a computer
-    // or server, so they are offered on Cloud only, where you paste the
-    // address. Kiro's connection needs a Kiro sign-in to check: not yet.
+    // or server, so they are offered on Cloud only, where they sign in in
+    // the app. Kiro's connection needs a Kiro sign-in to check: not yet.
     case "zed":
     case "warp":
-      return cloud
-        ? {
-            best: { kind: "address", skills: { via: "url", target: "agents" } },
-            others: [],
-          }
-        : null
+      return cloud ? commandFirst(app, place) : null
     case "kiro":
       return null
     case "openclaw":
@@ -376,21 +358,25 @@ export function waysFor(app: AppId, where: Where): AppWays | null {
             others: [],
           }
         : null
-    case "perplexity":
+    // Their plugin comes first where Cloud's shared address lands here. Off
+    // Cloud, and on Cloud for the others, the connect command adds Worktable
+    // Skills with the app's plugin command.
     case "antigravity":
     case "vscode":
-    case "copilot":
+    case "copilot": {
+      const command = commandFirst(app, place)
+      if (!cloud) return command
+      const plugin: Way = { kind: "app-plugin", app, skills: PLUGIN }
+      return where.sharedHere
+        ? { best: plugin, others: [command.best] }
+        : { best: command.best, others: [plugin] }
+    }
+    case "perplexity":
     case "gemini-cli": {
-      if (!cloud) {
-        if (app === "perplexity") return null
-        if (app === "gemini-cli")
-          return { best: { kind: "token", skills: NONE }, others: [] }
-        // The connect command adds Worktable Skills with the app's plugin command.
-        return {
-          best: { kind: "pairing", client: app, skills: CONNECT_PLUGIN },
-          others: [],
-        }
-      }
+      if (!cloud)
+        return app === "gemini-cli"
+          ? { best: { kind: "token", skills: NONE }, others: [] }
+          : null
       const plugin: Way = { kind: "app-plugin", app, skills: PLUGIN }
       // This Worktable's own address, for when the plugin's lands elsewhere.
       const address: Way = { kind: "address", skills: NONE }
@@ -421,27 +407,20 @@ export function skillsCommand(target: "claude" | "agents"): string {
   return `curl -fsSL https://worktable.dev/install-skills | sh -s -- --target ${target}`
 }
 
-/** What the connect command adds after the connection, if anything. */
-function skillsStep(skills: Skills): string | null {
-  return skills.via === "url" ? skillsCommand(skills.target) : null
-}
-
 /**
- * The one command a way runs in the terminal: connect, then the skills, which
- * install only once the connection worked. Straight to this Worktable with a
- * one-use code, where the connect command adds the skills itself, or through
- * Cloud with this Worktable's address.
+ * The one command a way runs in the terminal, which adds the skills too:
+ * straight to this Worktable with a one-use code, or through Cloud with this
+ * Worktable's address and the connector of its release.
  */
 export function connectCommand(
   way: Extract<Way, { kind: "pairing" | "cloud-command" }>,
-  to: { connectScript: string; code: string } | { mcpUrl: string }
+  to:
+    | { connectScript: string; code: string }
+    | { mcpUrl: string; release: string | null | undefined }
 ): string {
-  const connect =
-    "code" in to
-      ? `curl -fsSL ${to.connectScript} | sh -s -- ${to.code}${way.client ? ` --client ${way.client}` : ""}`
-      : cloudConnectorCommand(to.mcpUrl, way.client ?? "auto")
-  const skills = skillsStep(way.skills)
-  return skills ? `${connect} && ${skills}` : connect
+  return "code" in to
+    ? `curl -fsSL ${to.connectScript} | sh -s -- ${to.code}${way.client ? ` --client ${way.client}` : ""}`
+    : cloudConnectorCommand(to.mcpUrl, way.client ?? "auto", to.release)
 }
 
 export const PLUGIN_REPOSITORY = "https://github.com/worktable/worktable-plugin"

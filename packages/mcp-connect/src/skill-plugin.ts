@@ -637,7 +637,8 @@ export async function setUpSkills(
   }
 
   if (!target) {
-    // Antigravity: the same plugin, built from the skills this Worktable serves.
+    // Antigravity: the same plugin, built from the skills this Worktable, or
+    // for Cloud the docs site, serves.
     const failed =
       client === "antigravity" && origin && !/^no agy command/.test(reason)
         ? await dependencies.installFromWorktable(origin, "antigravity")
@@ -645,7 +646,7 @@ export async function setUpSkills(
     const after = failed ? null : installedPlugins(client, dependencies)
     if (after && "names" in after && after.names.includes(SKILLS_PLUGIN)) {
       lines.push(
-        `  Couldn't install the Worktable plugin in ${label} (${reason}), so it was installed from this Worktable's skills instead.`
+        `  Couldn't install the Worktable plugin in ${label} (${reason}), so it was built from Worktable's skills instead.`
       )
       return report({ via: "worktable", reason })
     }
@@ -701,10 +702,13 @@ export async function installFromWorktable(
     const skills = Array.isArray(index.skills) ? index.skills : []
     if (skills.length === 0) return "its skills address lists no skills"
     for (const skill of skills) {
-      if (!SAFE_NAME.test(skill.name) || !skill.files.every((file) => SAFE_FILE.test(file)))
+      // A skill's top-level files are what agents load. The public address
+      // also lists ChatGPT's display file in a folder, which is left out.
+      const files = skill.files.filter((file) => !file.includes("/"))
+      if (!SAFE_NAME.test(skill.name) || !files.every((file) => SAFE_FILE.test(file)))
         return `its skills address lists an unexpected skill`
       mkdirSync(join(directory, "skills", skill.name), { recursive: true })
-      for (const file of skill.files) {
+      for (const file of files) {
         const fileResponse = await fetch(new URL(`${skill.name}/${file}`, base), { signal })
         if (!fileResponse.ok) return `its skills address returned HTTP ${fileResponse.status}`
         writeFileSync(

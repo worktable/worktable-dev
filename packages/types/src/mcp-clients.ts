@@ -46,6 +46,33 @@ export const CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS = [
   "kiro",
 ] as const
 
+/**
+ * How a client signs in to a Worktable on Cloud in the app itself: the
+ * clients the connect command can't sign in from the terminal. The command
+ * ends with this step, and Cloud's setup shows it beside the command.
+ */
+export const IN_APP_SIGN_IN = {
+  cursor: "Open Cursor and sign in to worktable from its MCP settings.",
+  vscode: "In VS Code, start worktable from the MCP servers list and sign in.",
+  copilot: "In Copilot CLI, run /mcp and sign in to worktable.",
+  antigravity: "In Antigravity, open MCP servers and sign in to worktable.",
+  junie: "In Junie, run /mcp, choose worktable and Authorize.",
+  zed: "In Zed, open the agent panel's MCP servers and sign in to worktable.",
+  cline: "In Cline, open MCP Servers, choose worktable and Authorize.",
+  warp: "In Warp, open MCP servers and start worktable to sign in.",
+  // Amp signs in the first time a thread uses the server.
+  amp: "Start a new Amp thread and sign in to worktable when Amp asks.",
+  kiro: "In Kiro, open MCP servers and sign in to worktable.",
+} as const satisfies Partial<Record<ConnectorInstallableMcpClientId, string>>
+
+export type InAppSignInClientId = keyof typeof IN_APP_SIGN_IN
+
+export function signsInInApp(
+  id: ConnectorInstallableMcpClientId
+): id is InAppSignInClientId {
+  return Object.hasOwn(IN_APP_SIGN_IN, id)
+}
+
 export const MANUAL_MCP_CLIENT_IDS = ["goose"] as const
 export const DESKTOP_EXTENSION_MCP_CLIENT_IDS = ["claude-desktop"] as const
 export const MCP_SNIPPET_CLIENT_IDS = [

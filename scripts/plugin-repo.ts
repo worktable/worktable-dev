@@ -6,6 +6,12 @@
 // every file in plugins/worktable except tests and distribution catalogs, plus
 // a generated Gemini CLI manifest, a note on where the source lives, and the
 // workflow that pulls each change and releases each new plugin version.
+//
+// The repository is also the Claude Code and Codex marketplace that Worktable's
+// connect command installs from. Beside the full plugin it lists Worktable
+// Skills (`plugins/worktable-skills`), built here from the same skills with no
+// MCP server: the connect command adds the connection to a Worktable on a
+// computer or server itself, so a bundled Cloud server would only duplicate it.
 
 import { lstat, mkdir, readdir, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
@@ -15,6 +21,11 @@ const repositoryRoot = resolve(import.meta.dir, "..")
 const pluginSource = join(repositoryRoot, "plugins/worktable")
 
 export const PLUGIN_REPOSITORY = "worktable/worktable-plugin"
+/** The skills-only plugin's id; clients show it as Worktable. */
+export const SKILLS_PLUGIN = "worktable-skills"
+export const SKILLS_PLUGIN_PATH = `plugins/${SKILLS_PLUGIN}`
+const SKILLS_PLUGIN_DESCRIPTION =
+  "Worktable's skills for Docs, HTML Docs, Records, annotations and threads, for an agent connected to Worktable with its connect command."
 const SOURCE_URL =
   "https://github.com/worktable/worktable-dev/tree/main/plugins/worktable"
 const ISSUES_URL = "https://github.com/worktable/worktable-dev/issues"
@@ -107,16 +118,109 @@ function antigravity(files: Map<string, Uint8Array>): { manifest: string; mcp: s
 }
 
 /**
+ * Worktable Skills: the full plugin's skills, assets and license under Claude
+ * and Codex manifests that name no MCP server. Nothing is copied in
+ * worktable-dev; the tree is built from plugins/worktable each sync.
+ */
+function skillsPlugin(files: Map<string, Uint8Array>): Map<string, string | Uint8Array> {
+  const claude = json(files.get(".claude-plugin/plugin.json"), ".claude-plugin/plugin.json")
+  const codex = json(files.get(".codex-plugin/plugin.json"), ".codex-plugin/plugin.json")
+  const { mcpServers: _claudeServers, ...claudeRest } = claude
+  const { mcpServers: _codexServers, ...codexRest } = codex
+  const out = new Map<string, string | Uint8Array>()
+  const manifest = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
+  out.set(
+    ".claude-plugin/plugin.json",
+    manifest({
+      ...claudeRest,
+      name: SKILLS_PLUGIN,
+      displayName: claude.displayName,
+      description: SKILLS_PLUGIN_DESCRIPTION,
+      repository: `https://github.com/${PLUGIN_REPOSITORY}`,
+    })
+  )
+  out.set(
+    ".codex-plugin/plugin.json",
+    manifest({
+      ...codexRest,
+      name: SKILLS_PLUGIN,
+      description: SKILLS_PLUGIN_DESCRIPTION,
+      interface: {
+        ...codex.interface,
+        shortDescription: "Skills for your Worktable",
+        longDescription: SKILLS_PLUGIN_DESCRIPTION,
+      },
+    })
+  )
+  for (const [path, contents] of files) {
+    if (path.startsWith("skills/") || path.startsWith("assets/") || path === "LICENSE")
+      out.set(path, contents)
+  }
+  out.set(
+    "README.md",
+    `# Worktable Skills
+
+Worktable's skills, without a connection: find and cite context, write Docs,
+build HTML Docs, organize Records, review with annotations, and work in
+threads. Worktable's connect command installs this plugin in Claude Code and
+Codex when it connects them to a Worktable on your computer or server, and adds
+the connection itself.
+
+To install it yourself:
+
+\`\`\`text
+claude plugin install ${SKILLS_PLUGIN} --marketplace ${PLUGIN_REPOSITORY}
+\`\`\`
+
+\`\`\`text
+codex plugin marketplace add ${PLUGIN_REPOSITORY}
+codex plugin add ${SKILLS_PLUGIN}@worktable
+\`\`\`
+
+For Worktable Cloud, install the full Worktable plugin at the root of this
+repository instead. See [Skills](https://docs.worktable.dev/agents/skills/).
+`
+  )
+  return out
+}
+
+/**
  * Claude's Add marketplace takes a repository whose root has a marketplace
- * manifest; here the one plugin is the repository itself.
+ * manifest; here the full plugin is the repository itself, and Worktable
+ * Skills sits in its own folder.
  */
 function claudeMarketplace(marketplace: any): string {
-  const plugins = marketplace.plugins.map((plugin: Record<string, unknown>) => ({
+  const repository = `https://github.com/${PLUGIN_REPOSITORY}`
+  const full = marketplace.plugins.map((plugin: Record<string, unknown>) => ({
     ...plugin,
     source: "./",
-    repository: `https://github.com/${PLUGIN_REPOSITORY}`,
+    repository,
   }))
-  return `${JSON.stringify({ ...marketplace, plugins }, null, 2)}\n`
+  const skills = full
+    .filter((plugin: Record<string, unknown>) => plugin.name === "worktable")
+    .map((plugin: Record<string, unknown>) => ({
+      ...plugin,
+      name: SKILLS_PLUGIN,
+      source: `./${SKILLS_PLUGIN_PATH}`,
+      description: SKILLS_PLUGIN_DESCRIPTION,
+    }))
+  return `${JSON.stringify({ ...marketplace, plugins: [...full, ...skills] }, null, 2)}\n`
+}
+
+/** Codex's `plugin marketplace add` reads `.agents/plugins/marketplace.json`. */
+function codexMarketplace(marketplace: any): string {
+  const full = marketplace.plugins.map((plugin: Record<string, unknown>) => ({
+    ...plugin,
+    source: { source: "local", path: "./" },
+  }))
+  const skills = full
+    .filter((plugin: Record<string, unknown>) => plugin.name === "worktable")
+    .map((plugin: Record<string, unknown>) => ({
+      ...plugin,
+      name: SKILLS_PLUGIN,
+      source: { source: "local", path: `./${SKILLS_PLUGIN_PATH}` },
+    }))
+  return `${JSON.stringify({ ...marketplace, plugins: [...full, ...skills] }, null, 2)}\n`
 }
 
 function readme(files: Map<string, Uint8Array>): string {
@@ -128,6 +232,10 @@ function readme(files: Map<string, Uint8Array>): string {
 This repository is generated from [\`plugins/worktable\`](${SOURCE_URL})
 in worktable-dev and updated on every change there. Report issues and propose
 changes in [worktable-dev](${ISSUES_URL}).
+
+[\`${SKILLS_PLUGIN_PATH}\`](${SKILLS_PLUGIN_PATH}) holds Worktable Skills, the
+same skills without the Cloud connection, which Worktable's connect command
+installs in Claude Code and Codex for a Worktable on a computer or server.
 `
 }
 
@@ -236,13 +344,17 @@ export async function buildPluginRepositoryTree(
   const google = antigravity(source)
   files.set(".antigravity-plugin/plugin.json", google.manifest)
   files.set("mcp_config.json", google.mcp)
-  // The catalog stays in worktable-dev but passes the same publication checks.
-  const catalogPath = "distribution/claude-marketplace.json"
-  const catalog = await readPublicPluginFiles([catalogPath], {
+  // The catalogs stay in worktable-dev but pass the same publication checks.
+  const claudeCatalog = "distribution/claude-marketplace.json"
+  const codexCatalog = "distribution/codex-marketplace.json"
+  const catalogs = await readPublicPluginFiles([claudeCatalog, codexCatalog], {
     sourceDirectory,
     publicationPolicyPath: options.publicationPolicyPath,
   })
-  files.set(".claude-plugin/marketplace.json", claudeMarketplace(json(catalog.get(catalogPath), catalogPath)))
+  files.set(".claude-plugin/marketplace.json", claudeMarketplace(json(catalogs.get(claudeCatalog), claudeCatalog)))
+  files.set(".agents/plugins/marketplace.json", codexMarketplace(json(catalogs.get(codexCatalog), codexCatalog)))
+  for (const [path, contents] of skillsPlugin(source))
+    files.set(`${SKILLS_PLUGIN_PATH}/${path}`, contents)
   files.set("README.md", readme(source))
   files.set(".github/workflows/sync.yml", SYNC_WORKFLOW)
   return { version, files }

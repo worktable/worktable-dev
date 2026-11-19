@@ -31,7 +31,7 @@ import {
   writeSpace,
 } from "./store.ts"
 import { resolveParticipant } from "./participant-store.ts"
-import { pendingFor } from "./pending-list.ts"
+import { pendingFor, pendingIfReady, pendingRevision } from "./pending-list.ts"
 import * as agentOwner from "./agent-owner.ts"
 import {
   getThreadActivity,
@@ -1937,7 +1937,9 @@ describe("thread service", () => {
       (await pendingFor(participantId)).map((entry) => entry.scope.threadId)
 
     expect(await waitingOn(atlasId)).toEqual([])
+    expect(pendingIfReady(atlasId)).toEqual([])
     expect(await waitingOn(ownerId)).toEqual([toPerson.threadId])
+    const seenByAtlas = await pendingRevision(atlasId)
     const archived = await listThreadSummaries(
       owner,
       undefined,
@@ -1961,9 +1963,12 @@ describe("thread service", () => {
       idempotencyKey: "lapse-revive",
       expectsReply: false,
     })
-    expect(new Set(await waitingOn(atlasId))).toEqual(
-      new Set([toAgent.threadId])
-    )
+    const revived = await pendingFor(atlasId)
+    expect(revived.map((entry) => entry.scope.threadId)).toEqual([
+      toAgent.threadId,
+    ])
+    // It arrives as new, so an agent waiting on later revisions is told.
+    expect(revived[0]!.revision).toBeGreaterThan(seenByAtlas)
   })
 
   it("rebuilds replied human delivery activity before serving reads", async () => {

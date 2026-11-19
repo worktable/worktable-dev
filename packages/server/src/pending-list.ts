@@ -266,13 +266,30 @@ function replaceGroup(
   for (const itemId of [...(current.groups.get(group) ?? [])]) {
     if (!next.has(itemId)) close(current, group, itemId, reasonFor(itemId))
   }
+  const nowMs = Date.now()
   for (const item of items) {
-    if (!current.entries.has(item.itemId)) add(current, group, item)
-    else current.entries.set(item.itemId, {
-      ...item,
-      revision: current.entries.get(item.itemId)!.revision,
-    })
+    const known = current.entries.get(item.itemId)
+    if (!known) add(current, group, item)
+    else if (!stillWaiting(known, nowMs) && stillWaiting(item, nowMs)) {
+      reopen(current, item)
+    } else current.entries.set(item.itemId, { ...item, revision: known.revision })
   }
+}
+
+/**
+ * A request that had lapsed with its archived thread waits again now the
+ * thread is back. It arrives as new: a later revision and no Delivered or
+ * Read marks, so a recipient following its revisions is told about it.
+ */
+function reopen(current: ListState, derived: Derived): void {
+  const participantId = derived.recipient.participantId
+  const revision = (current.marks.revisions[participantId] ?? 0) + 1
+  current.marks.revisions[participantId] = revision
+  current.marks.items[derived.itemId] = { participantId, revision }
+  scheduleSave(current)
+  const entry: PendingEntry = { ...derived, revision }
+  current.entries.set(entry.itemId, entry)
+  if (!current.building) emit({ type: "added", entry })
 }
 
 /** Replace every group under a prefix, closing groups that are gone. */
@@ -638,9 +655,10 @@ export function pendingIfReady(participantId: string): PendingEntry[] | null {
   }
   const ids = current.byRecipient.get(participantId)
   if (!ids || ids.size === 0) return []
+  const nowMs = Date.now()
   return [...ids]
     .map((itemId) => current.entries.get(itemId)!)
-    .filter(Boolean)
+    .filter((entry) => entry && stillWaiting(entry, nowMs))
     .sort((a, b) => b.revision - a.revision)
 }
 
@@ -654,7 +672,10 @@ async function settled(): Promise<void> {
  * Whether an open item still waits on its recipient. Archiving follows the
  * clock, so it is decided when the list is read, not when it is indexed.
  */
-function stillWaiting(entry: PendingEntry, nowMs: number): boolean {
+function stillWaiting(
+  entry: Pick<PendingEntry, "lapsesWith">,
+  nowMs: number
+): boolean {
   return !entry.lapsesWith || !isThreadArchived(entry.lapsesWith, nowMs)
 }
 

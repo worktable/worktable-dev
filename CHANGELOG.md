@@ -15,6 +15,7 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
+- **Archived threads:** A request to an agent stops showing as waiting once its thread archives; requests to people stay until answered.
 - **Getting Started:** Creation prefills an editable name, setup shows agent rules while connecting, and shorter starter prompts gather context before creating your first Space.
 - **Thread creation:** Start without a responder, mention several participants, and independently choose one to reply, with saved drafts and safe send retries.
 - **Threads list:** The list opens on threads with people, with agents' own threads one filter away, and threads archive after seven quiet days unless kept.

@@ -1,4 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, jest, spyOn } from "bun:test"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+  setSystemTime,
+  spyOn,
+} from "bun:test"
 import {
   mkdir,
   mkdtemp,
@@ -22,6 +31,7 @@ import {
   writeSpace,
 } from "./store.ts"
 import { resolveParticipant } from "./participant-store.ts"
+import { pendingFor, pendingIfReady, pendingRevision } from "./pending-list.ts"
 import * as agentOwner from "./agent-owner.ts"
 import {
   getThreadActivity,
@@ -1900,6 +1910,65 @@ describe("thread service", () => {
       setAppDirOverride(appDir)
       await rm(replacementAppDir, { recursive: true, force: true })
     }
+  })
+
+  it("lets a request to an agent lapse with its archived thread and keeps a person's", async () => {
+    const ownerId = (await resolveParticipant(owner)).participant.id
+    const atlasId = (await resolveParticipant(atlas)).participant.id
+    // Both were asked nine days ago and nothing has been said since.
+    setSystemTime(new Date(Date.now() - 9 * 86_400_000))
+    let toAgent: Awaited<ReturnType<typeof postThreadMessage>>
+    let toPerson: Awaited<ReturnType<typeof postThreadMessage>>
+    try {
+      toAgent = await postThreadMessage(finn, {
+        to: "Atlas",
+        body: "Can you look into this when you are next around?",
+        idempotencyKey: "lapse-agent",
+      })
+      toPerson = await postThreadMessage(atlas, {
+        to: ownerId,
+        body: "Which of these should I go with?",
+        idempotencyKey: "lapse-person",
+      })
+    } finally {
+      setSystemTime()
+    }
+    const waitingOn = async (participantId: string) =>
+      (await pendingFor(participantId)).map((entry) => entry.scope.threadId)
+
+    expect(await waitingOn(atlasId)).toEqual([])
+    expect(pendingIfReady(atlasId)).toEqual([])
+    expect(await waitingOn(ownerId)).toEqual([toPerson.threadId])
+    const seenByAtlas = await pendingRevision(atlasId)
+    const archived = await listThreadSummaries(
+      owner,
+      undefined,
+      undefined,
+      undefined,
+      "only"
+    )
+    expect(
+      Object.fromEntries(
+        archived.map((thread) => [thread.id, thread.activity?.state])
+      )
+    ).toEqual({
+      [toAgent.threadId]: undefined,
+      [toPerson.threadId]: "queued",
+    })
+
+    // A new message brings the thread back, and the request with it.
+    await postThreadMessage(finn, {
+      threadId: toAgent.threadId,
+      body: "This is still needed.",
+      idempotencyKey: "lapse-revive",
+      expectsReply: false,
+    })
+    const revived = await pendingFor(atlasId)
+    expect(revived.map((entry) => entry.scope.threadId)).toEqual([
+      toAgent.threadId,
+    ])
+    // It arrives as new, so an agent waiting on later revisions is told.
+    expect(revived[0]!.revision).toBeGreaterThan(seenByAtlas)
   })
 
   it("rebuilds replied human delivery activity before serving reads", async () => {

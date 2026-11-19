@@ -24,9 +24,10 @@ import type {
   AnnotationRequest,
   AnnotationStatus,
   SpaceFile,
+  ThreadLifetimeChoice,
   ThreadLocation,
 } from "@worktable/types"
-import { threadLocationKey } from "@worktable/types"
+import { isThreadArchived, threadLocationKey } from "@worktable/types"
 import { getAppDir } from "./app-storage.ts"
 import { askingTextHash } from "./annotation-requests.ts"
 import { logError } from "./debug-log.ts"
@@ -100,6 +101,13 @@ export interface PendingEntry {
   revision: number
   createdAt: string
   source: PendingCommentSource | PendingThreadRequestSource
+  /**
+   * On a thread request to an agent: its thread's newest message and lifetime
+   * choice. Once the thread archives the request stops waiting, and waits
+   * again when a message brings the thread back. A request to a person never
+   * lapses: it waits until it is answered.
+   */
+  lapsesWith?: { lastMessageAt: string; lifetime?: ThreadLifetimeChoice }
 }
 
 export type PendingCloseReason = "replied" | "resolved" | "withdrawn"
@@ -258,13 +266,30 @@ function replaceGroup(
   for (const itemId of [...(current.groups.get(group) ?? [])]) {
     if (!next.has(itemId)) close(current, group, itemId, reasonFor(itemId))
   }
+  const nowMs = Date.now()
   for (const item of items) {
-    if (!current.entries.has(item.itemId)) add(current, group, item)
-    else current.entries.set(item.itemId, {
-      ...item,
-      revision: current.entries.get(item.itemId)!.revision,
-    })
+    const known = current.entries.get(item.itemId)
+    if (!known) add(current, group, item)
+    else if (!stillWaiting(known, nowMs) && stillWaiting(item, nowMs)) {
+      reopen(current, item)
+    } else current.entries.set(item.itemId, { ...item, revision: known.revision })
   }
+}
+
+/**
+ * A request that had lapsed with its archived thread waits again now the
+ * thread is back. It arrives as new: a later revision and no Delivered or
+ * Read marks, so a recipient following its revisions is told about it.
+ */
+function reopen(current: ListState, derived: Derived): void {
+  const participantId = derived.recipient.participantId
+  const revision = (current.marks.revisions[participantId] ?? 0) + 1
+  current.marks.revisions[participantId] = revision
+  current.marks.items[derived.itemId] = { participantId, revision }
+  scheduleSave(current)
+  const entry: PendingEntry = { ...derived, revision }
+  current.entries.set(entry.itemId, entry)
+  if (!current.building) emit({ type: "added", entry })
 }
 
 /** Replace every group under a prefix, closing groups that are gone. */
@@ -458,11 +483,22 @@ function threadItems(digest: ThreadDigest): Derived[] {
     const author = thread.identities.find(
       (candidate) => candidate.id === message.authorIdentityId
     )
+    const recipient = thread.members.find(
+      (candidate) => candidate.id === identity.memberId
+    )
     return [
       {
         itemId: `thr:${thread.id}:${message.id}:${identity.id}`,
         kind: "threadRequest" as const,
         recipient: { participantId: identity.memberId, identityId: identity.id },
+        ...(recipient?.kind === "agent"
+          ? {
+              lapsesWith: {
+                lastMessageAt: thread.lastMessage.createdAt,
+                ...(thread.lifetime ? { lifetime: thread.lifetime } : {}),
+              },
+            }
+          : {}),
         scope: {
           spaceId:
             thread.location.kind === "space" ? thread.location.spaceId : null,
@@ -619,9 +655,10 @@ export function pendingIfReady(participantId: string): PendingEntry[] | null {
   }
   const ids = current.byRecipient.get(participantId)
   if (!ids || ids.size === 0) return []
+  const nowMs = Date.now()
   return [...ids]
     .map((itemId) => current.entries.get(itemId)!)
-    .filter(Boolean)
+    .filter((entry) => entry && stillWaiting(entry, nowMs))
     .sort((a, b) => b.revision - a.revision)
 }
 
@@ -631,21 +668,37 @@ async function settled(): Promise<void> {
   await Promise.all([...rescans.values(), ...commentRebuilds.values()])
 }
 
+/**
+ * Whether an open item still waits on its recipient. Archiving follows the
+ * clock, so it is decided when the list is read, not when it is indexed.
+ */
+function stillWaiting(
+  entry: Pick<PendingEntry, "lapsesWith">,
+  nowMs: number
+): boolean {
+  return !entry.lapsesWith || !isThreadArchived(entry.lapsesWith, nowMs)
+}
+
 /** Open items for one participant, newest first. */
 export async function pendingFor(participantId: string): Promise<PendingEntry[]> {
   await settled()
   const current = state!
+  const nowMs = Date.now()
   return [...(current.byRecipient.get(participantId) ?? [])]
     .map((itemId) => current.entries.get(itemId)!)
-    .filter(Boolean)
+    .filter((entry) => entry && stillWaiting(entry, nowMs))
     .sort((a, b) => b.revision - a.revision)
 }
 
 /** Open items a participant asked of others, newest first. */
 export async function pendingFrom(participantId: string): Promise<PendingEntry[]> {
   await settled()
+  const nowMs = Date.now()
   return [...state!.entries.values()]
-    .filter((entry) => entry.source.from.id === participantId)
+    .filter(
+      (entry) =>
+        entry.source.from.id === participantId && stillWaiting(entry, nowMs)
+    )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 

@@ -663,6 +663,14 @@ export const ListThreadsInput = z.object({
   spaceId: z.string().min(1).optional(),
   participantId: z.string().optional(),
   deliveryState: ThreadDeliveryStateSchema.optional(),
+  // Held for the preview surface (PREVIEW_CHANGES). Left out, the list
+  // returns every thread, as it did before threads archived.
+  includeArchived: z
+    .boolean()
+    .optional()
+    .describe(
+      "When true, also list archived threads: those quiet for 7 days or archived by hand. Each one is marked archived: true."
+    ),
 })
 
 export const ReadThreadInput = z.object({

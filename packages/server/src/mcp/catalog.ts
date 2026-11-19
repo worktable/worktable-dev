@@ -757,7 +757,8 @@ const TOOLS: CatalogTool[] = [
     description:
       "Read a thread's messages by threadId, paging with after and before, or one message by messageId. Set wait to wait up to waitSeconds for messages after after. Omit threadId to list threads, filtered by Space, participant or delivery state. Set participants to list the people and agents you can message.",
     annotations: READ,
-    inputSchema: flatInput([], [threadsList, threadsRead, threadsWait], {
+    // The released listing holds back includeArchived (PREVIEW_CHANGES).
+    inputSchema: flatInput([], [without(threadsList, "includeArchived"), threadsRead, threadsWait], {
       threadId: z.string().min(1).describe("Thread to read. Omit to list threads."),
       after: z.number().int().nonnegative().describe("Only messages after this sequence number; required with wait."),
       messageId: z.string().describe("Read only this message; with wait, the message whose reply you are waiting for."),
@@ -974,7 +975,24 @@ export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
  * Listing changes held for the preview surface (mcp-tools.preview.json)
  * until agent directories review them. Each takes a released tool's place.
  */
-const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {}
+const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
+  // Threads archive when they go quiet. The list leaves those out unless
+  // asked, so an agent that lists threads reads the ones still in use; an
+  // archived thread stays reachable by asking for it or by its id.
+  worktable_threads_read: (tool) => ({
+    ...tool,
+    description:
+      "Read a thread's messages by threadId, paging with after and before, or one message by messageId. Set wait to wait up to waitSeconds for messages after after. Omit threadId to list threads, filtered by Space, participant or delivery state. The list leaves out archived threads, those quiet for 7 days or archived by hand; set includeArchived to list them too. An archived thread still reads by threadId, and a message posted to it brings it back. Set participants to list the people and agents you can message.",
+    inputSchema: z.strictObject({
+      ...tool.inputSchema.shape,
+      includeArchived: threadsList.includeArchived!,
+    }),
+    route: (args) =>
+      args.threadId === undefined && !args.participants
+        ? tool.route({ ...args, includeArchived: args.includeArchived ?? false })
+        : tool.route(args),
+  }),
+}
 
 /** Tools listed only on the preview surface, after the released ones. */
 const PREVIEW_TOOLS: CatalogTool[] = []

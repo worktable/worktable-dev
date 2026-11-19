@@ -342,6 +342,7 @@ import {
   claimNextThreadDelivery,
   failDelivery,
   listThreadParticipants,
+  isSummaryArchived,
   listThreadSummaries,
   postThreadMessage,
   renameThreadTitle,
@@ -1135,13 +1136,21 @@ async function _dispatchOperationInner(
     }
     case "threads.list": {
       const parsed = ListThreadsInput.parse(args)
+      const threads = await listThreadSummaries(
+        identity,
+        threadLocationInput(parsed.location, parsed.spaceId),
+        parsed.participantId,
+        parsed.deliveryState,
+        // Only a call that names the choice leaves archived threads out;
+        // earlier callers keep the whole list.
+        parsed.includeArchived === false ? "exclude" : undefined
+      )
       return {
-        threads: await listThreadSummaries(
-          identity,
-          threadLocationInput(parsed.location, parsed.spaceId),
-          parsed.participantId,
-          parsed.deliveryState
-        ),
+        threads: parsed.includeArchived
+          ? threads.map((thread) =>
+              isSummaryArchived(thread) ? { ...thread, archived: true } : thread
+            )
+          : threads,
       }
     }
     case "threads.read": {

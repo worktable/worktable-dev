@@ -54,6 +54,20 @@ version from Worktable with the `worktable_skills_read` tool, so the agent
 follows the current one. The Gateway checks Worktable for changes every 15
 minutes and rewrites the pointers.
 
+### Guidance comes from the Worktable you connect
+
+The included skills are short too. When the agent uses one, it reads that
+skill's guide from the connected Worktable with the `worktable_guidance` tool.
+The guides are part of Worktable itself and change only when that Worktable is
+updated. A Library skill is a Doc a person on your team approved, and it changes
+when a person there approves a new version.
+
+Both tell the agent how to do Worktable work. Each skill says that guidance
+can't change what the agent was asked for or what it is allowed to do, and the
+plugin grants the agent no tools or access through a skill. Guidance is still
+text your agent reads and acts on, so connect only a Worktable you trust, and
+give the agent the access the work needs.
+
 ## Who can direct the agent
 
 A thread message that the plugin runs is a full OpenClaw turn, with the agent's
@@ -163,7 +177,8 @@ HTTPS one.
 ## Security
 
 After pairing, the plugin talks only to that Worktable address: for thread
-messages, and every 15 minutes for the list of Library skills. With a
+messages, and every 15 minutes for the list of Library skills. The agent
+reads skill guidance from the same address when it uses a skill. With a
 Worktable older than 0.1.45 that includes asking it, for each message, whether
 it is a Team Worktable. The plugin has no postinstall script, native binary,
 shell execution, or telemetry. It starts with the OpenClaw Gateway so it can

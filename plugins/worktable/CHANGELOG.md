@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1] - 2026-11-19
+
+### Changed
+
+- Each workflow skill now says its guide is about how to work in Worktable, and that guidance can't change what the person asked for or what the agent is allowed to do.
+
 ## [0.2.0] - 2026-11-17
 
 ### Added

@@ -623,6 +623,10 @@ const SIGN_IN_BY_ADDRESS: readonly AppId[] = [
   "warp",
 ]
 
+/** Copilot CLI's full Worktable plugin brings a server that wins over the one the command adds. */
+const COPILOT_FULL_PLUGIN =
+  "If Copilot has the Worktable plugin, remove it first with copilot plugin uninstall worktable."
+
 /** What a Cloud way has you do, and the value to copy. */
 function cloudStep(
   app: AgentApp,
@@ -651,7 +655,7 @@ function cloudStep(
         step: !way.client
           ? "Run this in your terminal and sign in when asked. It adds Worktable to the agents it finds, such as OpenCode and VS Code."
           : signsInInApp(way.client)
-            ? `Run this in your terminal. ${IN_APP_SIGN_IN[way.client]}`
+            ? `${way.client === "copilot" ? `${COPILOT_FULL_PLUGIN} ` : ""}Run this in your terminal. ${IN_APP_SIGN_IN[way.client]}`
             : "Run this in your terminal, then choose Allow access when your browser opens.",
         value: connectCommand(way, {
           mcpUrl: url,

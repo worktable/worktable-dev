@@ -422,7 +422,8 @@ export function addressStep(
       }
     case "copilot":
       return {
-        step: "Run this in your terminal. Then in Copilot CLI, run /mcp and sign in to worktable.",
+        // The full plugin's own server wins over a server added here.
+        step: "If Copilot has the Worktable plugin, remove it first with copilot plugin uninstall worktable. Then run this in your terminal, and in Copilot CLI run /mcp and sign in to worktable.",
         value: `copilot mcp add --transport http worktable ${mcpUrl}`,
       }
     case "opencode":

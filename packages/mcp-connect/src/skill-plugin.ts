@@ -440,6 +440,7 @@ interface CatalogIndex {
 }
 
 const SAFE_NAME = /^[a-z0-9][a-z0-9-]*$/
+const SKILLS_DOWNLOAD_MS = 30_000
 const SAFE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 /**
@@ -453,8 +454,11 @@ export async function installFromWorktable(
 ): Promise<string | null> {
   const base = `${new URL(origin).origin}/.well-known/skills/`
   const directory = mkdtempSync(join(tmpdir(), "worktable-skills-plugin-"))
+  // One deadline for the whole download, body reads included, so a stalled
+  // server can't keep the connect command from finishing.
+  const signal = AbortSignal.timeout(SKILLS_DOWNLOAD_MS)
   try {
-    const response = await fetch(new URL("index.json", base))
+    const response = await fetch(new URL("index.json", base), { signal })
     if (!response.ok) return `its skills address returned HTTP ${response.status}`
     const index = (await response.json()) as CatalogIndex
     const skills = Array.isArray(index.skills) ? index.skills : []
@@ -464,7 +468,7 @@ export async function installFromWorktable(
         return `its skills address lists an unexpected skill`
       mkdirSync(join(directory, "skills", skill.name), { recursive: true })
       for (const file of skill.files) {
-        const fileResponse = await fetch(new URL(`${skill.name}/${file}`, base))
+        const fileResponse = await fetch(new URL(`${skill.name}/${file}`, base), { signal })
         if (!fileResponse.ok) return `its skills address returned HTTP ${fileResponse.status}`
         writeFileSync(
           join(directory, "skills", skill.name, file),
@@ -493,6 +497,7 @@ export async function installFromWorktable(
     const installed = run("agy", ["plugin", "install", directory])
     return installed.status === 0 ? null : firstLine(installed, "agy")
   } catch (error) {
+    if (signal.aborted) return "its skills address took too long to answer"
     return `couldn't read its skills address: ${(error as Error).message}`
   } finally {
     rmSync(directory, { recursive: true, force: true })

@@ -11,6 +11,9 @@ import {
   cursorPath,
   defaultVscodePath,
   installClient,
+  JSON_CLIENT_ENTRY_PLACES,
+  type JsonEntryPlaces,
+  kiloPath,
   opencodeEntry,
   opencodePath,
   preflightClient,
@@ -220,7 +223,7 @@ function baseStatus(
 function makeJsonAdapter(
   info: McpClientInfo<ConnectorInstallableMcpClientId>,
   path: () => string,
-  parentKey: string,
+  places: JsonEntryPlaces,
   entry: (endpoint: string, token?: string) => Record<string, unknown>
 ): Adapter {
   return {
@@ -231,21 +234,21 @@ function makeJsonAdapter(
       baseStatus(
         info,
         config,
-        readJsonUrl(path(), parentKey),
+        readJsonUrl(path(), places),
         path(),
         undefined,
-        readJsonAuth(path(), parentKey)
+        readJsonAuth(path(), places)
       ),
     setup: (config, token) => {
-      setupJsonUrl(path(), parentKey, entry(config.mcp.endpoint, token))
+      setupJsonUrl(path(), places, entry(config.mcp.endpoint, token))
       return baseStatus(info, config, config.mcp.endpoint, path())
     },
     repair: (config, token) => {
-      setupJsonUrl(path(), parentKey, entry(config.mcp.endpoint, token))
+      setupJsonUrl(path(), places, entry(config.mcp.endpoint, token))
       return baseStatus(info, config, config.mcp.endpoint, path())
     },
     remove: (config) => {
-      removeJsonUrl(path(), parentKey)
+      removeJsonUrl(path(), places)
       return baseStatus(info, config, undefined, path())
     },
     printConfig: (config, token) =>
@@ -347,19 +350,25 @@ export const adapters: Record<ConnectorInstallableMcpClientId, Adapter> = {
   cursor: makeJsonAdapter(
     CLIENTS.cursor,
     cursorPath,
-    "mcpServers",
+    JSON_CLIENT_ENTRY_PLACES.cursor,
     cursorEntry
   ),
   opencode: makeJsonAdapter(
     CLIENTS.opencode,
     opencodePath,
-    "mcp",
+    JSON_CLIENT_ENTRY_PLACES.opencode,
+    opencodeEntry
+  ),
+  kilo: makeJsonAdapter(
+    CLIENTS.kilo,
+    kiloPath,
+    JSON_CLIENT_ENTRY_PLACES.kilo,
     opencodeEntry
   ),
   vscode: makeJsonAdapter(
     CLIENTS.vscode,
     () => vscodePath() ?? defaultVscodePath(),
-    "servers",
+    JSON_CLIENT_ENTRY_PLACES.vscode,
     vscodeEntry
   ),
 }

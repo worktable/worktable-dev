@@ -38,6 +38,7 @@ function useTempRuntime(): string {
   process.env["CLAUDE_CONFIG_DIR"] = root;
   process.env["WORKTABLE_CURSOR_MCP_CONFIG"] = join(root, ".cursor", "mcp.json");
   process.env["WORKTABLE_OPENCODE_CONFIG"] = join(root, ".config", "opencode", "opencode.json");
+  process.env["WORKTABLE_KILO_CONFIG"] = join(root, ".config", "kilo", "kilo.jsonc");
   process.env["WORKTABLE_CODEX_CONFIG"] = join(root, ".codex", "config.toml");
   process.env["WORKTABLE_VSCODE_MCP_CONFIG"] = join(root, "vscode", "mcp.json");
   return root;
@@ -193,6 +194,20 @@ describe("connector config transaction", () => {
     expect(allowed.ok).toBe(true);
     expect(allowed.existing).toBe(true);
     expect(allowed.snapshot?.contents).toEqual(readFileSync(path));
+  });
+
+  it("counts an OpenCode entry an earlier version wrote directly under mcp", () => {
+    useTempRuntime();
+    const path = process.env["WORKTABLE_OPENCODE_CONFIG"]!;
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify({ mcp: { worktable: { type: "remote", url: "https://old.test/mcp", enabled: true } } })
+    );
+
+    const blocked = preflightClient("opencode", { replace: false });
+    expect(blocked.ok).toBe(false);
+    expect(blocked.message).toContain("Worktable at https://old.test/mcp");
   });
 
   it("blocks a higher-priority Claude scope even when replacing the user entry", () => {

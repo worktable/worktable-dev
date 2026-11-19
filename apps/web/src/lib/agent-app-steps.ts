@@ -11,9 +11,10 @@
 // Cloud's shared address, which works in the Worktable chosen for that app
 // (or the account's default). So it reaches a Worktable on Cloud, and a
 // Worktable on a computer or server once Worktable Link is on. Claude updates
-// it from there, and so does Antigravity. Uploaded copies and Perplexity's
-// imports keep the version they started with. On a Cloud Worktable the shared
-// address doesn't reach, an app leads with this Worktable's own address.
+// it from there, and so do Antigravity and VS Code. Uploaded copies and
+// Perplexity's imports keep the version they started with. On a Cloud
+// Worktable the shared address doesn't reach, an app leads with this
+// Worktable's own address.
 
 import type {
   AgentPlatformId,
@@ -68,6 +69,8 @@ export type AppId =
   | "cursor"
   | "opencode"
   | "kilo"
+  | "vscode"
+  | "copilot"
   | "gemini"
   | "gemini-cli"
   | "antigravity"
@@ -98,6 +101,8 @@ export const AGENT_APPS: AgentApp[] = [
   { id: "cursor", name: "Cursor", platform: "cursor" },
   { id: "opencode", name: "OpenCode", platform: "opencode" },
   { id: "kilo", name: "Kilo", platform: "kilo" },
+  { id: "vscode", name: "VS Code", platform: "vscode" },
+  { id: "copilot", name: "Copilot CLI", platform: "copilot" },
   { id: "gemini", name: "Gemini", platform: "gemini" },
   { id: "gemini-cli", name: "Gemini CLI", platform: "gemini-cli" },
   { id: "antigravity", name: "Antigravity", platform: "antigravity" },
@@ -112,7 +117,13 @@ export function appsFor(place: Place): AgentApp[] {
   )
 }
 
-const PLUGIN_APPS = ["antigravity", "gemini-cli", "perplexity"] as const
+const PLUGIN_APPS = [
+  "antigravity",
+  "vscode",
+  "copilot",
+  "gemini-cli",
+  "perplexity",
+] as const
 
 /** Apps whose plugin or app is added in the app itself, after a copy. */
 export type PluginApp = (typeof PLUGIN_APPS)[number]
@@ -139,8 +150,10 @@ export type Skills =
   | { via: "plugin" }
   /**
    * The connect command installs Worktable Skills, the plugin's skills
-   * without its Cloud server, with the agent's own plugin command. When
-   * that can't work it copies them from Worktable's installer instead.
+   * without its Cloud server, with the agent's own plugin command (VS Code
+   * gets Copilot CLI's). When that can't work it copies them from
+   * Worktable's installer instead; Antigravity builds the plugin from the
+   * skills this Worktable serves.
    */
   | { via: "connect-plugin" }
   /** The connect command adds them from Worktable's installer. */
@@ -292,11 +305,19 @@ export function waysFor(app: AppId, where: Where): AppWays | null {
         : null
     case "perplexity":
     case "antigravity":
+    case "vscode":
+    case "copilot":
     case "gemini-cli": {
-      if (!cloud)
-        return app === "perplexity"
-          ? null
-          : { best: { kind: "token", skills: NONE }, others: [] }
+      if (!cloud) {
+        if (app === "perplexity") return null
+        if (app === "gemini-cli")
+          return { best: { kind: "token", skills: NONE }, others: [] }
+        // The connect command adds Worktable Skills with the app's plugin command.
+        return {
+          best: { kind: "pairing", client: app, skills: CONNECT_PLUGIN },
+          others: [],
+        }
+      }
       const plugin: Way = { kind: "app-plugin", app, skills: PLUGIN }
       // This Worktable's own address, for when the plugin's lands elsewhere.
       const address: Way = { kind: "address", skills: NONE }
@@ -360,6 +381,10 @@ export const SKILLS_GUIDE = "https://docs.worktable.dev/agents/skills/"
 export const APP_STEPS: Record<PluginApp, string> = {
   antigravity:
     "In Antigravity, install Worktable from Plugins, or run this. Then open /plugin, expand Worktable and sign in.",
+  vscode:
+    "In VS Code, run Chat: Install Plugin from Source and paste this. Then start worktable from its MCP servers list and sign in.",
+  copilot:
+    "Run this in your terminal. Then in Copilot CLI, run /mcp and sign in to worktable.",
   "gemini-cli":
     "Run this in your terminal. Then in Gemini CLI, run /mcp auth worktable and sign in.",
   perplexity:
@@ -389,6 +414,17 @@ export function addressStep(
       return {
         step: "In Antigravity, add an MCP server with this address, then sign in.",
         value: mcpUrl,
+      }
+    case "vscode":
+      return {
+        step: "In VS Code, run MCP: Add Server, choose HTTP and paste this address. Then sign in.",
+        value: mcpUrl,
+      }
+    case "copilot":
+      return {
+        // The full plugin's own server wins over a server added here.
+        step: "If Copilot has the Worktable plugin, remove it first with copilot plugin uninstall worktable. Then run this in your terminal, and in Copilot CLI run /mcp and sign in to worktable.",
+        value: `copilot mcp add --transport http worktable ${mcpUrl}`,
       }
     case "opencode":
       return {
@@ -430,6 +466,10 @@ export function appValue(app: PluginApp): string {
   switch (app) {
     case "antigravity":
       return `agy plugin install ${PLUGIN_REPOSITORY}`
+    case "vscode":
+      return PLUGIN_REPOSITORY
+    case "copilot":
+      return `copilot plugin marketplace add ${CLAUDE_MARKETPLACE}\ncopilot plugin install worktable@worktable`
     case "perplexity":
       return PLUGIN_REPOSITORY
     case "gemini-cli":

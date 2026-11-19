@@ -77,7 +77,13 @@ describe("agent app ways", () => {
       expect(ways.others.map((way) => way.kind)).toEqual(["coding-plugin"])
     }
     const pinned = "https://app.worktable.cloud/api/mcp/w/wt_123"
-    for (const app of ["gemini-cli", "antigravity", "perplexity"] as const) {
+    for (const app of [
+      "gemini-cli",
+      "antigravity",
+      "vscode",
+      "copilot",
+      "perplexity",
+    ] as const) {
       expect(best(app, at("cloud"))).toMatchObject({ kind: "app-plugin", app })
       const ways = waysFor(app, at("cloud", false))!
       expect(ways.best.kind).toBe("address")
@@ -91,10 +97,17 @@ describe("agent app ways", () => {
   it("connects coding agents directly outside Cloud, with skills only where they install", () => {
     for (const place of ["computer", "server"] as const) {
       // The connect command installs the skills plugin itself.
-      for (const app of ["claude-code", "codex"] as const) {
+      for (const app of [
+        "claude-code",
+        "codex",
+        "antigravity",
+        "vscode",
+        "copilot",
+      ] as const) {
         const way = best(app, at(place))
         expect(way).toMatchObject({
           kind: "pairing",
+          client: app,
           skills: { via: "connect-plugin" },
         })
         expect(bringsSkills(way)).toBe(true)

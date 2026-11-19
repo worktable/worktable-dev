@@ -102,6 +102,12 @@ describe("plugin repository tree", () => {
     expect(codex).toMatchObject({ name: "worktable-skills", version: tree.version, interface: { displayName: "Worktable" } })
     expect(claude.mcpServers).toBeUndefined()
     expect(codex.mcpServers).toBeUndefined()
+    // Antigravity shows it as Worktable too, from its own manifest.
+    expect(JSON.parse(text(tree.files.get(`${skillsPlugin}.antigravity-plugin/plugin.json`)))).toMatchObject({
+      name: "worktable-skills",
+      displayName: "Worktable",
+      version: tree.version,
+    })
   })
 
   test("refuses credential-shaped content in any carried file", async () => {

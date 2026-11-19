@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs"
 import {
+  antigravityEntry,
+  antigravityPath,
   captureClientConfigMutation,
   type ClientConfigSnapshot,
   claudeCodeAdd,
@@ -7,6 +9,8 @@ import {
   codexCliAdd,
   codexPath,
   commandExists,
+  copilotEntry,
+  copilotPath,
   cursorEntry,
   cursorPath,
   defaultVscodePath,
@@ -370,6 +374,18 @@ export const adapters: Record<ConnectorInstallableMcpClientId, Adapter> = {
     () => vscodePath() ?? defaultVscodePath(),
     JSON_CLIENT_ENTRY_PLACES.vscode,
     vscodeEntry
+  ),
+  copilot: makeJsonAdapter(
+    CLIENTS.copilot,
+    copilotPath,
+    JSON_CLIENT_ENTRY_PLACES.copilot,
+    copilotEntry
+  ),
+  antigravity: makeJsonAdapter(
+    CLIENTS.antigravity,
+    antigravityPath,
+    JSON_CLIENT_ENTRY_PLACES.antigravity,
+    antigravityEntry
   ),
 }
 

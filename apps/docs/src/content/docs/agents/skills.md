@@ -46,11 +46,13 @@ Plugins already include skills, so don't install a second copy:
 - The general Worktable plugin bundles every skill except Set up Worktable,
   along with its **Cloud** MCP connection.
 - Worktable Skills bundles the same skills without a connection. The connect
-  command for a local or self-hosted Worktable installs it in Claude Code and
-  Codex, where it shows as Worktable, unless the general plugin is already
-  there. It also removes skills an earlier command copied, so none show twice.
-  If the plugin can't be installed, the command copies the skills instead, as
-  below, and says so.
+  command for a local or self-hosted Worktable installs it in Claude Code,
+  Codex, Copilot CLI, VS Code (with Copilot CLI) and Antigravity, where it
+  shows as Worktable, unless the general plugin is already there. In Claude
+  Code and Codex it also removes skills an earlier command copied, so none
+  show twice. If the plugin can't be installed, the command copies the skills
+  instead, as below, and says so. Antigravity gets Worktable Skills built from
+  the skills the Worktable serves instead.
 - OpenCode and Kilo load the same skills from a [skills address](#skills-address).
   The connect command adds it.
 - The Hermes plugin bundles the same skills except Check the Library. Hermes
@@ -78,8 +80,8 @@ worktable skills install agents
 Use `claude` instead of `agents` where needed. Worktable setup and MCP setup do
 not install skills.
 
-If Worktable runs on another computer and your agent isn't Claude Code or
-Codex, install only the skills:
+If Worktable runs on another computer and the connect command doesn't install
+the skills for your agent, install only the skills:
 
 ```sh
 curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents

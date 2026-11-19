@@ -433,6 +433,43 @@ describe("connector transaction model", () => {
     )
   })
 
+  it("writes Antigravity's serverUrl beside its other servers and gives its skills step this Worktable", async () => {
+    const antigravityPath = join(root, ".gemini", "config", "mcp_config.json")
+    mkdirSync(join(root, ".gemini", "config"), { recursive: true })
+    writeFileSync(antigravityPath, JSON.stringify({ mcpServers: { fs: { command: "npx" } } }))
+    process.env["WORKTABLE_ANTIGRAVITY_MCP_CONFIG"] = antigravityPath
+    const skillCalls: unknown[][] = []
+    const output = captureIo()
+    try {
+      expect(
+        await runConnector(
+          ["PAIR-CODE", "--server", "https://worktable.example", "--client", "antigravity"],
+          output.io,
+          {
+            ...fakeHost({ client: "antigravity" }).dependencies,
+            setUpSkills: async (...args) => {
+              skillCalls.push(args)
+              return { outcome: { via: "worktable", reason: "offline" }, lines: [], restartHint: "Start a new Antigravity conversation to load Worktable." }
+            },
+          }
+        )
+      ).toBe(0)
+    } finally {
+      delete process.env["WORKTABLE_ANTIGRAVITY_MCP_CONFIG"]
+    }
+    expect(JSON.parse(readFileSync(antigravityPath, "utf8"))).toEqual({
+      mcpServers: {
+        fs: { command: "npx" },
+        worktable: {
+          serverUrl: "https://worktable.example/mcp",
+          headers: { Authorization: "Bearer wt_replacement" },
+        },
+      },
+    })
+    expect(skillCalls).toEqual([["antigravity", {}, "https://worktable.example"]])
+    expect(output.stdout.at(-1)).toBe("  Note: Start a new Antigravity conversation to load Worktable.")
+  })
+
   it("preflights conflicts before redeeming or changing bytes", async () => {
     const original =
       '[mcp_servers.worktable]\nurl = "https://old.example/mcp"\n'

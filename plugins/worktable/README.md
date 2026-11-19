@@ -70,6 +70,19 @@ agy plugin install https://github.com/worktable/worktable-plugin
 
 Then open `/plugin`, expand Worktable under **Installed**, and choose **Sign in**.
 
+### Copilot CLI and VS Code
+
+```text
+copilot plugin marketplace add worktable/worktable-plugin
+copilot plugin install worktable@worktable
+```
+
+Then run `/mcp` in Copilot CLI and sign in to `worktable`. VS Code loads the
+plugins Copilot CLI installs. In VS Code itself, run
+**Chat: Install Plugin from Source** and enter
+`https://github.com/worktable/worktable-plugin`, then start `worktable` from
+the MCP servers list and sign in.
+
 ### Gemini CLI
 
 ```text

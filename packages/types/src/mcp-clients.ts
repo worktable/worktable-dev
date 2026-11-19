@@ -33,6 +33,8 @@ export const CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS = [
   "opencode",
   "kilo",
   "vscode",
+  "copilot",
+  "antigravity",
 ] as const
 
 export const MANUAL_MCP_CLIENT_IDS = ["goose"] as const
@@ -141,6 +143,20 @@ export const MCP_CLIENTS: Record<McpClientId, McpClientMeta> = {
     maturity: "supported",
     setupKind: "connector",
     configPathHint: "mcp.json in the VS Code user profile",
+  },
+  copilot: {
+    id: "copilot",
+    label: "Copilot CLI",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.copilot/mcp-config.json",
+  },
+  antigravity: {
+    id: "antigravity",
+    label: "Antigravity",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.gemini/config/mcp_config.json",
   },
   goose: {
     id: "goose",
@@ -283,6 +299,34 @@ export function mcpClientSnippet(
             worktable: {
               type: "http",
               url: endpoint,
+              ...(token ? { headers: bearerHeaders(token) } : {}),
+            },
+          },
+        }),
+      }
+    case "copilot":
+      return {
+        ...base,
+        language: "json",
+        body: jsonBody({
+          mcpServers: {
+            worktable: {
+              type: "http",
+              url: endpoint,
+              ...(token ? { headers: bearerHeaders(token) } : {}),
+              tools: ["*"],
+            },
+          },
+        }),
+      }
+    case "antigravity":
+      return {
+        ...base,
+        language: "json",
+        body: jsonBody({
+          mcpServers: {
+            worktable: {
+              serverUrl: endpoint,
               ...(token ? { headers: bearerHeaders(token) } : {}),
             },
           },

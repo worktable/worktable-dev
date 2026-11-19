@@ -46,8 +46,9 @@ The document menu offers **Download PNG**, **Download Drawing**, and **Save a
 Copy**. There is no drawing history panel yet, but agents can recover retained
 versions.
 
-Each autosave stores the whole drawing, images included, so image-heavy drawings
-use a lot of history storage. To limit it, set retention in **Settings → Data**.
+Each version in a drawing's history stores the whole drawing, images included,
+so image-heavy drawings use a lot of history storage. To limit it, set retention
+in **Settings → Data**.
 Shorter retention removes older recovery points.
 
 On iPad, if Apple Pencil handwriting skips strokes, try turning off **Settings →

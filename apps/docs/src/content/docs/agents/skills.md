@@ -36,6 +36,9 @@ Your team can also keep its own skills as Docs in the
 [Library](/concepts/#library). Agents get the version someone saved. When an
 agent suggests a new skill or a change, it waits until a person approves it.
 
+The Library is for how your team works. A skill that comes with a tool stays
+with that tool, and a skill about one codebase stays in its repository.
+
 ## Installation
 
 Plugins already include skills, so don't install a second copy:

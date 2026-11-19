@@ -36,10 +36,11 @@ self-hosted workspace, follow
 
 On a Pro, Max, Team or Enterprise plan, open **Plugins**, choose **Add**, then
 **Add marketplace**, and enter `worktable/worktable-plugin`. Add Worktable,
-then open the plugin's **Connectors** tab, connect Worktable and sign in. Claude
-updates it from this repository: choose **Check for updates**, or turn on
-**Sync automatically** once the Claude GitHub App has access. Skills need
-**Code execution** on in Claude's settings.
+then open the plugin's **Connectors** tab, connect Worktable and sign in. Skills
+need **Code execution** on in Claude's settings.
+
+Claude keeps the version you added until you update it. See
+[Update or remove](#update-or-remove).
 
 Uploading the plugin as a file works too, but an uploaded copy never updates.
 
@@ -132,6 +133,12 @@ provider processes prompts and tool traffic under its own terms.
 - [Documentation](https://docs.worktable.dev/start/connect-your-agent)
 
 ## Update or remove
+
+In Claude on the web, on desktop and in Cowork, open **Plugins**, choose **Add
+plugin**, then **Manage marketplaces**. Open the menu beside
+`worktable/worktable-plugin` and choose **Check for updates**. The plugin's own
+page has no update button. **Sync automatically** in the same menu updates it
+without asking, once the Claude GitHub App has access to the repository.
 
 In Claude Code:
 

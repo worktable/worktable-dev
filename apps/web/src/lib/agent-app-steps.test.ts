@@ -103,6 +103,8 @@ describe("agent app ways", () => {
         "antigravity",
         "vscode",
         "copilot",
+        "devin",
+        "junie",
       ] as const) {
         const way = best(app, at(place))
         expect(way).toMatchObject({
@@ -133,6 +135,17 @@ describe("agent app ways", () => {
         skills: [SKILL_CATALOG],
       })
     }
+    // Devin and Junie add the address with their own command or file, and
+    // the skills with Worktable's installer.
+    for (const app of ["devin", "junie"] as const)
+      expect(best(app, at("cloud"))).toMatchObject({
+        kind: "address",
+        skills: { via: "url", target: "agents" },
+      })
+    expect(addressStep("devin", pinned).value).toContain(pinned)
+    expect(JSON.parse(addressStep("junie", pinned).value)).toEqual({
+      mcpServers: { worktable: { url: pinned } },
+    })
     // An address alone is tools without skills; the Gemini app takes a file.
     expect(best("gemini", at("cloud")).skills.via).toBe("files")
     expect(bringsSkills(best("other", at("cloud")))).toBe(false)

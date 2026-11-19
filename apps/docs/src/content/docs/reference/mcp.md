@@ -186,6 +186,8 @@ Support maturity and configuration method are separate:
 | `vscode`         | VS Code                                            | Connector-installable                                   |
 | `copilot`        | GitHub Copilot CLI                                 | Connector-installable                                   |
 | `antigravity`    | Antigravity app and CLI                            | Connector-installable                                   |
+| `devin`          | Devin Desktop and Devin CLI                        | Connector-installable                                   |
+| `junie`          | Junie in JetBrains IDEs and Junie CLI              | Connector-installable                                   |
 | `goose`          | Goose                                              | Manual snippet                                          |
 | `claude-desktop` | Claude Desktop and supported local Cowork releases | Desktop extension or Cloud OAuth                        |
 | `openclaw`       | OpenClaw                                           | ClawHub plugin plus pairing                             |

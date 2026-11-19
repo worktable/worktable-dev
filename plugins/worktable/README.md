@@ -105,8 +105,8 @@ then choose **Save** and **Connect**.
 
 The Gemini app takes one skill folder and never updates it. Download
 [worktable.tar](https://docs.worktable.dev/downloads/skills/gemini/worktable.tar),
-unpack it, and upload the `worktable` folder. It holds the Library check and
-names each workflow guide.
+unpack it, then open **Customize**, then **Skills**, and upload the `worktable`
+folder. It holds the Library check and names each workflow guide.
 
 ### Kiro
 

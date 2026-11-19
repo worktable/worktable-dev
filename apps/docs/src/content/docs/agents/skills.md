@@ -47,8 +47,9 @@ Plugins already include skills, so don't install a second copy:
   along with its **Cloud** MCP connection.
 - Worktable Skills bundles the same skills without a connection. The connect
   command for a local or self-hosted Worktable installs it in Claude Code,
-  Codex, Copilot CLI, VS Code (with Copilot CLI) and Antigravity, where it
-  shows as Worktable, unless the general plugin is already there. In Claude
+  Codex, Copilot CLI, VS Code (with Copilot CLI), Antigravity and Devin
+  (when signed in), where it shows as Worktable, unless the general plugin is
+  already there. Junie gets the copy below. In Claude
   Code and Codex it also removes skills an earlier command copied, so none
   show twice. If the plugin can't be installed, the command copies the skills
   instead, as below, and says so. Antigravity gets Worktable Skills built from
@@ -113,10 +114,14 @@ address replaces a copied one with the same name.
 ### Gemini app
 
 The Gemini app takes one skill folder and never updates it. Download
-[worktable.tar](/downloads/skills/gemini/worktable.tar), unpack it, and upload
-the `worktable` folder. It checks your team's Library and names each workflow
-guide. Or save its [SKILL.md](/downloads/skills/gemini/worktable/SKILL.md) in a
-folder named `worktable` and upload that.
+[worktable.tar](/downloads/skills/gemini/worktable.tar), unpack it, and in
+Gemini on the web or on Mac open **Customize**, then **Skills**, and upload the
+`worktable` folder. It checks your team's Library and names each workflow
+guide, which the connected Worktable keeps current, so it counts once toward
+Gemini's 100 active skills. Or save its
+[SKILL.md](/downloads/skills/gemini/worktable/SKILL.md) in a folder named
+`worktable` and upload that. To connect the Gemini app, see
+[Chat apps](/agents/connections/#chat-apps).
 
 ## Update and remove
 

@@ -16,15 +16,17 @@ worktable mcp setup
 ```
 
 To set up one client, run `worktable mcp setup <client>` with `claude-code`,
-`codex`, `cursor`, `vscode`, `copilot`, `antigravity`, `opencode`, or `kilo`.
+`codex`, `cursor`, `vscode`, `copilot`, `antigravity`, `devin`, `junie`,
+`opencode`, or `kilo`.
 For Goose, use the
 configuration from `worktable mcp print-config goose`.
 
 For an agent on another computer, choose it under **Connect App** and copy its
 command, or run `worktable agent invite` on the Worktable host. The command
-redeems a single-use pairing code. For Claude Code, Codex, Copilot CLI, VS Code
-and Antigravity, the same command then installs Worktable's
-[skills](/agents/skills/) as a plugin. For OpenCode and Kilo, it adds this Worktable's
+redeems a single-use pairing code. For Claude Code, Codex, Copilot CLI, VS Code,
+Antigravity and Devin, the same command then installs Worktable's
+[skills](/agents/skills/) as a plugin, and copies them for Junie. For OpenCode
+and Kilo, it adds this Worktable's
 [skills address](/agents/skills/#skills-address), so they load the skills from
 it. The host must be reachable from that computer; see
 [Remote access](/guides/remote-access/).
@@ -85,14 +87,47 @@ is already installed in Copilot CLI, its Cloud server takes the place of this
 connection: run `copilot plugin uninstall worktable`, then the command again
 with `--replace`.
 
+### Devin and Junie
+
+Devin Desktop and Devin CLI share their servers and skills, and so do Junie
+in JetBrains IDEs and Junie CLI. On local or self-hosted Worktable, choose
+**Devin** or **Junie** and run the command shown:
+
+- **Devin**: the server goes in `~/.config/devin/mcp_config.json`. When Devin
+  is signed in, the skills plugin is installed with
+  `devin plugins install --local`; otherwise the skills are copied to
+  `~/.agents/skills`, which Devin reads.
+- **Junie**: the server goes in `~/.junie/mcp/mcp.json`, and the skills are
+  copied to `~/.agents/skills`, which Junie reads.
+
+Then start a new session.
+
+On Worktable Cloud, add the server and sign in, then add the skills. For
+Devin, run this and open the link it prints to sign in, or run
+`devin mcp login worktable` later:
+
+```sh
+devin mcp add --scope user worktable https://app.worktable.cloud/api/mcp
+```
+
+For Junie, add this to `~/.junie/mcp/mcp.json`, then run `/mcp` in Junie,
+choose `worktable` and **Authorize**:
+
+```json
+{ "mcpServers": { "worktable": { "url": "https://app.worktable.cloud/api/mcp" } } }
+```
+
+For the skills in either, run
+`curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents`.
+
 ## Plugins
 
 The general Worktable plugin bundles skills and a **Cloud connection** to
 `https://app.worktable.cloud/api/mcp`. For local or self-hosted Worktable, the
-connect command sets up Claude Code, Codex, Copilot CLI, VS Code and
-Antigravity with this Worktable's connection and Worktable Skills, the same
-skills without the Cloud connection, and OpenCode and Kilo with its skills
-address. For other clients, use that installation's MCP configuration and install
+connect command sets up Claude Code, Codex, Copilot CLI, VS Code,
+Antigravity and Devin with this Worktable's connection and Worktable Skills,
+the same skills without the Cloud connection, and OpenCode and Kilo with its
+skills address. For other clients, use that installation's MCP configuration and install
 [skills](/agents/skills/) separately if your client supports them.
 
 For Claude Code:

@@ -40,7 +40,8 @@ export const AGENT_LOGO_CHOICES: readonly AgentLogoChoice[] = [
   choice("perplexity", "Perplexity"),
   choice("cline", "Cline"),
   choice("roo-code", "Roo Code"),
-  choice("kilo-code", "Kilo Code"),
+  // Kilo's own mark. Agents that chose the older kilo-code.svg keep it.
+  choice("kilo", "Kilo", "kilo code"),
   choice("kiro", "Kiro", "amazon aws"),
   choice("junie", "Junie", "jetbrains"),
   choice("amp", "Amp", "sourcegraph"),

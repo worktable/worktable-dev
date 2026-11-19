@@ -8,7 +8,12 @@ import {
 } from "node:fs"
 import { createInterface } from "node:readline/promises"
 import { join } from "node:path"
-import { readCodexUrl, readJsonUrl, runConnector } from "@worktable/mcp-connect"
+import {
+  JSON_CLIENT_ENTRY_PLACES,
+  readCodexUrl,
+  readJsonUrl,
+  runConnector,
+} from "@worktable/mcp-connect"
 import type { AgentOptions, DesktopLabAgent } from "./types.ts"
 import {
   assertDesktopRunPathsSafe,
@@ -82,11 +87,13 @@ function configuredEndpoint(
     case "codex":
       return readCodexUrl(join(home, ".codex", "config.toml"))
     case "claude-code":
-      return readJsonUrl(join(home, ".claude", ".claude.json"), "mcpServers")
+      return readJsonUrl(join(home, ".claude", ".claude.json"), [
+        ["mcpServers"],
+      ])
     case "opencode":
       return readJsonUrl(
         join(home, ".config", "opencode", "opencode.json"),
-        "mcp"
+        JSON_CLIENT_ENTRY_PLACES.opencode
       )
   }
 }

@@ -9,6 +9,8 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+## [0.1.52] - 2026-11-19
+
 ### Added
 
 - **Agent icons:** Give any agent the logo of the app or model behind it, from Claude, ChatGPT, Gemini and Grok to Copilot, Cursor, Devin and 40 more. Search the icon picker by name.
@@ -22,6 +24,7 @@ infrastructure and personal context out of release notes.
 - **Next Steps:** Home shows your next steps as one row of tiles, in order, with a progress bar. Steps you finished before leave the row, and later ones scroll into view.
 - **Connect an agent:** Pick your app from one set of tiles, and its setup says which Worktable it works in and how. Once the agent connects, name it and set its access in the same place. Claude Code and Codex get Worktable's skills from the same command.
 - **Skills in Claude Code and Codex:** For a Worktable on your computer or server, the connect command installs Worktable's skills as a plugin, so they update with the agent's other plugins, and removes skill copies an earlier command made.
+- **More agents with skills:** For a Worktable on your computer or server, the connect command also sets up OpenCode, Kilo, Antigravity, Copilot CLI, VS Code, Devin, Junie, Pi, Factory Droid, Cline and Amp with Worktable's skills, through each app's own plugins where it has them. The Gemini app's setup adds Worktable's skill too.
 - **Connect on Cloud:** On Worktable Cloud, the connect command sets up OpenCode, Kilo, Devin, Junie, Pi, Factory Droid, Cline, Amp, Zed and Warp too, with Worktable's skills.
 
 ### Fixed
@@ -36,6 +39,8 @@ infrastructure and personal context out of release notes.
 - **Agent setup:** Claude and ChatGPT added through Worktable Link count as connected, coding agents in a second Cloud Worktable connect to it rather than another one, and commands wrap between words on phones.
 - **Tips on phones:** A tip no longer covers Home and Threads in the menu on a phone.
 - **Restore:** Restoring an archived Doc from its own page brings back the Docs in its folder too.
+- **Documents offline:** An open Doc or HTML page stays on screen through a dropped connection, with the Offline pill, instead of showing "Couldn't open document" and losing what you typed.
+- **HTML Doc comments:** Comments open in a floating card over the page, and a failed send keeps your draft.
 
 ## [0.1.51] - 2026-11-17
 

@@ -10,6 +10,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { CLIENT_CONFIG_ENV_KEYS } from "@worktable/mcp-connect"
 import {
   desktopBundleMayBeReused,
   desktopEnvironment,
@@ -156,6 +157,9 @@ describe("Desktop manual lab", () => {
       WORKTABLE_CURSOR_MCP_CONFIG: "/Users/real/.cursor/mcp.json",
       WORKTABLE_OPENCODE_CONFIG: "/Users/real/.config/opencode/opencode.json",
       WORKTABLE_VSCODE_MCP_CONFIG: "/Users/real/Library/Code/mcp.json",
+      ...Object.fromEntries(
+        CLIENT_CONFIG_ENV_KEYS.map((key) => [key, `/Users/real/${key}`])
+      ),
       ANTHROPIC_API_KEY: "anthropic-secret",
       CLAUDE_CODE_OAUTH_TOKEN: "claude-secret",
       OPENAI_API_KEY: "openai-secret",
@@ -175,6 +179,7 @@ describe("Desktop manual lab", () => {
     expect(value.SAFE_VALUE).toBe("preserved")
     expect(value.WORKTABLE_DESKTOP_ALLOW_MULTIPLE_INSTANCES).toBe("1")
     for (const key of [
+      ...CLIENT_CONFIG_ENV_KEYS,
       "WORKTABLE_DESKTOP_WORKSPACE",
       "WORKTABLE_DESKTOP_PORT",
       "WORKTABLE_DESKTOP_PREVIEW_PROVIDERS",

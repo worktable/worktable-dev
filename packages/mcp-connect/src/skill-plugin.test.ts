@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs"
@@ -11,6 +12,7 @@ import { join } from "node:path"
 import {
   antigravitySource,
   devinSource,
+  installFromWorktable,
   piSource,
   removeProjectedSkills,
   setUpSkills,
@@ -354,34 +356,41 @@ describe("Worktable's skills for a connected coding agent", () => {
     expect(piSource("worktable/worktable-plugin")).toBe("git:github.com/worktable/worktable-plugin")
     expect(piSource("/mirror/plugin")).toBe("/mirror/plugin")
 
-    // `pi list` prints each package's source under "User packages:".
-    const piPackages: string[] = []
-    const pi = await setUpSkills("pi", {
-      run: (_command, args) => {
-        if (args[0] === "list")
-          return ok(piPackages.length ? `User packages:\n${piPackages.map((source) => `  ${source}\n    /home/.pi/agent/git/github.com/worktable/worktable-plugin`).join("\n")}\n` : "No packages installed.\n")
-        piPackages.push(args[1]!)
-        return ok()
-      },
-      env: {},
-      projectSkills: async () => {
-        throw new Error("must not copy when the package installs")
-      },
-    })
-    expect(piPackages).toEqual(["git:github.com/worktable/worktable-plugin"])
-    expect(pi.outcome).toEqual({ via: "plugin", alreadyInstalled: false })
+    // `pi list` prints the user's packages, then a project's, which loads only
+    // there. A folder shows relative to Pi's own, with its full path below.
+    const project =
+      "Project packages:\n  git:github.com/worktable/worktable-plugin\n    /work/.pi/git/github.com/worktable/worktable-plugin\n"
+    for (const [marketplace, listed] of [
+      [undefined, "  git:github.com/worktable/worktable-plugin\n    /home/.pi/agent/git/github.com/worktable/worktable-plugin"],
+      ["/mirror/my plugin", "  ../../../mirror/my plugin\n    /mirror/my plugin"],
+    ] as const) {
+      const piPackages: string[] = []
+      const pi = await setUpSkills("pi", {
+        run: (_command, args) => {
+          if (args[0] === "list") return ok(`${piPackages.length ? `User packages:\n${listed}\n\n` : ""}${project}`)
+          piPackages.push(args[1]!)
+          return ok()
+        },
+        env: marketplace ? { WORKTABLE_PLUGIN_MARKETPLACE: marketplace } : {},
+        projectSkills: async () => {
+          throw new Error("must not copy when the package installs")
+        },
+      })
+      expect(piPackages).toEqual([piSource(marketplace ?? "worktable/worktable-plugin")])
+      expect(pi.outcome).toEqual({ via: "plugin", alreadyInstalled: false })
+    }
 
     // Droid names the marketplace after its repository, already added or not.
     const droidCalls: string[] = []
     const droidPlugins: string[] = []
-    const droid = (added: boolean) => (_command: string, args: string[]): CommandResult => {
+    const droid = (added: boolean, name = "worktable-plugin") => (_command: string, args: string[]): CommandResult => {
       droidCalls.push(args.join(" "))
       if (args[1] === "list")
         return ok(droidPlugins.length ? `PLUGIN  STATUS  SOURCE  VERSION\n${droidPlugins.map((id) => `${id}  Enabled  user  494ae5835a99`).join("\n")}\n` : "No plugins installed in user scope.\n")
       if (args[1] === "marketplace")
         return added
-          ? { status: 1, stdout: "", stderr: 'Error: Marketplace "worktable-plugin" already exists' }
-          : ok("Successfully added marketplace: worktable-plugin\n")
+          ? { status: 1, stdout: "", stderr: `Error: Marketplace "${name}" already exists` }
+          : ok(`Successfully added marketplace: ${name}\n`)
       droidPlugins.push(args[2]!)
       return ok()
     }
@@ -391,6 +400,11 @@ describe("Worktable's skills for a connected coding agent", () => {
       expect(report.outcome).toEqual({ via: "plugin", alreadyInstalled: false })
     }
     expect(droidCalls).toContain("plugin install worktable-skills@worktable-plugin --scope user")
+    // A pinned marketplace's name carries its pin.
+    droidPlugins.length = 0
+    const pinned = await setUpSkills("droid", { run: droid(false, "worktable-plugin@v1.2.0"), env: {} })
+    expect(pinned.outcome).toEqual({ via: "plugin", alreadyInstalled: false })
+    expect(droidCalls).toContain("plugin install worktable-skills@worktable-plugin@v1.2.0 --scope user")
     // The full plugin, from Factory's or our marketplace, already carries the skills.
     droidPlugins.splice(0, droidPlugins.length, "worktable@worktable-plugin")
     expect((await setUpSkills("droid", { run: droid(true), env: {} })).outcome).toEqual({ via: "full-plugin" })
@@ -408,6 +422,38 @@ describe("Worktable's skills for a connected coding agent", () => {
     expect(missing.lines).toEqual([
       "  Couldn't install the Worktable plugin in Pi (no pi command found), so its skills were copied to ~/.agents/skills instead.",
     ])
+  })
+
+  it("builds Worktable Skills as a Kiro Power and an Antigravity plugin from the served skills", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) =>
+        new URL(request.url).pathname.endsWith("/index.json")
+          ? Response.json({ skills: [{ name: "worktable-library", version: "1", files: ["SKILL.md"] }] })
+          : new Response("# Library\n"),
+    })
+    try {
+      const manifests: Record<string, unknown> = {}
+      const run = (command: string, args: string[]): CommandResult => {
+        const folder = args[args.length - 1]!
+        const path = command === "agy" ? join(folder, ".antigravity-plugin", "plugin.json") : join(folder, "plugin.json")
+        manifests[command] = JSON.parse(readFileSync(path, "utf8"))
+        expect(readFileSync(join(folder, "skills", "worktable-library", "SKILL.md"), "utf8")).toBe("# Library\n")
+        return ok()
+      }
+      const origin = `http://127.0.0.1:${server.port}`
+      expect(await installFromWorktable(origin, "kiro", run)).toBeNull()
+      expect(await installFromWorktable(origin, "antigravity", run)).toBeNull()
+      // Kiro requires these, and its schema takes nothing else at the top.
+      const power = manifests["kiro-cli"] as Record<string, unknown>
+      expect(Object.keys(power).sort()).toEqual(["$schema", "author", "description", "keywords", "name", "version"])
+      expect(power).toMatchObject({ name: "worktable-skills", author: { name: "Reva Labs" } })
+      expect(power["keywords"]).toContain("worktable")
+      expect(manifests["agy"]).toMatchObject({ name: "worktable-skills", displayName: "Worktable" })
+    } finally {
+      server.stop(true)
+    }
   })
 
   it("installs Worktable Skills in Kiro as a Power built from the Worktable's skills", async () => {
@@ -437,6 +483,25 @@ describe("Worktable's skills for a connected coding agent", () => {
     // Installed once, it is left as it is.
     const again = await setUpSkills("kiro", { env, installFromWorktable: async () => "must not install twice" })
     expect(again.outcome).toEqual({ via: "plugin", alreadyInstalled: true })
+
+    // A list it can't read is Kiro's failure, never a reason to install in Antigravity.
+    writeFileSync(join(powers, "installed.json"), JSON.stringify({ installedPowers: "broken" }))
+    built.length = 0
+    const unreadable = await setUpSkills(
+      "kiro",
+      {
+        env,
+        installFromWorktable: async (origin, client) => {
+          built.push(`${client} ${origin}`)
+          return null
+        },
+      },
+      "http://127.0.0.1:7480"
+    )
+    expect(built).toEqual([])
+    expect(unreadable.lines).toEqual([
+      "  Couldn't add Worktable's skills to Kiro (couldn't read its installed Powers). See https://docs.worktable.dev/agents/skills/",
+    ])
 
     rmSync(powers, { recursive: true })
     const missing = await setUpSkills("kiro", { env, installFromWorktable: async () => "no kiro-cli command found" }, "http://127.0.0.1:7480")

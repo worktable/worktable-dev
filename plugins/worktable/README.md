@@ -171,6 +171,13 @@ claude plugin update worktable@worktable
 claude plugin uninstall worktable@worktable
 ```
 
+In Pi, the server and the package are separate, so remove both:
+
+```text
+pi remove git:github.com/worktable/worktable-plugin
+pi mcp remove worktable
+```
+
 Other hosts manage packages through their plugin interface. Removing the plugin
 removes its connection and bundled skills. It does not delete workspace content
 or close your account. Revoke access in Worktable separately.

@@ -278,6 +278,39 @@ export function removeJsonUrl(path: string, places: JsonEntryPlaces): void {
 
 // ---- Per-client config locations and entry shapes ---------------------------
 
+/**
+ * Every variable, besides HOME and XDG_CONFIG_HOME, that moves where the
+ * paths below find a client's servers or where its skills are copied. An
+ * isolated run clears them all; add a client's own here with its path.
+ */
+export const CLIENT_CONFIG_ENV_KEYS = [
+  "WORKTABLE_CODEX_CONFIG",
+  "WORKTABLE_CURSOR_MCP_CONFIG",
+  "WORKTABLE_OPENCODE_CONFIG",
+  "WORKTABLE_KILO_CONFIG",
+  "WORKTABLE_VSCODE_MCP_CONFIG",
+  "WORKTABLE_COPILOT_MCP_CONFIG",
+  "WORKTABLE_ANTIGRAVITY_MCP_CONFIG",
+  "WORKTABLE_DEVIN_MCP_CONFIG",
+  "WORKTABLE_JUNIE_MCP_CONFIG",
+  "WORKTABLE_ZED_SETTINGS",
+  "WORKTABLE_CLINE_MCP_CONFIG",
+  "WORKTABLE_WARP_MCP_CONFIG",
+  "WORKTABLE_PI_MCP_CONFIG",
+  "WORKTABLE_DROID_MCP_CONFIG",
+  "WORKTABLE_AMP_SETTINGS",
+  "WORKTABLE_KIRO_MCP_CONFIG",
+  "WORKTABLE_SKILL_HOME",
+  "CLAUDE_CONFIG_DIR",
+  "CODEX_HOME",
+  "COPILOT_HOME",
+  "JUNIE_HOME",
+  "CLINE_MCP_SETTINGS_PATH",
+  "CLINE_DATA_DIR",
+  "CLINE_DIR",
+  "PI_CODING_AGENT_DIR",
+] as const;
+
 export function cursorPath(): string {
   return process.env["WORKTABLE_CURSOR_MCP_CONFIG"]?.trim() || join(homedir(), ".cursor", "mcp.json");
 }
@@ -1216,7 +1249,8 @@ export function detectClient(id: ConnectorInstallableMcpClientId): boolean {
     case "zed":
       return commandExists("zed") || commandExists("zeditor") || existsSync(dirname(zedPath()));
     case "cline":
-      return commandExists("cline") || existsSync(join(homedir(), ".cline"));
+      // Its data folder, wherever CLINE_DIR or CLINE_DATA_DIR moved it.
+      return commandExists("cline") || existsSync(join(homedir(), ".cline")) || existsSync(dirname(dirname(clinePath())));
     // Warp has no command of its own; its folder appears once it runs.
     case "warp":
       return existsSync(dirname(warpPath()));

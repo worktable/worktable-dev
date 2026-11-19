@@ -79,6 +79,11 @@ const MARKETPLACE_NAME = "worktable"
 const SKILLS_INSTALLER = "https://worktable.dev/install-skills"
 const SKILLS_GUIDE = "https://docs.worktable.dev/agents/skills/"
 
+/** The marketplace setup installs from. */
+function selectedMarketplace(env: NodeJS.ProcessEnv): string {
+  return env["WORKTABLE_PLUGIN_MARKETPLACE"]?.trim() || DEFAULT_PLUGIN_MARKETPLACE
+}
+
 export function isSkillPluginClient(id: string | null): id is SkillPluginClient {
   return (SKILL_PLUGIN_CLIENTS as readonly string[]).includes(id ?? "")
 }
@@ -297,20 +302,32 @@ function devinPlugins(dependencies: SkillPluginDependencies): { names: string[] 
 }
 
 /**
- * Pi lists each package's source in `pi list`. Pi takes the plugin's
- * repository as a package of its skills, so that is Worktable Skills there.
+ * Pi lists each package's source in `pi list`, a folder relative to Pi's own
+ * with its full path on the next line. Pi takes the plugin's repository as a
+ * package of its skills, so that is Worktable Skills there. Only the user's
+ * packages count: a project's load only inside that project.
  */
 function piPackages(dependencies: SkillPluginDependencies): { names: string[] } | { error: string } {
   const result = dependencies.run("pi", ["list"])
   if (result.status !== 0) return { error: firstLine(result, "pi") }
-  return { names: /^\s+\S*worktable-plugin\S*\s*$/m.test(result.stdout) ? [SKILLS_PLUGIN] : [] }
+  const lines = result.stdout.split(/\r?\n/)
+  const start = lines.findIndex((line) => line.trim() === "User packages:")
+  const entries: string[] = []
+  for (const line of start < 0 ? [] : lines.slice(start + 1)) {
+    if (!/^\s/.test(line)) break
+    entries.push(line.trim().replace(/ \(filtered\)$/, ""))
+  }
+  const source = piSource(selectedMarketplace(dependencies.env))
+  const listed = entries.some((entry) => entry === source || /\bworktable-plugin\b/.test(entry))
+  return { names: listed ? [SKILLS_PLUGIN] : [] }
 }
 
 /** `droid plugin list` prints a table of `<plugin>@<marketplace>` rows. */
 function droidPlugins(dependencies: SkillPluginDependencies): { names: string[] } | { error: string } {
   const result = dependencies.run("droid", ["plugin", "list", "--scope", "user"])
   if (result.status !== 0) return { error: firstLine(result, "droid") }
-  return { names: [...result.stdout.matchAll(/^([\w.-]+)@[\w.-]+\s/gm)].map((match) => match[1]!) }
+  // A pinned marketplace's name carries its pin: `worktable-plugin@v1.2.0`.
+  return { names: [...result.stdout.matchAll(/^([\w.-]+)@[\w.@-]+\s/gm)].map((match) => match[1]!) }
 }
 
 /** Kiro lists the Powers it installed in ~/.kiro/powers/installed.json. */
@@ -406,12 +423,15 @@ export function piSource(marketplace: string): string {
   return marketplace
 }
 
-/** Droid names a marketplace after its repository, and says so either way. */
+/**
+ * Droid names a marketplace after its repository, with `@<pin>` for a pinned
+ * one, and says so either way.
+ */
 function droidMarketplaceName(result: CommandResult): string | null {
   const text = `${result.stdout}\n${result.stderr}`
   return (
-    /added marketplace:\s*([\w.-]+)/i.exec(text)?.[1] ??
-    /Marketplace "([\w.-]+)" already exists/i.exec(text)?.[1] ??
+    /added marketplace:\s*([\w.@-]+)/i.exec(text)?.[1] ??
+    /Marketplace "([\w.@-]+)" already exists/i.exec(text)?.[1] ??
     null
   )
 }
@@ -531,9 +551,7 @@ export async function setUpSkills(
   const noun = client === "pi" ? "package" : client === "kiro" ? "Power" : "plugin"
   const target = TARGETS[client]
   const folder = target ? TARGET_FOLDERS[target] : null
-  const marketplace =
-    dependencies.env["WORKTABLE_PLUGIN_MARKETPLACE"]?.trim() ||
-    DEFAULT_PLUGIN_MARKETPLACE
+  const marketplace = selectedMarketplace(dependencies.env)
   const lines: string[] = []
   const report = (outcome: SkillsOutcome): SkillsReport => ({
     outcome,
@@ -568,9 +586,14 @@ export async function setUpSkills(
 
   let reason: string
   const before = installedPlugins(client, dependencies)
-  if (client === "kiro" && "names" in before && !before.names.includes(FULL_PLUGIN) && !before.names.includes(SKILLS_PLUGIN)) {
+  if (client === "kiro" && !("names" in before && (before.names.includes(FULL_PLUGIN) || before.names.includes(SKILLS_PLUGIN)))) {
     // Kiro installs Powers from a folder: Worktable Skills, built from the skills this Worktable serves.
-    const failed = origin ? await dependencies.installFromWorktable(origin, "kiro") : "no Worktable to install from"
+    const failed =
+      "error" in before
+        ? before.error
+        : origin
+          ? await dependencies.installFromWorktable(origin, "kiro")
+          : "no Worktable to install from"
     const after = failed ? null : installedPlugins(client, dependencies)
     if (after && "names" in after && after.names.includes(SKILLS_PLUGIN)) {
       lines.push(`  ${label}: Worktable skills ${noun} installed`)
@@ -611,7 +634,7 @@ export async function setUpSkills(
   if (!target) {
     // Antigravity: the same plugin, built from the skills this Worktable serves.
     const failed =
-      origin && !/^no agy command/.test(reason)
+      client === "antigravity" && origin && !/^no agy command/.test(reason)
         ? await dependencies.installFromWorktable(origin, "antigravity")
         : "no copy to install"
     const after = failed ? null : installedPlugins(client, dependencies)
@@ -691,21 +714,30 @@ export async function installFromWorktable(
       .slice(0, 12)
     const manifest = {
       name: SKILLS_PLUGIN,
-      displayName: "Worktable",
       description: "Worktable's skills, from the Worktable this agent connects to.",
       version: `0.0.0-${version}`,
     }
     if (client === "kiro") {
-      // A Power in the Agent Plugins format: plugin.json at its root.
+      // A Power in the Agent Plugins format: plugin.json at its root. Kiro
+      // needs an author, and its keywords are the words that load the Power.
       writeFileSync(
         join(directory, "plugin.json"),
-        `${JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", ...manifest }, null, 2)}\n`
+        `${JSON.stringify(
+          {
+            $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+            ...manifest,
+            author: { name: "Reva Labs", url: "https://www.worktable.cloud" },
+            keywords: ["worktable", "workspace", "docs", "records", "agent collaboration"],
+          },
+          null,
+          2
+        )}\n`
       )
       const installed = run("kiro-cli", ["powers", "install", directory])
       return installed.status === 0 ? null : firstLine(installed, "kiro-cli")
     }
     mkdirSync(join(directory, ".antigravity-plugin"))
-    writeFileSync(join(directory, ".antigravity-plugin", "plugin.json"), `${JSON.stringify(manifest, null, 2)}\n`)
+    writeFileSync(join(directory, ".antigravity-plugin", "plugin.json"), `${JSON.stringify({ ...manifest, displayName: "Worktable" }, null, 2)}\n`)
     const installed = run("agy", ["plugin", "install", directory])
     return installed.status === 0 ? null : firstLine(installed, "agy")
   } catch (error) {

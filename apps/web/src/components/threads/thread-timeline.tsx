@@ -235,6 +235,13 @@ function ThreadConversation({
     const start = openingStart(messages)
     return start > 0 ? messages[start]!.id : null
   })
+  // The messages the thread opens with lay out at their real size before the
+  // first paint, so the opening position is right the first time. With
+  // estimated sizes the scroller placed the thread, the real sizes arrived a
+  // frame later, and it had to place it again, two or three times over.
+  const [openedWith] = useState(
+    () => new Set(messages.slice(openingStart(messages)).map(({ id }) => id))
+  )
   const firstRendered =
     renderFrom === null
       ? 0
@@ -329,7 +336,11 @@ function ThreadConversation({
     const rows: ReactNode[] = []
     if (firstRendered === 0 && hasOlder && canLoadOlder) {
       rows.push(
-        <MessageScrollerItem key="load-older" className="pb-5 text-center">
+        <MessageScrollerItem
+          key="load-older"
+          eager
+          className="pb-5 text-center"
+        >
           <Button
             type="button"
             size="sm"
@@ -378,6 +389,7 @@ function ThreadConversation({
         rows.push(
           <MessageScrollerItem
             key={`date:${message.id}`}
+            eager
             className={index === 0 ? "pb-5" : "mt-8 pb-5"}
           >
             <Marker variant="separator" className="text-xs">
@@ -394,6 +406,7 @@ function ThreadConversation({
           id={`thread-message-${message.id}`}
           messageId={message.id}
           scrollAnchor={message.responseRequest !== undefined}
+          eager={openedWith.has(message.id)}
           className={
             index === 0 || startsDate
               ? undefined
@@ -446,6 +459,7 @@ function ThreadConversation({
     members,
     messages,
     messagesById,
+    openedWith,
     reply,
     respond,
     targetIdentities,

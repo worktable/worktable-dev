@@ -70,14 +70,24 @@ function MessageScrollerContent({
 function MessageScrollerItem({
   className,
   scrollAnchor = false,
+  eager = false,
   ...props
-}: React.ComponentProps<typeof MessageScrollerPrimitive.Item>) {
+}: React.ComponentProps<typeof MessageScrollerPrimitive.Item> & {
+  /**
+   * Lay the item out at its real size at once. Other items take an estimated
+   * size until they come near the screen, which is cheaper for a long list
+   * but moves everything after them when the real size arrives.
+   */
+  eager?: boolean
+}) {
   return (
     <MessageScrollerPrimitive.Item
       data-slot="message-scroller-item"
       scrollAnchor={scrollAnchor}
       className={cn(
-        "min-w-0 shrink-0 [contain-intrinsic-size:auto_10rem] [content-visibility:auto]",
+        "min-w-0 shrink-0",
+        !eager &&
+          "[contain-intrinsic-size:auto_10rem] [content-visibility:auto]",
         className
       )}
       {...props}

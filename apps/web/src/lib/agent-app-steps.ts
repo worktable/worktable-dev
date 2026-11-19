@@ -181,7 +181,8 @@ const NONE: Skills = { via: "none" }
 /** One way to connect an app, and how its skills arrive. */
 export type Way =
   /** The Worktable plugin in Claude. `link` when it reaches this Worktable through Link. */
-  (| { kind: "claude-plugin"; link: boolean }
+  (
+    | { kind: "claude-plugin"; link: boolean }
     /** The official Worktable app in ChatGPT. */
     | { kind: "chatgpt-app"; link: boolean }
     /** A coding agent's plugin, installed from the terminal. */
@@ -459,8 +460,8 @@ export function addressStep(
       }
     case "devin":
       return {
-        step: "Run this in your terminal, then open the link it prints and sign in.",
-        value: `devin mcp add --scope user worktable ${mcpUrl}`,
+        step: "Run this in your terminal, then sign in at the link it opens.",
+        value: `devin mcp add --scope user worktable ${mcpUrl} && devin mcp login worktable`,
       }
     case "junie":
       return {

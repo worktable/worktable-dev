@@ -349,6 +349,7 @@ export function desktopEnvironment(
     "OPENAI_API_KEY",
     "CLAUDE_CONFIG_DIR",
     "CODEX_HOME",
+    "JUNIE_HOME",
     "HOST",
     "PORT",
   ])

@@ -1215,6 +1215,13 @@ function SetupCard({
             active={active}
             onRenamed={(name) => onRenamed(connected, name)}
           />
+          {/* Signing in can finish before the skills command was run. */}
+          {ways.best.kind === "address" && ways.best.skills.via === "url" ? (
+            <div className="mt-5">
+              <Instruction>Run this for Worktable’s skills.</Instruction>
+              <CommandBlock value={skillsCommand(ways.best.skills.target)} />
+            </div>
+          ) : null}
           {onDone ? (
             <div className="mt-5 flex justify-end">
               <Button onClick={onDone}>Done</Button>

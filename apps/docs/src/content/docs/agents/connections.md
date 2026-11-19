@@ -103,11 +103,10 @@ in JetBrains IDEs and Junie CLI. On local or self-hosted Worktable, choose
 Then start a new session.
 
 On Worktable Cloud, add the server and sign in, then add the skills. For
-Devin, run this and open the link it prints to sign in, or run
-`devin mcp login worktable` later:
+Devin, run this and sign in at the link it opens:
 
 ```sh
-devin mcp add --scope user worktable https://app.worktable.cloud/api/mcp
+devin mcp add --scope user worktable https://app.worktable.cloud/api/mcp && devin mcp login worktable
 ```
 
 For Junie, add this to `~/.junie/mcp/mcp.json`, then run `/mcp` in Junie,

@@ -1228,7 +1228,9 @@ export function signInInstruction(id: ConnectorInstallableMcpClientId): string {
     case "antigravity":
       return "In Antigravity, open MCP servers and sign in to worktable.";
     case "devin":
-      return "Run: devin mcp login worktable";
+      return commandExists("devin")
+        ? "Run: devin mcp login worktable"
+        : "Open Devin, then sign in to worktable from its MCP settings.";
     case "junie":
       return "In Junie, run /mcp, choose worktable and Authorize.";
   }

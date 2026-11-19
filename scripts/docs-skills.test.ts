@@ -50,6 +50,9 @@ test("publishes complete canonical skill packages and matching readable workflow
     expect(catalog.skills.map((skill: { name: string }) => skill.name)).toEqual(
       WORKTABLE_SKILLS.map((skill) => skill.name)
     )
+    // A catalog OpenCode and Kilo refresh from: each skill has a version.
+    for (const skill of catalog.skills)
+      expect(skill.version).toMatch(/^[0-9a-f]{16}$/)
     expect(
       await Bun.file(
         join(output, ".well-known/skills/retired/SKILL.md")

@@ -227,6 +227,11 @@ export async function publishSkills(rootDir: string): Promise<string[]> {
     pages.push(relPath)
     catalog.push({
       name,
+      // OpenCode and Kilo download a skill again when its version changes.
+      version: createHash("sha256")
+        .update(JSON.stringify(digests))
+        .digest("hex")
+        .slice(0, 16),
       description,
       files: skill.files,
       url: `/agents/${page.slug}/`,

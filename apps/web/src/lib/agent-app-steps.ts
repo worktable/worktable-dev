@@ -66,6 +66,8 @@ export type AppId =
   | "hermes"
   | "grok-bot"
   | "cursor"
+  | "opencode"
+  | "kilo"
   | "gemini"
   | "gemini-cli"
   | "antigravity"
@@ -94,6 +96,8 @@ export const AGENT_APPS: AgentApp[] = [
   { id: "hermes", name: "Hermes", platform: "hermes", alwaysOn: true },
   { id: "grok-bot", name: "Grok Bot", platform: "grok-bot", alwaysOn: true },
   { id: "cursor", name: "Cursor", platform: "cursor" },
+  { id: "opencode", name: "OpenCode", platform: "opencode" },
+  { id: "kilo", name: "Kilo", platform: "kilo" },
   { id: "gemini", name: "Gemini", platform: "gemini" },
   { id: "gemini-cli", name: "Gemini CLI", platform: "gemini-cli" },
   { id: "antigravity", name: "Antigravity", platform: "antigravity" },
@@ -117,6 +121,14 @@ export function isPluginApp(app: AppId): app is PluginApp {
   return (PLUGIN_APPS as readonly AppId[]).includes(app)
 }
 
+/**
+ * Worktable's skills as a catalog OpenCode and Kilo load from a URL and keep
+ * current. A Worktable on a computer or server serves its own at
+ * /.well-known/skills/, which the connect command adds; Cloud apps use this
+ * one, from the docs site.
+ */
+export const SKILL_CATALOG = "https://docs.worktable.dev/.well-known/skills/"
+
 /** The Gemini app takes one skill folder. */
 export const GEMINI_SKILL_DOWNLOAD =
   "https://docs.worktable.dev/downloads/skills/gemini/worktable.tar"
@@ -133,6 +145,12 @@ export type Skills =
   | { via: "connect-plugin" }
   /** The connect command adds them from Worktable's installer. */
   | { via: "url"; target: "claude" | "agents" }
+  /**
+   * The app loads them from a skills address and keeps them current: the
+   * connect command adds this Worktable's, or Cloud's setup has you paste
+   * SKILL_CATALOG with the server.
+   */
+  | { via: "catalog" }
   /** A skill file to upload in the app. */
   | { via: "files"; href: string }
   | { via: "none" }
@@ -180,6 +198,7 @@ function codingSkills(app: "claude-code" | "codex"): Skills {
 }
 
 const CONNECT_PLUGIN: Skills = { via: "connect-plugin" }
+const CATALOG: Skills = { via: "catalog" }
 
 /**
  * The best way to connect an app here, then the others that work. Null
@@ -240,6 +259,16 @@ export function waysFor(app: AppId, where: Where): AppWays | null {
           }
         : {
             best: { kind: "pairing", client: "cursor", skills: NONE },
+            others: [],
+          }
+    // Cloud's connect command doesn't know Kilo or the skills address yet,
+    // so on Cloud both paste the server and the skills address.
+    case "opencode":
+    case "kilo":
+      return cloud
+        ? { best: { kind: "address", skills: CATALOG }, others: [] }
+        : {
+            best: { kind: "pairing", client: app, skills: CATALOG },
             others: [],
           }
     case "openclaw":
@@ -361,6 +390,16 @@ export function addressStep(
         step: "In Antigravity, add an MCP server with this address, then sign in.",
         value: mcpUrl,
       }
+    case "opencode":
+      return {
+        step: "Add this to ~/.config/opencode/opencode.json. Then run opencode mcp auth worktable and sign in.",
+        value: catalogConfig(mcpUrl),
+      }
+    case "kilo":
+      return {
+        step: "Add this to ~/.config/kilo/kilo.jsonc. Then run kilo mcp auth worktable and sign in.",
+        value: catalogConfig(mcpUrl),
+      }
     case "perplexity":
       return {
         step: "In Perplexity, open Connectors and add a custom connector with this address, then sign in.",
@@ -372,6 +411,18 @@ export function addressStep(
         value: mcpUrl,
       }
   }
+}
+
+/** OpenCode's and Kilo's settings for Worktable on Cloud: the server and the skills. */
+function catalogConfig(mcpUrl: string): string {
+  return JSON.stringify(
+    {
+      mcp: { servers: { worktable: { type: "remote", url: mcpUrl } } },
+      skills: [SKILL_CATALOG],
+    },
+    null,
+    2
+  )
 }
 
 /** What each app's step has you paste or run. */

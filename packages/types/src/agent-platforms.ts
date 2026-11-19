@@ -15,6 +15,7 @@ export const AGENT_PLATFORM_IDS = [
   "codex",
   "cursor",
   "opencode",
+  "kilo",
   "vscode",
   "goose",
   "antigravity",
@@ -106,6 +107,7 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
     mode: "on-demand",
     logo: "opencode.svg",
   },
+  kilo: { id: "kilo", name: "Kilo", mode: "on-demand", logo: "kilo.svg" },
   vscode: {
     id: "vscode",
     name: "VS Code",
@@ -151,6 +153,7 @@ const CLIENT_PLATFORMS: Record<string, AgentPlatformId> = {
   codex: "codex",
   cursor: "cursor",
   opencode: "opencode",
+  kilo: "kilo",
   vscode: "vscode",
   goose: "goose",
   // Names these apps sign in with. The Gemini app registers as "Google"

@@ -182,6 +182,7 @@ Support maturity and configuration method are separate:
 | `codex`          | Codex CLI and IDE              | Connector-installable or provider-native Settings       |
 | `cursor`         | Cursor                                             | Connector-installable                                   |
 | `opencode`       | OpenCode                                           | Connector-installable                                   |
+| `kilo`           | Kilo CLI                                           | Connector-installable                                   |
 | `vscode`         | VS Code                                            | Connector-installable                                   |
 | `goose`          | Goose                                              | Manual snippet                                          |
 | `claude-desktop` | Claude Desktop and supported local Cowork releases | Desktop extension or Cloud OAuth                        |

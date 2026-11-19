@@ -51,6 +51,8 @@ Plugins already include skills, so don't install a second copy:
   there. It also removes skills an earlier command copied, so none show twice.
   If the plugin can't be installed, the command copies the skills instead, as
   below, and says so.
+- OpenCode and Kilo load the same skills from a [skills address](#skills-address).
+  The connect command adds it.
 - The Hermes plugin bundles the same skills except Check the Library. Hermes
   lists your team's skills itself.
 - The OpenClaw plugin bundles all of them except Check the Library, for the
@@ -85,6 +87,27 @@ curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents
 
 This does not install the app, create a workspace, or configure MCP.
 
+### Skills address
+
+OpenCode and Kilo load skills from an address and download a skill again when
+it changes. Each Worktable serves its own skills at `/.well-known/skills/`,
+for example `http://localhost:7480/.well-known/skills/`, matching its release.
+For Worktable Cloud, use this site's
+`https://docs.worktable.dev/.well-known/skills/`.
+
+The connect command for a local or self-hosted Worktable adds the address to
+the `skills` setting in `~/.config/opencode/opencode.json` or
+`~/.config/kilo/kilo.jsonc`. If the Worktable doesn't serve it, the command
+copies the skills to `~/.agents/skills` instead, which both read, and says so.
+To add it yourself:
+
+```json
+{ "skills": ["http://localhost:7480/.well-known/skills/"] }
+```
+
+Restart OpenCode, or run `/reload` in Kilo, to load them. A skill from the
+address replaces a copied one with the same name.
+
 ### Gemini app
 
 The Gemini app takes one skill folder and never updates it. Download
@@ -111,7 +134,8 @@ plan with `--plan-id <id> --yes`.
 - `remove` deletes only unchanged files that Worktable installed.
 
 With the skills-only installer, put `status`, `update`, `repair`, or `remove`
-before `--target`. Plugin skills update with the plugin. Skills you copied by
+before `--target`. Plugin skills update with the plugin, and skills from an
+address update with the Worktable that serves them. Skills you copied by
 hand are yours to update or remove.
 
 Bundled skills match the installed Worktable or plugin release. Downloads on

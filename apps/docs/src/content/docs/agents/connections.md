@@ -16,15 +16,17 @@ worktable mcp setup
 ```
 
 To set up one client, run `worktable mcp setup <client>` with `claude-code`,
-`codex`, `cursor`, `vscode`, or `opencode`. For Goose, use the configuration
-from `worktable mcp print-config goose`.
+`codex`, `cursor`, `vscode`, `opencode`, or `kilo`. For Goose, use the
+configuration from `worktable mcp print-config goose`.
 
 For an agent on another computer, choose it under **Connect App** and copy its
 command, or run `worktable agent invite` on the Worktable host. The command
 redeems a single-use pairing code. For Claude Code and Codex, the same command
 then installs Worktable's [skills](/agents/skills/) as a plugin, which the agent
-updates with its other plugins. The host must be reachable from that computer;
-see [Remote access](/guides/remote-access/).
+updates with its other plugins. For OpenCode and Kilo, it adds this Worktable's
+[skills address](/agents/skills/#skills-address), so they load the skills from
+it. The host must be reachable from that computer; see
+[Remote access](/guides/remote-access/).
 
 For **Worktable Cloud**, Claude Code and Codex install the [plugin](#plugins).
 When the plugin would work in another of your Worktables, Settings shows this
@@ -40,13 +42,37 @@ or create an access token under **Other Ways** and copy it while it is shown.
 Once an agent connects, the same card shows its name and access. Change them
 there, or later with **Edit** under **Connected Agents**.
 
+### OpenCode and Kilo
+
+On local or self-hosted Worktable, choose **OpenCode** or **Kilo** and run the
+command shown. It writes the server to `~/.config/opencode/opencode.json` or
+`~/.config/kilo/kilo.jsonc` under `mcp.servers`, moves a `worktable` entry an
+earlier version wrote directly under `mcp`, and keeps your other servers. Then
+restart OpenCode, or run `/reload` in Kilo.
+
+On Worktable Cloud, add the settings shown under **Connect App** to the same
+file, then run `opencode mcp auth worktable` or `kilo mcp auth worktable` and
+sign in. They name Cloud's address and the
+[skills address](/agents/skills/#skills-address) on this site:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "worktable": { "type": "remote", "url": "https://app.worktable.cloud/api/mcp" }
+    }
+  },
+  "skills": ["https://docs.worktable.dev/.well-known/skills/"]
+}
+```
+
 ## Plugins
 
 The general Worktable plugin bundles skills and a **Cloud connection** to
 `https://app.worktable.cloud/api/mcp`. For local or self-hosted Worktable, the
 connect command sets up Claude Code and Codex with this Worktable's connection
-and Worktable Skills, the same skills without the Cloud connection. For other
-clients, use that installation's MCP configuration and install
+and Worktable Skills, the same skills without the Cloud connection, and
+OpenCode and Kilo with its skills address. For other clients, use that installation's MCP configuration and install
 [skills](/agents/skills/) separately if your client supports them.
 
 For Claude Code:

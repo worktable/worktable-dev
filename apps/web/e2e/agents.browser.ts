@@ -293,6 +293,8 @@ test("Cloud shows equivalent setup and inventory without touching local credenti
     "Hermes",
     "Grok Bot",
     "Cursor",
+    "OpenCode",
+    "Kilo",
     "Gemini",
     "Gemini CLI",
     "Antigravity",
@@ -829,6 +831,7 @@ test("an agent connected from its card is named and narrowed there, keeps its lo
     ["Claude Code", "claude-code", "Claude Code", "claude-code.svg"],
     ["Codex", "codex", "Codex CLI", "codex.svg"],
     ["Cursor", "cursor", "Cursor", "cursor.svg"],
+    ["Kilo", "kilo", "Kilo", "kilo.svg"],
     ["Other", "opencode", "opencode", "opencode.svg"],
     ["Other", "vscode", "VS Code", "vscode.svg"],
   ] as const) {

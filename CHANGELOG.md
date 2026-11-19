@@ -25,6 +25,8 @@ infrastructure and personal context out of release notes.
 
 - **Thread switching:** Opening a thread shows it in its final position at once, without the conversation jumping or blinking.
 - **Agent logos:** Repeat visits reuse cached logos without downloading them again.
+- **Uninstall:** `worktable uninstall` leaves your agents connected when it can't remove the background service in the current session.
+- **Agent tokens in the terminal:** `worktable mcp setup` says in plain words which agents got new tokens and what happens to the old ones.
 - **Agent avatars:** An agent named with its app, like "Ada (Claude)" or "codex@laptop", shows that app's logo, and initials skip brackets.
 - **Version history:** A Doc's history no longer comes back empty when something else in its Space is saved at the same moment.
 - **Unanswered messages:** A message an agent never answered says whether the agent got it or took it and went quiet.

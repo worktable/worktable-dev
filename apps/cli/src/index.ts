@@ -4465,10 +4465,17 @@ async function mcpSetup(selection: string[]): Promise<void> {
   applyRuntimeConfig(config)
   if (!isLoopbackHost(config.service.host)) {
     const results = await setupManagedClients(clients, false)
+    const one = results.length === 1
+    // Every connected agent gets a new token, since any of them may still hold
+    // the old shared one; say so when that is more than the command named.
+    const others =
+      results.length > clients.length
+        ? " Your other connected agents got new tokens too."
+        : ""
     console.log()
     console.log(
       style.yellow(
-        `Committed the managed MCP credential rotation after updating ${results.length} local agent${results.length === 1 ? "" : "s"}. Remote agents connected with \`worktable agent connect\` keep working; if a remote agent still used the legacy shared credential, reconnect it with \`worktable agent invite\`.`
+        `Updated ${results.length} agent${one ? "" : "s"} on this machine. ${one ? "It has" : "Each has"} a new token, and the old ${one ? "one" : "ones"} no longer work${one ? "s" : ""}.${others} Agents on other machines keep working unless they used the old shared token; reconnect those with \`worktable agent invite\`.`
       )
     )
   } else {
@@ -5264,6 +5271,11 @@ async function commandUninstall(opts: {
     // uninstall step, then retain the shared lifecycle lock through all cleanup.
     const uninstallCompleted = withPreparedSkillProjectionsDuringUninstall(
       (skillLifecycle) => {
+        // 0. Check the service can be removed in this session before anything
+        //    is taken apart, so a teardown that can't finish leaves agents
+        //    connected.
+        if (runServiceOp(() => prepareServiceUninstall()) === null) return false
+
         // 1. Disconnect MCP clients first — this runs external CLIs (`claude mcp
         //    remove`) and rewrites agent config files, and needs config still on disk.
         //    Best-effort per client: a missing/locked agent config must not abort the

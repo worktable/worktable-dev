@@ -56,11 +56,11 @@ import type {
 import {
   convertDoc,
   convertDocToMarkdown,
-  restoreDoc,
   exportDocMarkdown,
   downloadDocMarkdown,
   createDoc,
 } from "@/lib/docs-api"
+import { mutateDocument } from "@/lib/documents-api"
 import { workspaceCollaborationCacheKey } from "@/lib/collaboration-cache"
 import { HttpError } from "@/lib/http"
 import { copyText } from "@/lib/clipboard"
@@ -684,7 +684,8 @@ function DocEditorPage({
   const handleRestore = useCallback(async () => {
     setRestoring(true)
     try {
-      await restoreDoc(spaceId, docPath)
+      // The same call that archived it, so a Doc's folder comes back with it.
+      await mutateDocument(spaceId, "restore", docPath)
       await router.invalidate()
       toast.success("Doc restored")
     } catch (err) {

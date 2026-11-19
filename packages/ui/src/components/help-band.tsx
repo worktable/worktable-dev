@@ -164,7 +164,10 @@ export function HelpHint({
           side={side}
           align={align}
           sideOffset={8}
-          className="isolate z-50"
+          // A hint belongs to the page it points at: above the page and its
+          // header, under anything that opens over the page, such as the
+          // phone menu, a sheet or a dialog.
+          className="isolate z-30"
         >
           <PopoverPrimitive.Popup
             data-slot="help-hint"

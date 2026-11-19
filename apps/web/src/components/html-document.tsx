@@ -34,7 +34,6 @@ import {
   exportWidgetHtml,
   getWidget,
   patchWidget,
-  restoreWidget,
   widgetContentUrl,
   widgetVersionContentUrl,
 } from "@/lib/widgets-api"
@@ -47,7 +46,10 @@ import {
   type PageOverflowAction,
 } from "@/hooks/use-page-meta"
 import { resolveWidgetApiTarget } from "@/lib/widget-broker"
-import { resolveDocumentNavigation } from "@/lib/documents-api"
+import {
+  mutateDocument,
+  resolveDocumentNavigation,
+} from "@/lib/documents-api"
 import { documentHref, documentRoute } from "@/lib/document-views"
 import { authenticatedFetch, BASE_URL, HttpError, redirectToLogin } from "@/lib/http"
 import { EditorSkeleton } from "@/components/editor/editor-skeleton"
@@ -716,7 +718,9 @@ function WidgetDetailPage({
   const handleRestore = useCallback(async () => {
     setRestoring(true)
     try {
-      await restoreWidget(spaceId, widgetId)
+      // The same call that archived it, so anything in its folder comes back
+      // with it.
+      await mutateDocument(spaceId, "restore", widgetId)
       await recheckPage()
       toast.success("HTML doc restored")
     } catch (err) {

@@ -23,6 +23,8 @@ infrastructure and personal context out of release notes.
 ### Fixed
 
 - **Agent logos:** Repeat visits reuse cached logos without downloading them again.
+- **Uninstall:** `worktable uninstall` leaves your agents connected when it can't remove the background service in the current session.
+- **Agent tokens in the terminal:** `worktable mcp setup` says in plain words which agents got new tokens and what happens to the old ones.
 - **Agent avatars:** An agent named with its app, like "Ada (Claude)" or "codex@laptop", shows that app's logo, and initials skip brackets.
 - **Agent setup:** Claude and ChatGPT added through Worktable Link count as connected, coding agents in a second Cloud Worktable connect to it rather than another one, and commands wrap between words on phones.
 

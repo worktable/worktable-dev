@@ -404,7 +404,7 @@ describe("token injection into agent configs", () => {
     writeFileSync(blocker, "blocked");
     process.env["WORKTABLE_CODEX_CONFIG"] = join(blocker, "config.toml");
 
-    await expect(setupManagedClients(["cursor"], true)).rejects.toThrow(/rotation was not started/);
+    await expect(setupManagedClients(["cursor"], true)).rejects.toThrow(/No agents were changed/);
     expect(readFileSync(cursorPath)).toEqual(cursorBefore);
     const managed = (await listTokens()).filter((token) => token.agent === "managed");
     expect(managed).toHaveLength(1);
@@ -514,7 +514,7 @@ describe("token injection into agent configs", () => {
     const codexBefore = readFileSync(codexPath);
 
     await expect(setupManagedClients(["cursor", "codex"], true)).rejects.toThrow(
-      /Previous client configurations and credentials remain active/
+      /Your agents. old tokens still work/
     );
     expect(readFileSync(cursorPath)).toEqual(cursorBefore);
     expect(readFileSync(codexPath)).toEqual(codexBefore);

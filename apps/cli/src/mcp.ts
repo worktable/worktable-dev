@@ -483,10 +483,10 @@ async function abortManagedClientTransaction(
   )
   const rollbackMessage =
     rollbackErrors.length === 0
-      ? "Previous client configurations and credentials remain active."
-      : `Rollback needs attention: ${rollbackErrors.join("; ")}`
+      ? "Your agents' old tokens still work."
+      : `Undoing the change needs attention: ${rollbackErrors.join("; ")}`
   throw new UsageError(
-    `Managed MCP credential rotation was aborted: ${(err as Error).message}. ${rollbackMessage}`
+    `No agents were changed: ${(err as Error).message}. ${rollbackMessage}`
   )
 }
 
@@ -514,7 +514,7 @@ export async function setupManagedClients(
   const blocked = preflights.find((outcome) => !outcome.ok || !outcome.snapshot)
   if (blocked) {
     throw new UsageError(
-      `Managed MCP credential rotation was not started because ${MCP_CLIENTS[blocked.id].label} could not be updated: ${blocked.message ?? "preflight failed"}`
+      `No agents were changed because ${MCP_CLIENTS[blocked.id].label} could not be updated: ${blocked.message ?? "its setup could not be checked"}`
     )
   }
 
@@ -594,7 +594,7 @@ export async function setupManagedClients(
     results = clientIds.map((clientId) => adapters[clientId].status(committed))
   } catch (err) {
     throw new UsageError(
-      `Managed MCP credential rotation committed, but Worktable could not persist the client status: ${(err as Error).message}. The new credentials and client configurations are active; do not restore the old credentials.`
+      `Your agents were updated, but Worktable could not save their status: ${(err as Error).message}. The new tokens are active; do not restore the old ones.`
     )
   }
 

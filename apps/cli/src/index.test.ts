@@ -2063,10 +2063,10 @@ describe("MCP exposure and rotation command integration", () => {
         HOME: home,
       })
       expect(exitCode).toBe(0)
-      // Rotation commits only after every local config succeeds. Pairing-connected
+      // The note comes only after every local config succeeds. Pairing-connected
       // remote agents keep their own tokens; the note points any old shared-token
       // remote at the pairing flow instead of dumping a fresh raw bearer.
-      expect(stdout).toContain("Committed the managed MCP credential rotation")
+      expect(stdout).toContain("Updated 1 agent on this machine")
       expect(stdout).toContain("worktable agent invite")
       expect(stdout).not.toMatch(/Bearer wt_[0-9a-f]{12}_/)
     } finally {
@@ -2949,6 +2949,46 @@ describe("uninstall and purge command integration", () => {
       fx.cleanup()
     }
   }, 20_000)
+
+  it.skipIf(process.platform !== "linux")(
+    "keeps agents connected when the background service can't be removed in this session",
+    () => {
+      const fx = setupInstall()
+      const codexConfig = join(fx.home, ".codex", "config.toml")
+      // A systemd service is on record, and this session has no systemctl.
+      const noManager = mkdtempSync(join(tmpdir(), "wt-uninstall-path-"))
+      const env = {
+        ...fx.env,
+        WORKTABLE_CODEX_CONFIG: codexConfig,
+        PATH: noManager,
+      }
+      try {
+        const configPath = join(fx.app, "config.json")
+        const config = JSON.parse(readFileSync(configPath, "utf8"))
+        config.mcp.clients.codex = { desired: true }
+        writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`)
+        const originalCodexConfig =
+          '[mcp_servers.worktable]\nurl = "https://app.worktable.cloud/api/mcp"\n'
+        mkdirSync(join(fx.home, ".codex"), { recursive: true })
+        writeFileSync(codexConfig, originalCodexConfig)
+        writeFileSync(
+          join(fx.app, "service-state.json"),
+          `${JSON.stringify({ backend: "systemd" })}\n`
+        )
+
+        const rejected = runCli(["uninstall", "--yes"], env)
+        expect(rejected.exitCode).not.toBe(0)
+        expect(rejected.stderr).toContain("full login session")
+        expect(readFileSync(codexConfig, "utf8")).toBe(originalCodexConfig)
+        expect(existsSync(join(fx.installDir, "worktable"))).toBe(true)
+        expect(existsSync(fx.app)).toBe(true)
+      } finally {
+        rmSync(noManager, { recursive: true, force: true })
+        fx.cleanup()
+      }
+    },
+    20_000
+  )
 
   it("still cleans up machine-local state when the config is corrupt", () => {
     const fx = setupInstall()

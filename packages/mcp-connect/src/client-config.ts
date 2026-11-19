@@ -21,7 +21,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   MCP_CLIENTS,
+  IN_APP_SIGN_IN,
   SERVER_LISTS,
+  signsInInApp,
   type ConnectorInstallableMcpClientId,
 } from "@worktable/types/mcp-clients";
 // The ES module build: bundlers keep the UMD one's runtime require() calls,
@@ -1425,6 +1427,7 @@ function signInCommand(id: ConnectorInstallableMcpClientId): string[] | null {
 
 /** How a person signs the client in themselves, when it can't happen here. */
 export function signInInstruction(id: ConnectorInstallableMcpClientId): string {
+  if (signsInInApp(id)) return IN_APP_SIGN_IN[id];
   switch (id) {
     case "claude-code":
       return "Open Claude Code, type /mcp, choose worktable and sign in.";
@@ -1436,35 +1439,14 @@ export function signInInstruction(id: ConnectorInstallableMcpClientId): string {
       return "Run: opencode mcp auth worktable";
     case "kilo":
       return "Run: kilo mcp auth worktable";
-    case "cursor":
-      return "Open Cursor and sign in to worktable from its MCP settings.";
-    case "vscode":
-      return "In VS Code, start worktable from the MCP servers list and sign in.";
-    case "copilot":
-      return "In Copilot CLI, run /mcp and sign in to worktable.";
-    case "antigravity":
-      return "In Antigravity, open MCP servers and sign in to worktable.";
     case "devin":
       return commandExists("devin")
         ? "Run: devin mcp login worktable"
         : "Open Devin, then sign in to worktable from its MCP settings.";
-    case "junie":
-      return "In Junie, run /mcp, choose worktable and Authorize.";
-    case "zed":
-      return "In Zed, open the agent panel's MCP servers and sign in to worktable.";
-    case "cline":
-      return "In Cline, open MCP Servers, choose worktable and Authorize.";
-    case "warp":
-      return "In Warp, open MCP servers and start worktable to sign in.";
     case "pi":
       return "Run: pi mcp login worktable";
     case "droid":
       return "Run: droid mcp auth";
-    // Amp signs in the first time a thread uses the server.
-    case "amp":
-      return "Start a new Amp thread and sign in to worktable when Amp asks.";
-    case "kiro":
-      return "In Kiro, open MCP servers and sign in to worktable.";
   }
 }
 

@@ -443,6 +443,7 @@ test("Cloud coding agents on a second Worktable get its own command, and each ap
         mcpAuthMode: "oauth",
         agentPairing: false,
         remoteMcpUrl: mcpUrl,
+        connectorRelease: "v0.1.52",
       },
     })
   })
@@ -460,8 +461,8 @@ test("Cloud coding agents on a second Worktable get its own command, and each ap
     .click()
 
   // The plugin's shared address lands elsewhere, so the best way is this
-  // Worktable's own command, with the skills after it; the plugin waits
-  // under Other Ways.
+  // Worktable's own command, from its release, which adds the skills too;
+  // the plugin waits under Other Ways.
   const claudeCode = await pickApp(page, "Claude Code")
   await expect(
     claudeCode.getByText(
@@ -471,8 +472,8 @@ test("Cloud coding agents on a second Worktable get its own command, and each ap
   await expect(
     claudeCode.getByText("Works in Cloud workspace", { exact: false })
   ).toBeVisible()
-  await expect(claudeCode.locator("code").first()).toContainText(
-    `--mcp-url '${mcpUrl}' --client claude-code && curl -fsSL https://worktable.dev/install-skills | sh -s -- --target claude`
+  await expect(claudeCode.locator("code").first()).toHaveText(
+    `curl -fsSL '${new URL(mcpUrl).origin}/connect.sh?release=v0.1.52' | sh -s -- --oauth --server ${new URL(mcpUrl).origin} --mcp-url '${mcpUrl}' --client claude-code`
   )
   await claudeCode.getByRole("button", { name: "Other Ways" }).click()
   await expect(

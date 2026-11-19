@@ -194,6 +194,11 @@ export interface ConnectionInfo {
    * Scoped token inventory alone does not disable implicit literal-loopback use.
    */
   mcpTokenRequired: boolean
+  /**
+   * The release tag of this build (v0.1.52), whose connector Cloud's connect
+   * command runs. Null for builds that aren't a release; older servers omit it.
+   */
+  connectorRelease?: string | null
 }
 
 /**

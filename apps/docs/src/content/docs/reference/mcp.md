@@ -164,9 +164,13 @@ identity, so activity from different apps remains separately attributed.
 MCP call, updates their last-used time as they connect, and lets you disconnect
 them without handling a token.
 
-The Cloud quick-connect command detects supported clients and configures the
-canonical `/api/mcp` URL. Open or restart the client and complete OAuth to
-verify the connection.
+The Cloud quick-connect command configures the selected Worktable's OAuth MCP
+URL, without a token, for the client it names with `--client`, or for every
+supported client it detects. For one client it then installs Worktable's
+skills, as the pairing command does, and starts the client's own OAuth
+sign-in where the client has a command for it; otherwise it prints the step
+that signs in. It runs the connector of the Worktable's own release, so a
+beta Worktable gets a connector that knows the clients its setup offers.
 
 OpenClaw and Hermes pair with Cloud the same way as with a local Worktable: each
 installation gets its own credential, with the access you choose, and you can

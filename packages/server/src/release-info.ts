@@ -86,6 +86,17 @@ export interface ReleaseInfo {
   canUpdate: boolean
 }
 
+/**
+ * The release tag a version was published under (v0.1.52, v0.1.52-dev.529),
+ * or null for builds that aren't a release. Cloud's connect command runs the
+ * connector of this tag, so it knows what this build's setup offers.
+ */
+export function releaseTag(version: string = VERSION): string | null {
+  return /^\d+\.\d+\.\d+(?:-dev\.\d+)?$/.test(version) && version !== "0.0.1"
+    ? `v${version}`
+    : null
+}
+
 export function getReleaseInfo(): ReleaseInfo {
   const releaseDir = getReleaseDir()
   const installer = releaseDir ? join(releaseDir, "install.sh") : null

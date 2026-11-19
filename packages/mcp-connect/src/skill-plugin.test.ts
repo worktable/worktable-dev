@@ -250,7 +250,7 @@ describe("Worktable's skills for a connected coding agent", () => {
     expect(fromWorktable).toEqual(["http://127.0.0.1:7480"])
     expect(report.outcome).toMatchObject({ via: "worktable" })
     expect(report.lines).toEqual([
-      "  Couldn't install the Worktable plugin in Antigravity (install target must be a directory: /mirror/plugin/plugins/worktable-skills), so it was installed from this Worktable's skills instead.",
+      "  Couldn't install the Worktable plugin in Antigravity (install target must be a directory: /mirror/plugin/plugins/worktable-skills), so it was built from Worktable's skills instead.",
     ])
 
     // Without agy there is nothing to install with: a line, and the connection stands.
@@ -438,13 +438,20 @@ describe("Worktable's skills for a connected coding agent", () => {
   })
 
   it("builds Worktable Skills as a Kiro Power and an Antigravity plugin from the served skills", async () => {
+    const requested: string[] = []
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      fetch: (request) =>
-        new URL(request.url).pathname.endsWith("/index.json")
-          ? Response.json({ skills: [{ name: "worktable-library", version: "1", files: ["SKILL.md"] }] })
-          : new Response("# Library\n"),
+      fetch: (request) => {
+        const path = new URL(request.url).pathname
+        requested.push(path)
+        // As the public skills address lists them: ChatGPT's file in a folder too.
+        return path.endsWith("/index.json")
+          ? Response.json({
+              skills: [{ name: "worktable-library", version: "1", files: ["SKILL.md", "agents/openai.yaml"] }],
+            })
+          : new Response("# Library\n")
+      },
     })
     try {
       const manifests: Record<string, unknown> = {}
@@ -464,6 +471,7 @@ describe("Worktable's skills for a connected coding agent", () => {
       expect(power).toMatchObject({ name: "worktable-skills", author: { name: "Reva Labs" } })
       expect(power["keywords"]).toContain("worktable")
       expect(manifests["agy"]).toMatchObject({ name: "worktable-skills", displayName: "Worktable" })
+      expect(requested.some((path) => path.includes("/agents/"))).toBe(false)
     } finally {
       server.stop(true)
     }

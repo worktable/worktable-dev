@@ -48,11 +48,20 @@ export const HERMES: AlwaysOnAgent = {
 
 export const ALWAYS_ON_AGENTS = [OPENCLAW, HERMES] as const
 
-/** Keep the selected Worktable's complete OAuth resource in every copied install command. */
+/**
+ * Keep the selected Worktable's complete OAuth resource in every copied
+ * install command. `release` is the tag of this Worktable's release: Cloud's
+ * script runs that release's connector, which knows what this Worktable's
+ * setup offers, and the latest one without it.
+ */
 export function cloudConnectorCommand(
   mcpUrl: string,
-  client: string = "auto"
+  client: string = "auto",
+  release?: string | null
 ): string {
   const origin = new URL(mcpUrl).origin
-  return `curl -fsSL ${origin}/connect.sh | sh -s -- --oauth --server ${origin} --mcp-url ${shellQuote(mcpUrl)}${client === "auto" ? "" : ` --client ${client}`}`
+  const script = release
+    ? shellQuote(`${origin}/connect.sh?release=${encodeURIComponent(release)}`)
+    : `${origin}/connect.sh`
+  return `curl -fsSL ${script} | sh -s -- --oauth --server ${origin} --mcp-url ${shellQuote(mcpUrl)}${client === "auto" ? "" : ` --client ${client}`}`
 }

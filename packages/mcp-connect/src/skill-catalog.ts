@@ -29,6 +29,12 @@ export function isSkillCatalogClient(
   return (SKILL_CATALOG_CLIENTS as readonly string[]).includes(id ?? "")
 }
 
+/**
+ * Where Cloud's agents get Worktable's skills. Cloud's own address answers
+ * only signed-in requests; the docs site serves the same skills to anyone.
+ */
+export const PUBLIC_SKILLS_ORIGIN = "https://docs.worktable.dev"
+
 /** The catalog a Worktable at `origin` serves. */
 export function skillCatalogUrl(origin: string): string {
   return `${new URL(origin).origin}/.well-known/skills/`
@@ -45,6 +51,8 @@ const RESTART_HINTS: Record<SkillCatalogClient, string> = {
 }
 
 const SKILLS_GUIDE = "https://docs.worktable.dev/agents/skills/"
+/** A skills address that doesn't answer by then is treated as unusable. */
+const CATALOG_CHECK_MS = 15_000
 
 export interface SkillCatalogDependencies {
   /** Null when the catalog lists skills, else what went wrong. */
@@ -54,13 +62,17 @@ export interface SkillCatalogDependencies {
 
 async function checkCatalog(url: string): Promise<string | null> {
   try {
-    const response = await fetch(new URL("index.json", url))
+    const response = await fetch(new URL("index.json", url), {
+      signal: AbortSignal.timeout(CATALOG_CHECK_MS),
+    })
     if (!response.ok) return `its skills address returned HTTP ${response.status}`
     const index = (await response.json()) as { skills?: unknown }
     return Array.isArray(index.skills) && index.skills.length > 0
       ? null
       : "its skills address lists no skills"
   } catch (error) {
+    if ((error as Error).name === "TimeoutError")
+      return "its skills address took too long to answer"
     return `couldn't reach its skills address: ${(error as Error).message}`
   }
 }

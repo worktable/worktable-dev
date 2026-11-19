@@ -9,7 +9,7 @@ import {
   mcpBearerRequired,
   publicSurfaceAuthRequired,
 } from "../auth.ts";
-import { getReleaseInfo } from "../release-info.ts";
+import { getReleaseInfo, releaseTag } from "../release-info.ts";
 import {
   checkForUpdate,
   getCachedUpdateCheck,
@@ -330,6 +330,7 @@ systemRouter.get("/connection", async (c) => {
       originSource === "env" ||
       originSource === "config" ||
       originSource === "resource",
+    connectorRelease: releaseTag(),
   });
 });
 

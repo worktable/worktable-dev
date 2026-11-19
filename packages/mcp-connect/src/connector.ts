@@ -18,7 +18,11 @@ import {
   type InstallOutcome,
   type PreflightOutcome,
 } from "./client-config.ts"
-import { isSkillCatalogClient, setUpCatalogSkills } from "./skill-catalog.ts"
+import {
+  isSkillCatalogClient,
+  PUBLIC_SKILLS_ORIGIN,
+  setUpCatalogSkills,
+} from "./skill-catalog.ts"
 import { isSkillPluginClient, setUpSkills } from "./skill-plugin.ts"
 import { verifyMcpEndpoint } from "./verify.ts"
 
@@ -32,11 +36,12 @@ import { verifyMcpEndpoint } from "./verify.ts"
 // MCP path end to end, and reports progress back to the pairing session so
 // the Settings flow shows live status. On Cloud (--oauth) it writes a
 // tokenless entry and starts the client's own OAuth sign-in instead.
-// Paired with Claude Code, Codex, Copilot CLI, VS Code, Antigravity, Devin,
-// Factory Droid, Pi or Kiro, it then gives the agent Worktable's skills as a
+// Set up for one client, it then gives Claude Code, Codex, Copilot CLI, VS
+// Code, Antigravity, Devin, Factory Droid, Pi or Kiro Worktable's skills as a
 // plugin, and Junie, Zed, Cline, Warp and Amp a copy of them
 // (skill-plugin.ts); OpenCode and Kilo get the Worktable's skills address
-// (skill-catalog.ts). The connection never depends on that step.
+// (skill-catalog.ts), or on Cloud the public one. The connection never
+// depends on that step.
 // Must run under plain Node 18+ or Bun.
 //
 // Usage:
@@ -417,6 +422,31 @@ function configureClients(
   return { outcomes, attemptedSnapshots }
 }
 
+/**
+ * Give one connected client Worktable's skills: a plugin, the skills address
+ * `skillsOrigin` serves, or a copy. Never throws: the connection is already
+ * written, and nothing here may undo it.
+ */
+async function addSkills(
+  client: ConnectorInstallableMcpClientId,
+  skillsOrigin: string,
+  configPath: string | null | undefined,
+  dependencies: ConnectorDependencies
+): Promise<{ lines: string[]; restartHint?: string } | null> {
+  const setUp = isSkillPluginClient(client)
+    ? dependencies.setUpSkills(client, {}, skillsOrigin)
+    : isSkillCatalogClient(client) && configPath
+      ? dependencies.setUpCatalogSkills(client, {
+          origin: skillsOrigin,
+          configPath,
+        })
+      : null
+  if (!setUp) return null
+  return setUp.catch((error: unknown) => ({
+    lines: [`  Couldn't add Worktable's skills: ${(error as Error).message}`],
+  }))
+}
+
 async function runOAuthConnector(
   args: ConnectorArgs,
   io: ConnectorIo,
@@ -473,6 +503,21 @@ async function runOAuthConnector(
     }
     return 1
   }
+  // One agent gets its skills before signing in, so the sign-in's next step
+  // is the last thing shown. Cloud answers only signed-in requests, so the
+  // skills come from the public address that serves the same ones.
+  const skills =
+    args.client && !args.all
+      ? await addSkills(
+          args.client,
+          PUBLIC_SKILLS_ORIGIN,
+          configured.outcomes[0]?.configPath,
+          dependencies
+        )
+      : null
+  for (const line of skills?.lines ?? []) io.log(line)
+  const restartHint = (outcome: InstallOutcome) =>
+    skills?.restartHint ?? outcome.restartHint
   // The client holds no token yet. Each signs in with its own OAuth flow,
   // started here so the browser opens while the person is still watching.
   // Sign-ins run one after another, each waiting for its browser approval.
@@ -500,12 +545,14 @@ async function runOAuthConnector(
       } else {
         io.log(`${label} is signed in. Open it to finish connecting.`)
       }
-      if (outcome.restartHint) io.log(`  Note: ${outcome.restartHint}`)
+      const hint = restartHint(outcome)
+      if (hint) io.log(`  Note: ${hint}`)
       continue
     }
     if (result === "failed" || result === "cancelled") status = 1
     pending.push(`  ${label}: ${signInInstruction(outcome.id)}`)
-    if (outcome.restartHint) pending.push(`    Note: ${outcome.restartHint}`)
+    const hint = restartHint(outcome)
+    if (hint) pending.push(`    Note: ${hint}`)
   }
   if (pending.length > 0) {
     io.log("")
@@ -813,20 +860,13 @@ export async function runConnector(
   // The command for one coding agent brings its skills too. That step comes
   // last, so nothing about it can undo the connection.
   const single = explicit && !args.all ? explicit : null
-  const configPath = written.find((outcome) => outcome.id === single)?.configPath
-  const skillsSetUp =
-    single && isSkillPluginClient(single)
-      ? dependencies.setUpSkills(single, {}, origin)
-      : single && isSkillCatalogClient(single) && configPath
-        ? dependencies.setUpCatalogSkills(single, { origin, configPath })
-        : null
-  const skills = skillsSetUp
-    ? await skillsSetUp.catch((error: unknown) => ({
-        lines: [
-          `  Couldn't add Worktable's skills: ${(error as Error).message}`,
-        ],
-        restartHint: undefined,
-      }))
+  const skills = single
+    ? await addSkills(
+        single,
+        origin,
+        written.find((outcome) => outcome.id === single)?.configPath,
+        dependencies
+      )
     : null
   for (const line of skills?.lines ?? []) io.log(line)
   for (const outcome of written) {

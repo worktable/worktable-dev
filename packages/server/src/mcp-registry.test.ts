@@ -437,10 +437,26 @@ describe("released tool surface", () => {
     }
   })
 
-  it("lists the same released tools on both surfaces while nothing waits in preview", async () => {
+  it("lists the released tools on both surfaces, apart only where a change waits in preview", async () => {
     const released = (await listTools()).tools
     const preview = (await listTools("preview")).tools
-    expect(preview).toEqual(released)
+    // Waiting in preview: the thread list leaves archived threads out unless
+    // asked. Every other tool is listed the same on both.
+    const waiting = ["worktable_threads_read"]
+    const settled = (tools: typeof released) =>
+      tools.filter((tool) => !waiting.includes(tool.name))
+    expect(settled(preview)).toEqual(settled(released))
+    expect(preview.map((tool) => tool.name)).toEqual(
+      released.map((tool) => tool.name)
+    )
+    const threadsRead = (tools: typeof released) =>
+      tools.find((tool) => tool.name === "worktable_threads_read")!
+    expect(threadsRead(preview).inputSchema.properties).toHaveProperty(
+      "includeArchived"
+    )
+    expect(threadsRead(released).inputSchema.properties).not.toHaveProperty(
+      "includeArchived"
+    )
     // The Library is released: state lists the skills, and agents read and
     // propose them with their own tools.
     const state = released.find((tool) => tool.name === "worktable_state")!

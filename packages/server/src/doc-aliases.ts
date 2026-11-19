@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 import { atomicWriteText } from "./atomic-file.ts";
 import {
   BoundedFileReadError,
-  readBoundedRegularFile,
+  readReplacedRegularFile,
 } from "./bounded-file.ts";
 import { getDocAliasesPath } from "./workspace.ts";
 import { notifyWorkspaceChange } from "./workspace-events.ts";
@@ -90,7 +90,7 @@ export async function readDocAliasesAt(
 ): Promise<{ aliases: DocAliases | null; error: string | null }> {
   let text: string;
   try {
-    text = await readBoundedRegularFile(path, DOC_ALIASES_MAX_BYTES);
+    text = await readReplacedRegularFile(path, DOC_ALIASES_MAX_BYTES);
   } catch (error) {
     if (error instanceof BoundedFileReadError && error.reason === "missing") {
       return { aliases: emptyAliases(), error: null };

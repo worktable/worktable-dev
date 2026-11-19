@@ -288,7 +288,9 @@ function addRecordPermissionWarnings(
     0
   )
   const totalCalls = Array.from(html.matchAll(ANY_RECORD_CALL_RE)).length
-  if (totalCalls > 0 && literalCalls === 0) {
+  // Nothing to suggest once the author has declared the collections.
+  const declared = Object.keys(permissions?.records ?? {}).length > 0
+  if (totalCalls > 0 && literalCalls === 0 && !declared) {
     issues.push({
       severity: "hint",
       code: "dynamic_record_collection",

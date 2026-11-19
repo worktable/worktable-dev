@@ -1349,7 +1349,10 @@ describe("thread service", () => {
     })
     await drainWorkspaceChanges()
 
-    const claiming = claimNextThreadDelivery(atlas, 2)
+    // A claim that times out returns null without a last look, so a returned
+    // message proves the wake. The wait is long so a slow file write on a
+    // busy runner can't end it first.
+    const claiming = claimNextThreadDelivery(atlas, 20)
     const path = threadPath("connected-agents", first.threadId)
     const thread = JSON.parse(await readFile(path, "utf8"))
     const author = thread.members.find(
@@ -1387,7 +1390,7 @@ describe("thread service", () => {
     expect(claim?.message.body).toBe(
       "This message arrived through the portable file protocol."
     )
-  })
+  }, 30_000)
 
   it("replays an external thread edit observed during internal suppression", async () => {
     const first = await postThreadMessage(finn, {
@@ -2375,7 +2378,13 @@ describe("thread service", () => {
     expect(claims.find(Boolean)?.messageId).toBe(first.messageId)
   })
 
-  it("stops reclaiming an expired lease after three attempts", async () => {
+  it.each([
+    { lastAttempt: "never accepted", says: "never confirmed" },
+    { lastAttempt: "accepted", says: "stopped reporting" },
+  ])("stops reclaiming an expired lease after three attempts, the last $lastAttempt", async ({
+    lastAttempt,
+    says,
+  }) => {
     const first = await postThreadMessage(finn, {
       to: "Atlas",
       body: "Do not retry this forever after adapter crashes.",
@@ -2388,6 +2397,9 @@ describe("thread service", () => {
         messageId: first.messageId,
         attempt,
       })
+      if (attempt === 3 && lastAttempt === "accepted") {
+        await acceptDelivery(atlas, claim!.messageId, claim!.leaseId)
+      }
       await expireDeliveryLease(first.messageId)
     }
 
@@ -2403,6 +2415,7 @@ describe("thread service", () => {
       attempts: 3,
       error: {
         code: "DELIVERY_FAILED",
+        message: expect.stringContaining(says),
         retryable: false,
       },
     })

@@ -11,7 +11,11 @@ import {
   type DocumentId,
   type DocumentSource,
 } from "@worktable/types"
-import { BoundedFileReadError, readBoundedRegularFile } from "./bounded-file.ts"
+import {
+  BoundedFileReadError,
+  readBoundedRegularFile,
+  readReplacedRegularFile,
+} from "./bounded-file.ts"
 import { atomicWriteText } from "./atomic-file.ts"
 import { analyzeDocumentPath } from "./document-path.ts"
 import { HTML_DOCS_CLAIMED, HTML_DOCS_CLAIMED_VALUE } from "./doc-source-kind.ts"
@@ -464,7 +468,7 @@ export async function readDocumentInventoryAt(
   const diagnostics: DocumentInventoryDiagnostic[] = []
   let text: string
   try {
-    text = await readBoundedRegularFile(
+    text = await readReplacedRegularFile(
       inventoryPath,
       DOCUMENT_INVENTORY_MAX_BYTES
     )

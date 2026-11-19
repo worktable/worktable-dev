@@ -1080,13 +1080,19 @@ export async function claimThreadDelivery(
         continue
       }
       if (record.state !== "queued" && record.attempts >= MAX_ATTEMPTS) {
+        // A lease still "leased" was handed out and never accepted; any later
+        // state means the agent took the message and then went quiet. People
+        // see this beside the attempt count, so it names neither.
+        const taken = record.state !== "leased"
         record.state = "failed"
         record.leaseId = undefined
         record.leaseExpiresAt = undefined
         record.nextAttemptAt = undefined
         record.error = {
           code: "DELIVERY_FAILED",
-          message: `Delivery lease expired after ${MAX_ATTEMPTS} attempts.`,
+          message: taken
+            ? "The agent took this message and then stopped reporting"
+            : "The agent never confirmed it got this message",
           retryable: false,
         }
         record.revision += 1

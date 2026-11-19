@@ -186,3 +186,30 @@ export async function readBoundedRegularFile(
     throw new BoundedFileReadError("unreadable", path)
   }
 }
+
+const REPLACED_FILE_READ_ATTEMPTS = 4
+
+/**
+ * The text of a file its writers replace whole, by rename. A read that
+ * overlaps a replacement sees the file change underneath it; the file at the
+ * path is complete again by then, so the read is taken again rather than
+ * reported. A file that keeps changing still fails as "changed".
+ */
+export async function readReplacedRegularFile(
+  path: string,
+  maxBytes: number
+): Promise<string> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await readBoundedRegularFile(path, maxBytes)
+    } catch (error) {
+      if (
+        attempt >= REPLACED_FILE_READ_ATTEMPTS ||
+        !(error instanceof BoundedFileReadError) ||
+        error.reason !== "changed"
+      ) {
+        throw error
+      }
+    }
+  }
+}

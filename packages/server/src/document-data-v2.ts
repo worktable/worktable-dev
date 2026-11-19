@@ -34,6 +34,7 @@ import {
   BoundedFileReadError,
   readBoundedRegularFile,
   readBoundedRegularFileBytes,
+  readReplacedRegularFile,
 } from "./bounded-file.ts"
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
@@ -130,26 +131,6 @@ async function pathExists(path: string): Promise<boolean> {
     if (code === "ENOENT" || code === "ENOTDIR") return false
     throw error
   }
-}
-
-async function readAtomicallyReplacedText(
-  path: string,
-  maxBytes: number
-): Promise<string> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await readBoundedRegularFile(path, maxBytes)
-    } catch (error) {
-      if (
-        attempt > 0 ||
-        !(error instanceof BoundedFileReadError) ||
-        error.reason !== "changed"
-      ) {
-        throw error
-      }
-    }
-  }
-  throw new Error("atomically replaced document data remained unstable")
 }
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -449,7 +430,7 @@ export async function readDocumentAnnotationsV2(input: {
   if (!(await pathExists(path))) return null
   await requireRealDocumentStorageDirectory(input.workspaceRoot, dirname(path))
   const raw = JSON.parse(
-    await readAtomicallyReplacedText(path, DOCUMENT_ANNOTATIONS_V2_MAX_BYTES)
+    await readReplacedRegularFile(path, DOCUMENT_ANNOTATIONS_V2_MAX_BYTES)
   )
   const file = DocumentAnnotationFileV2Schema.parse(raw)
   requireSafeLegacyLogicalPath(file.logicalPath)
@@ -917,7 +898,7 @@ async function readStatePointer(input: {
   if (!(await pathExists(path))) return null
   await requireRealDocumentStorageDirectory(input.workspaceRoot, dirname(path))
   return DocumentPortableStatePointerV2Schema.parse(
-    JSON.parse(await readAtomicallyReplacedText(path, 4096))
+    JSON.parse(await readReplacedRegularFile(path, 4096))
   ).revision
 }
 

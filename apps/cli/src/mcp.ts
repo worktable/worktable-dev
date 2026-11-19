@@ -481,12 +481,13 @@ async function abortManagedClientTransaction(
     snapshots,
     candidateTokenIds
   )
-  const rollbackMessage =
-    rollbackErrors.length === 0
-      ? "Your agents' old tokens still work."
-      : `Undoing the change needs attention: ${rollbackErrors.join("; ")}`
+  const reason = (err as Error).message
+  // Only a complete undo leaves every agent as it was. Otherwise some agent
+  // may hold its new token, and saying nothing changed would mislead.
   throw new UsageError(
-    `No agents were changed: ${(err as Error).message}. ${rollbackMessage}`
+    rollbackErrors.length === 0
+      ? `No agents were changed: ${reason}. Your agents' old tokens still work.`
+      : `The update stopped partway: ${reason}. Some agents could not be put back and may hold a new token: ${rollbackErrors.join("; ")}`
   )
 }
 

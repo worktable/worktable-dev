@@ -22,10 +22,10 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
-- **Version history:** A Doc's history no longer comes back empty when something else in its Space is saved at the same moment.
-- **Unanswered messages:** A message an agent never answered says whether the agent got it or took it and went quiet.
 - **Agent logos:** Repeat visits reuse cached logos without downloading them again.
 - **Agent avatars:** An agent named with its app, like "Ada (Claude)" or "codex@laptop", shows that app's logo, and initials skip brackets.
+- **Version history:** A Doc's history no longer comes back empty when something else in its Space is saved at the same moment.
+- **Unanswered messages:** A message an agent never answered says whether the agent got it or took it and went quiet.
 - **Agent setup:** Claude and ChatGPT added through Worktable Link count as connected, coding agents in a second Cloud Worktable connect to it rather than another one, and commands wrap between words on phones.
 
 ## [0.1.51] - 2026-11-17

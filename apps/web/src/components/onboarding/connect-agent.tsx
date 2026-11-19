@@ -602,12 +602,24 @@ function signedInHere(
     app.id === "other" ||
     platform === app.platform ||
     // These apps sign in under names we may not know yet, by plugin or address.
-    ((isPluginApp(app.id) || app.id === "devin" || app.id === "junie") &&
+    ((isPluginApp(app.id) || SIGN_IN_BY_ADDRESS.includes(app.id)) &&
       platform === "other") ||
     // Codex CLI signs in as the Codex client, which ChatGPT Desktop shares.
     (app.id === "codex" && agentConnectionOnCodexHost(connection))
   )
 }
+
+/** Apps that add Cloud's address themselves and sign in under their own name. */
+const SIGN_IN_BY_ADDRESS: readonly AppId[] = [
+  "devin",
+  "junie",
+  "pi",
+  "droid",
+  "cline",
+  "amp",
+  "zed",
+  "warp",
+]
 
 /** What a Cloud way has you do, and the value to copy. */
 function cloudStep(

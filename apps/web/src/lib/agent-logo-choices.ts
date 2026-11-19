@@ -45,6 +45,8 @@ export const AGENT_LOGO_CHOICES: readonly AgentLogoChoice[] = [
   choice("kiro", "Kiro", "amazon aws"),
   choice("junie", "Junie", "jetbrains"),
   choice("amp", "Amp", "sourcegraph"),
+  choice("pi", "Pi", "pi coding agent earendil"),
+  choice("factory", "Factory Droid", "droid"),
   choice("devin", "Devin", "cognition"),
   choice("openhands", "OpenHands"),
   choice("trae", "Trae"),

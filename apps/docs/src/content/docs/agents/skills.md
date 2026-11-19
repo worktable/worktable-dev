@@ -47,13 +47,15 @@ Plugins already include skills, so don't install a second copy:
   along with its **Cloud** MCP connection.
 - Worktable Skills bundles the same skills without a connection. The connect
   command for a local or self-hosted Worktable installs it in Claude Code,
-  Codex, Copilot CLI, VS Code (with Copilot CLI), Antigravity and Devin
-  (when signed in), where it shows as Worktable, unless the general plugin is
-  already there. Junie gets the copy below. In Claude
+  Codex, Copilot CLI, VS Code (with Copilot CLI), Antigravity, Devin (when
+  signed in) and Factory Droid, where it shows as Worktable, unless the
+  general plugin is already there. Pi installs the plugin's repository as a
+  Pi package. Junie, Cline, Amp, Zed and Warp get the copy below. In Claude
   Code and Codex it also removes skills an earlier command copied, so none
   show twice. If the plugin can't be installed, the command copies the skills
   instead, as below, and says so. Antigravity gets Worktable Skills built from
-  the skills the Worktable serves instead.
+  the skills the Worktable serves instead, and Kiro gets them the same way as
+  a Power, with `kiro-cli`.
 - OpenCode and Kilo load the same skills from a [skills address](#skills-address).
   The connect command adds it.
 - The Hermes plugin bundles the same skills except Check the Library. Hermes

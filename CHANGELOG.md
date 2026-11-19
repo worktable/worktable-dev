@@ -26,6 +26,8 @@ infrastructure and personal context out of release notes.
 - **Agent logos:** Repeat visits reuse cached logos without downloading them again.
 - **Agent avatars:** An agent named with its app, like "Ada (Claude)" or "codex@laptop", shows that app's logo, and initials skip brackets.
 - **Agent setup:** Claude and ChatGPT added through Worktable Link count as connected, coding agents in a second Cloud Worktable connect to it rather than another one, and commands wrap between words on phones.
+- **Tips on phones:** A tip no longer covers Home and Threads in the menu on a phone.
+- **Restore:** Restoring an archived Doc from its own page brings back the Docs in its folder too.
 
 ## [0.1.51] - 2026-11-17
 

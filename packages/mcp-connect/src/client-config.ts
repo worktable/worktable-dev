@@ -385,7 +385,7 @@ export function codexCliAdd(endpoint: string): boolean {
 
 // ---- Claude Code (CLI-managed) -------------------------------------------------
 
-function claudeCodeCommand(): string {
+export function claudeCodeCommand(): string {
   return process.env["WORKTABLE_CLAUDE_COMMAND"]?.trim() || "claude";
 }
 

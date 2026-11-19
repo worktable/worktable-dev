@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  setSystemTime,
+} from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -425,6 +432,75 @@ describe("thread MCP operations", () => {
         spaceId: "missing-space",
       })
     ).rejects.toThrow("THREAD_SPACE_MISMATCH")
+  })
+
+  it("leaves archived threads out of the preview list and still reaches them", async () => {
+    const scopes = ["threads:read", "threads:write"]
+    const preview = await connect(
+      "claude-code@work",
+      finn,
+      scopes,
+      "claude-code@work",
+      "preview"
+    )
+    const released = await connect("claude-code@work", finn, scopes)
+    const flat = async (client: Client, args: Record<string, unknown>) => {
+      const response = await client.callTool({
+        name: "worktable_threads_read",
+        arguments: args,
+      })
+      expect(response.isError ?? false).toBe(false)
+      return response.structuredContent as {
+        threads?: Array<{ id: string; archived?: boolean }>
+        messages?: unknown[]
+      }
+    }
+    const ids = async (client: Client, args: Record<string, unknown> = {}) =>
+      ((await flat(client, args)).threads ?? []).map((thread) => thread.id)
+
+    // One thread went quiet nine days ago; the other is from today.
+    setSystemTime(new Date(Date.now() - 9 * 86_400_000))
+    const start = async (body: string, idempotencyKey: string) =>
+      (
+        await call(preview, "worktable_threads_write", {
+          action: "post",
+          to: "Atlas",
+          body,
+          idempotencyKey,
+          waitSeconds: 0,
+        })
+      ).threadId as string
+    let quiet: string
+    try {
+      quiet = await start("An old question.", "mcp-archived-quiet")
+    } finally {
+      setSystemTime()
+    }
+    const fresh = await start("Today's question.", "mcp-archived-fresh")
+
+    expect(await ids(preview)).toEqual([fresh])
+    const everything = (await flat(preview, { includeArchived: true })).threads!
+    expect(everything.map(({ id, archived }) => [id, archived])).toEqual([
+      [fresh, undefined],
+      [quiet, true],
+    ])
+    // The archived thread still reads by its id.
+    expect((await flat(preview, { threadId: quiet })).messages).toHaveLength(1)
+
+    // The released listing and the earlier grouped call keep the whole list.
+    expect(await ids(released)).toEqual([fresh, quiet])
+    expect(
+      (await released.callTool({
+        name: "worktable_threads_read",
+        arguments: { includeArchived: true },
+      })).isError
+    ).toBe(true)
+    const grouped = await call(preview, "worktable_threads_read", {
+      action: "list",
+    })
+    expect(
+      (grouped.threads as Array<{ id: string }>).map((thread) => thread.id)
+    ).toEqual([fresh, quiet])
   })
 
   it("keeps runtime delivery inaccessible to a normal thread client", async () => {

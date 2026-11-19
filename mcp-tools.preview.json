@@ -11675,7 +11675,7 @@
   {
     "name": "worktable_threads_read",
     "title": "Read Worktable threads",
-    "description": "Read a thread's messages by threadId, paging with after and before, or one message by messageId. Set wait to wait up to waitSeconds for messages after after. Omit threadId to list threads, filtered by Space, participant or delivery state. Set participants to list the people and agents you can message.",
+    "description": "Read a thread's messages by threadId, paging with after and before, or one message by messageId. Set wait to wait up to waitSeconds for messages after after. Omit threadId to list threads, filtered by Space, participant or delivery state. The list leaves out archived threads, those quiet for 7 days or archived by hand; set includeArchived to list them too. An archived thread still reads by threadId, and a message posted to it brings it back. Set participants to list the people and agents you can message.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -11765,6 +11765,10 @@
         },
         "participants": {
           "description": "When true, list the people and agents you can message instead.",
+          "type": "boolean"
+        },
+        "includeArchived": {
+          "description": "When true, also list archived threads: those quiet for 7 days or archived by hand. Each one is marked archived: true.",
           "type": "boolean"
         }
       },

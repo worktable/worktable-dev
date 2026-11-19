@@ -10,6 +10,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
   antigravitySource,
+  devinSource,
   removeProjectedSkills,
   setUpSkills,
   type CommandResult,
@@ -263,5 +264,80 @@ describe("Worktable's skills for a connected coding agent", () => {
     )
     expect(missing.outcome).toMatchObject({ via: "copy", copied: false })
     expect(missing.lines[0]).toContain("Couldn't add Worktable's skills to Antigravity (no agy command found).")
+  })
+
+  it("installs Worktable Skills in Devin when it is signed in, sees them in its skills list, and copies them when it isn't", async () => {
+    expect(devinSource("worktable/worktable-plugin")).toBe("worktable/worktable-plugin#plugins/worktable-skills")
+    expect(devinSource("/mirror/plugin")).toBe("/mirror/plugin/plugins/worktable-skills")
+
+    // `devin skills list` shows a plugin's skills as /<plugin>:<skill>.
+    const devin = (signedIn: boolean, plugins: string[] = []) => {
+      const calls: string[] = []
+      const run = (_command: string, args: string[]): CommandResult => {
+        calls.push(args.join(" "))
+        if (args[0] === "skills")
+          return ok(
+            [
+              "Available skills",
+              "",
+              "  /worktable-library [user,model] (~/.agents/skills/worktable-library) - Check the Library",
+              ...plugins.map((name) => `  /${name}:worktable-library [user,model] (plugin) - Check the Library`),
+            ].join("\n")
+          )
+        if (!signedIn)
+          return { status: 1, stdout: "", stderr: "Error: You must be logged in to manage plugins. Run `devin auth login` first." }
+        plugins.push("worktable-skills")
+        return ok()
+      }
+      return { run, calls }
+    }
+
+    const signedIn = devin(true)
+    const installed = await setUpSkills("devin", {
+      run: signedIn.run,
+      env: {},
+      projectSkills: async () => {
+        throw new Error("must not copy when the plugin installs")
+      },
+      removeProjectedSkills: () => {
+        throw new Error("~/.agents/skills is shared with other agents")
+      },
+    })
+    expect(installed.outcome).toEqual({ via: "plugin", alreadyInstalled: false })
+    expect(signedIn.calls).toContain("plugins install --local --yes worktable/worktable-plugin#plugins/worktable-skills")
+
+    const copied: string[] = []
+    const signedOut = await setUpSkills("devin", {
+      run: devin(false).run,
+      env: {},
+      projectSkills: async (target) => {
+        copied.push(target)
+        return null
+      },
+    })
+    expect(copied).toEqual(["agents"])
+    expect(signedOut.lines).toEqual([
+      "  Couldn't install the Worktable plugin in Devin (You must be logged in to manage plugins), so its skills were copied to ~/.agents/skills instead.",
+    ])
+
+    const full = devin(true, ["worktable"])
+    expect((await setUpSkills("devin", { run: full.run, env: {} })).outcome).toEqual({ via: "full-plugin" })
+    expect(full.calls).toEqual(["skills list"])
+  })
+
+  it("copies the skills for Junie, which installs plugins only from its own prompt", async () => {
+    const copied: string[] = []
+    const report = await setUpSkills("junie", {
+      run: () => {
+        throw new Error("Junie has no plugin command")
+      },
+      env: {},
+      projectSkills: async (target) => {
+        copied.push(target)
+        return null
+      },
+    })
+    expect(copied).toEqual(["agents"])
+    expect(report.lines).toEqual(["  Junie: skills copied to ~/.agents/skills"])
   })
 })

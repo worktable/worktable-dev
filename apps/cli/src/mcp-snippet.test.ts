@@ -17,6 +17,8 @@ describe("MCP client configuration", () => {
       "vscode",
       "copilot",
       "antigravity",
+      "devin",
+      "junie",
       "goose",
     ] as const
     for (const id of clients) {
@@ -26,7 +28,11 @@ describe("MCP client configuration", () => {
           mcpClientSnippet(id, { endpoint: url, token: bearer }).body
         )
         const server =
-          id === "cursor" || id === "copilot" || id === "antigravity"
+          id === "cursor" ||
+          id === "copilot" ||
+          id === "antigravity" ||
+          id === "devin" ||
+          id === "junie"
             ? parsed.mcpServers.worktable
             : id === "opencode" || id === "kilo"
               ? parsed.mcp.servers.worktable
@@ -41,6 +47,8 @@ describe("MCP client configuration", () => {
         if (id === "vscode" || id === "copilot")
           expect(server.type).toBe("http")
         if (id === "copilot") expect(server.tools).toEqual(["*"])
+        // What `devin mcp add --scope user` writes.
+        if (id === "devin") expect(server.transport).toBe("http")
         if (id === "opencode" || id === "kilo" || id === "goose")
           expect(server.type).toBe("remote")
         if (id === "goose") expect(server.enabled).toBe(true)

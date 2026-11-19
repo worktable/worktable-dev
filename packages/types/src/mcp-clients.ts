@@ -35,6 +35,8 @@ export const CONNECTOR_INSTALLABLE_MCP_CLIENT_IDS = [
   "vscode",
   "copilot",
   "antigravity",
+  "devin",
+  "junie",
 ] as const
 
 export const MANUAL_MCP_CLIENT_IDS = ["goose"] as const
@@ -157,6 +159,20 @@ export const MCP_CLIENTS: Record<McpClientId, McpClientMeta> = {
     maturity: "supported",
     setupKind: "connector",
     configPathHint: "~/.gemini/config/mcp_config.json",
+  },
+  devin: {
+    id: "devin",
+    label: "Devin",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.config/devin/mcp_config.json",
+  },
+  junie: {
+    id: "junie",
+    label: "Junie",
+    maturity: "supported",
+    setupKind: "connector",
+    configPathHint: "~/.junie/mcp/mcp.json",
   },
   goose: {
     id: "goose",
@@ -327,6 +343,35 @@ export function mcpClientSnippet(
           mcpServers: {
             worktable: {
               serverUrl: endpoint,
+              ...(token ? { headers: bearerHeaders(token) } : {}),
+            },
+          },
+        }),
+      }
+    // What `devin mcp add --scope user` writes; Devin Desktop reads it too.
+    case "devin":
+      return {
+        ...base,
+        language: "json",
+        body: jsonBody({
+          mcpServers: {
+            worktable: {
+              url: endpoint,
+              transport: "http",
+              ...(token ? { headers: bearerHeaders(token) } : {}),
+            },
+          },
+        }),
+      }
+    // Junie CLI and Junie in JetBrains IDEs share this file.
+    case "junie":
+      return {
+        ...base,
+        language: "json",
+        body: jsonBody({
+          mcpServers: {
+            worktable: {
+              url: endpoint,
               ...(token ? { headers: bearerHeaders(token) } : {}),
             },
           },

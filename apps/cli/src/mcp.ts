@@ -14,8 +14,12 @@ import {
   cursorEntry,
   cursorPath,
   defaultVscodePath,
+  devinEntry,
+  devinPath,
   installClient,
   JSON_CLIENT_ENTRY_PLACES,
+  junieEntry,
+  juniePath,
   type JsonEntryPlaces,
   kiloPath,
   opencodeEntry,
@@ -386,6 +390,18 @@ export const adapters: Record<ConnectorInstallableMcpClientId, Adapter> = {
     antigravityPath,
     JSON_CLIENT_ENTRY_PLACES.antigravity,
     antigravityEntry
+  ),
+  devin: makeJsonAdapter(
+    CLIENTS.devin,
+    devinPath,
+    JSON_CLIENT_ENTRY_PLACES.devin,
+    devinEntry
+  ),
+  junie: makeJsonAdapter(
+    CLIENTS.junie,
+    juniePath,
+    JSON_CLIENT_ENTRY_PLACES.junie,
+    junieEntry
   ),
 }
 

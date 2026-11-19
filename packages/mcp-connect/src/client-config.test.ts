@@ -42,6 +42,8 @@ function useTempRuntime(): string {
   process.env["WORKTABLE_KILO_CONFIG"] = join(root, ".config", "kilo", "kilo.jsonc");
   process.env["WORKTABLE_COPILOT_MCP_CONFIG"] = join(root, ".copilot", "mcp-config.json");
   process.env["WORKTABLE_ANTIGRAVITY_MCP_CONFIG"] = join(root, ".gemini", "config", "mcp_config.json");
+  process.env["WORKTABLE_DEVIN_MCP_CONFIG"] = join(root, ".config", "devin", "mcp_config.json");
+  process.env["WORKTABLE_JUNIE_MCP_CONFIG"] = join(root, ".junie", "mcp", "mcp.json");
   process.env["WORKTABLE_CODEX_CONFIG"] = join(root, ".codex", "config.toml");
   process.env["WORKTABLE_VSCODE_MCP_CONFIG"] = join(root, "vscode", "mcp.json");
   return root;

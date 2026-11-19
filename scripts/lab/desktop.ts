@@ -14,6 +14,7 @@ import {
 } from "node:fs"
 import { tmpdir, userInfo } from "node:os"
 import { join, relative, resolve, sep } from "node:path"
+import { CLIENT_CONFIG_ENV_KEYS } from "@worktable/mcp-connect"
 import {
   DESKTOP_BUNDLE,
   DESKTOP_EXECUTABLE,
@@ -335,21 +336,10 @@ export function desktopEnvironment(
     "WORKTABLE_DESKTOP_ALLOW_MULTIPLE_INSTANCES",
     "WORKTABLE_WORKSPACE",
     "WORKTABLE_APP_DIR",
-    "WORKTABLE_CODEX_CONFIG",
-    "WORKTABLE_CURSOR_MCP_CONFIG",
-    "WORKTABLE_OPENCODE_CONFIG",
-    "WORKTABLE_KILO_CONFIG",
-    "WORKTABLE_VSCODE_MCP_CONFIG",
-    "WORKTABLE_COPILOT_MCP_CONFIG",
-    "WORKTABLE_ANTIGRAVITY_MCP_CONFIG",
-    "WORKTABLE_DEVIN_MCP_CONFIG",
-    "WORKTABLE_JUNIE_MCP_CONFIG",
+    ...CLIENT_CONFIG_ENV_KEYS,
     "ANTHROPIC_API_KEY",
     "CLAUDE_CODE_OAUTH_TOKEN",
     "OPENAI_API_KEY",
-    "CLAUDE_CONFIG_DIR",
-    "CODEX_HOME",
-    "JUNIE_HOME",
     "HOST",
     "PORT",
   ])

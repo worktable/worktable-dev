@@ -22,6 +22,13 @@ export const AGENT_PLATFORM_IDS = [
   "antigravity",
   "devin",
   "junie",
+  "zed",
+  "cline",
+  "warp",
+  "pi",
+  "droid",
+  "amp",
+  "kiro",
   // Before gemini, so a "Gemini CLI ..." sign-in name finds it first.
   "gemini-cli",
   "gemini",
@@ -134,6 +141,20 @@ export const AGENT_PLATFORMS: Record<AgentPlatformId, AgentPlatform> = {
   devin: { id: "devin", name: "Devin", mode: "on-demand", logo: "devin.svg" },
   // Junie in JetBrains IDEs and Junie CLI.
   junie: { id: "junie", name: "Junie", mode: "on-demand", logo: "junie.svg" },
+  zed: { id: "zed", name: "Zed", mode: "on-demand", logo: "zed.svg" },
+  // Cline CLI and Cline in editors share their servers.
+  cline: { id: "cline", name: "Cline", mode: "on-demand", logo: "cline.svg" },
+  warp: { id: "warp", name: "Warp", mode: "on-demand", logo: "warp.svg" },
+  pi: { id: "pi", name: "Pi", mode: "on-demand", logo: "pi.svg" },
+  droid: {
+    id: "droid",
+    name: "Factory Droid",
+    mode: "on-demand",
+    logo: "factory.svg",
+  },
+  amp: { id: "amp", name: "Amp", mode: "on-demand", logo: "amp.svg" },
+  // Kiro IDE and kiro-cli share their servers.
+  kiro: { id: "kiro", name: "Kiro", mode: "on-demand", logo: "kiro.svg" },
   "gemini-cli": {
     id: "gemini-cli",
     name: "Gemini CLI",
@@ -172,6 +193,13 @@ const CLIENT_PLATFORMS: Record<string, AgentPlatformId> = {
   antigravity: "antigravity",
   devin: "devin",
   junie: "junie",
+  zed: "zed",
+  cline: "cline",
+  warp: "warp",
+  pi: "pi",
+  droid: "droid",
+  amp: "amp",
+  kiro: "kiro",
   goose: "goose",
   // Names these apps sign in with. The Gemini app registers as "Google"
   // (seen Nov 16, 2026).
@@ -181,6 +209,8 @@ const CLIENT_PLATFORMS: Record<string, AgentPlatformId> = {
   // Devin Desktop was Windsurf.
   windsurf: "devin",
   "jetbrains-junie": "junie",
+  factory: "droid",
+  "factory-droid": "droid",
 }
 
 /** The platform of an always-on adapter, such as `openclaw` or `hermes`. */

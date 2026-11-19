@@ -108,6 +108,17 @@ The Gemini app takes one skill folder and never updates it. Download
 unpack it, then open **Customize**, then **Skills**, and upload the `worktable`
 folder. It holds the Library check and names each workflow guide.
 
+### Pi
+
+Pi installs this repository as a package of its skills. Add Worktable's
+server and sign in, then install it:
+
+```text
+pi mcp add worktable --url https://app.worktable.cloud/api/mcp
+pi mcp login worktable
+pi install git:github.com/worktable/worktable-plugin
+```
+
 ### Kiro
 
 In Kiro, choose **Add Custom Power**, then **Import power from GitHub**, and
@@ -158,6 +169,13 @@ In Claude Code:
 ```text
 claude plugin update worktable@worktable
 claude plugin uninstall worktable@worktable
+```
+
+In Pi, the server and the package are separate, so remove both:
+
+```text
+pi remove git:github.com/worktable/worktable-plugin
+pi mcp remove worktable
 ```
 
 Other hosts manage packages through their plugin interface. Removing the plugin

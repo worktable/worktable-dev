@@ -188,6 +188,13 @@ Support maturity and configuration method are separate:
 | `antigravity`    | Antigravity app and CLI                            | Connector-installable                                   |
 | `devin`          | Devin Desktop and Devin CLI                        | Connector-installable                                   |
 | `junie`          | Junie in JetBrains IDEs and Junie CLI              | Connector-installable                                   |
+| `pi`             | Pi                                                 | Connector-installable                                   |
+| `droid`          | Factory Droid                                      | Connector-installable                                   |
+| `cline`          | Cline CLI and Cline in editors                     | Connector-installable                                   |
+| `amp`            | Amp                                                | Connector-installable                                   |
+| `zed`            | Zed                                                | Connector-installable                                   |
+| `warp`           | Warp                                               | Connector-installable                                   |
+| `kiro`           | Kiro IDE and kiro-cli                              | Connector-installable                                   |
 | `goose`          | Goose                                              | Manual snippet                                          |
 | `claude-desktop` | Claude Desktop and supported local Cowork releases | Desktop extension or Cloud OAuth                        |
 | `openclaw`       | OpenClaw                                           | ClawHub plugin plus pairing                             |

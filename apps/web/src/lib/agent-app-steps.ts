@@ -76,6 +76,13 @@ export type AppId =
   | "antigravity"
   | "devin"
   | "junie"
+  | "cline"
+  | "pi"
+  | "droid"
+  | "amp"
+  | "zed"
+  | "warp"
+  | "kiro"
   | "perplexity"
   | "other"
 
@@ -110,6 +117,13 @@ export const AGENT_APPS: AgentApp[] = [
   { id: "antigravity", name: "Antigravity", platform: "antigravity" },
   { id: "devin", name: "Devin", platform: "devin" },
   { id: "junie", name: "Junie", platform: "junie" },
+  { id: "cline", name: "Cline", platform: "cline" },
+  { id: "pi", name: "Pi", platform: "pi" },
+  { id: "droid", name: "Factory Droid", platform: "droid" },
+  { id: "amp", name: "Amp", platform: "amp" },
+  { id: "zed", name: "Zed", platform: "zed" },
+  { id: "warp", name: "Warp", platform: "warp" },
+  { id: "kiro", name: "Kiro", platform: "kiro" },
   { id: "perplexity", name: "Perplexity", platform: "perplexity" },
   { id: "other", name: "Other", platform: "other" },
 ]
@@ -157,7 +171,8 @@ export type Skills =
    * without its Cloud server, with the agent's own plugin command (VS Code
    * gets Copilot CLI's). When that can't work it copies them from
    * Worktable's installer instead; Antigravity builds the plugin from the
-   * skills this Worktable serves. Junie, with no plugin command, gets the copy.
+   * skills this Worktable serves. Pi takes the plugin's repository as a
+   * package. Junie, Cline and Amp, with no plugin command, get the copy.
    */
   | { via: "connect-plugin" }
   /**
@@ -306,6 +321,42 @@ export function waysFor(app: AppId, where: Where): AppWays | null {
             best: { kind: "pairing", client: app, skills: CONNECT_PLUGIN },
             others: [],
           }
+    // The connect command installs the skills as a Pi package or a Droid
+    // plugin, and copies them for Cline and Amp. On Cloud each adds the
+    // address with its own command or file; Pi's and Droid's commands add
+    // the skills too, the others run Worktable's installer.
+    case "pi":
+    case "droid":
+    case "cline":
+    case "amp":
+      if (!cloud)
+        return {
+          best: { kind: "pairing", client: app, skills: CONNECT_PLUGIN },
+          others: [],
+        }
+      return {
+        best: {
+          kind: "address",
+          skills:
+            app === "pi" || app === "droid"
+              ? PLUGIN
+              : { via: "url", target: "agents" },
+        },
+        others: [],
+      }
+    // Zed and Warp have no command to see a connection work on a computer
+    // or server, so they are offered on Cloud only, where you paste the
+    // address. Kiro's connection needs a Kiro sign-in to check: not yet.
+    case "zed":
+    case "warp":
+      return cloud
+        ? {
+            best: { kind: "address", skills: { via: "url", target: "agents" } },
+            others: [],
+          }
+        : null
+    case "kiro":
+      return null
     case "openclaw":
     case "hermes":
       return {
@@ -472,6 +523,45 @@ export function addressStep(
           2
         ),
       }
+    case "pi":
+      return {
+        step: "Run this in your terminal and sign in when your browser opens.",
+        value: [
+          `pi mcp add worktable --url ${mcpUrl}`,
+          "pi mcp login worktable",
+          `pi install git:github.com/${CLAUDE_MARKETPLACE}`,
+        ].join("\n"),
+      }
+    case "droid":
+      return {
+        step: "Run this in your terminal and sign in when your browser opens.",
+        value: [
+          `droid mcp add worktable ${mcpUrl} --type http`,
+          `droid plugin marketplace add ${CLAUDE_MARKETPLACE}`,
+          "droid plugin install worktable-skills@worktable-plugin --scope user",
+          "droid mcp auth",
+        ].join("\n"),
+      }
+    case "amp":
+      return {
+        step: "Run this in your terminal. Then start a new Amp thread and sign in when Amp asks.",
+        value: `amp mcp add worktable ${mcpUrl}`,
+      }
+    case "cline":
+      return {
+        step: "In Cline, open MCP Servers, then Configure, and add this. Then choose worktable and Authorize.",
+        value: serverJson("mcpServers", { type: "streamableHttp", url: mcpUrl }),
+      }
+    case "zed":
+      return {
+        step: "Add this to your Zed settings, then sign in when Zed asks.",
+        value: serverJson("context_servers", { url: mcpUrl }),
+      }
+    case "warp":
+      return {
+        step: "In Warp, open MCP servers, choose Add and paste this. Then start worktable and sign in.",
+        value: serverJson("mcpServers", { url: mcpUrl }),
+      }
     case "perplexity":
       return {
         step: "In Perplexity, open Connectors and add a custom connector with this address, then sign in.",
@@ -483,6 +573,11 @@ export function addressStep(
         value: mcpUrl,
       }
   }
+}
+
+/** A server list holding Worktable alone, for pasting into an app's settings. */
+function serverJson(key: string, server: Record<string, string>): string {
+  return JSON.stringify({ [key]: { worktable: server } }, null, 2)
 }
 
 /** OpenCode's and Kilo's settings for Worktable on Cloud: the server and the skills. */

@@ -19,8 +19,13 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { MCP_CLIENTS, type ConnectorInstallableMcpClientId } from "@worktable/types/mcp-clients";
-// The ESM build: its UMD main loads its parts at run time, which bundles break.
+import {
+  MCP_CLIENTS,
+  SERVER_LISTS,
+  type ConnectorInstallableMcpClientId,
+} from "@worktable/types/mcp-clients";
+// The ES module build: bundlers keep the UMD one's runtime require() calls,
+// which the single-file connector can't resolve.
 import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { parse as parseToml } from "smol-toml";
 
@@ -62,26 +67,26 @@ export function commandExists(command: string): boolean {
 }
 
 // ---- JSON config files -----------------------------------------------------
+//
+// Client configs are read as JSON with comments and trailing commas, which
+// Zed, Kilo and VS Code write, and edited in place so the rest of the file,
+// comments included, stays as it was.
 
-function isJsonObject(value: unknown): value is Record<string, unknown> {
+function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-/**
- * A client config's contents. Many clients (Kilo, OpenCode, VS Code) accept
- * comments and trailing commas, so read JSON with comments; undefined when
- * the text isn't valid even then.
- */
+/** The file's value, or undefined when it isn't JSON (with comments). */
 function parseJsonText(text: string): unknown {
   const errors: ParseError[] = [];
-  const parsed: unknown = parseJsonc(text, errors, { allowTrailingComma: true });
-  return errors.length > 0 ? undefined : parsed;
+  const value: unknown = parseJsonc(text, errors, { allowTrailingComma: true });
+  return errors.length > 0 || text.trim() === "" ? undefined : value;
 }
 
 export function readJsonObject(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
   const parsed = parseJsonText(readFileSync(path, "utf8"));
-  return isJsonObject(parsed) ? parsed : {};
+  return isObject(parsed) ? parsed : {};
 }
 
 function readJsonObjectForMutation(path: string): Record<string, unknown> {
@@ -90,7 +95,7 @@ function readJsonObjectForMutation(path: string): Record<string, unknown> {
   if (parsed === undefined) {
     throw new Error(`${path} is not valid JSON; it was left unchanged.`);
   }
-  if (!isJsonObject(parsed)) {
+  if (!isObject(parsed)) {
     throw new Error(`${path} must contain a JSON object; it was left unchanged.`);
   }
   return parsed;
@@ -109,7 +114,7 @@ function editJsonText(
   for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
     const was = before[key];
     const now = after[key];
-    if (isJsonObject(was) && isJsonObject(now)) {
+    if (isObject(was) && isObject(now)) {
       text = editJsonText(text, was, now, [...path, key]);
     } else if (JSON.stringify(was) !== JSON.stringify(now)) {
       text = applyEdits(
@@ -153,7 +158,7 @@ export function writeJsonObject(path: string, value: Record<string, unknown>): v
   const before = text === null ? undefined : parseJsonText(text);
   writeFilePrivate(
     path,
-    text !== null && isJsonObject(before)
+    text !== null && isObject(before)
       ? editJsonText(text, before, value)
       : JSON.stringify(value, null, 2) + "\n"
   );
@@ -212,30 +217,99 @@ function removeEntries(root: Record<string, unknown>, places: JsonEntryPlaces): 
   }
 }
 
+const JSON_FORMAT = { formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" } };
+
+/** The file's text when it holds a JSON object, so it can be edited in place. */
+function editableJsonText(path: string): string | null {
+  if (!existsSync(path)) return null;
+  const text = readFileSync(path, "utf8");
+  return isObject(parseJsonText(text)) ? text : null;
+}
+
+/** Removes the worktable entries from the text, keeping everything else. */
+function withoutEntries(text: string, places: JsonEntryPlaces): string {
+  let edited = text;
+  for (const keys of places) {
+    const parent = objectAt(parseJsonText(edited) as Record<string, unknown>, keys);
+    if (parent && hasOwn(parent, "worktable"))
+      edited = applyEdits(edited, modify(edited, [...keys, "worktable"], undefined, JSON_FORMAT));
+  }
+  return edited;
+}
+
 export function setupJsonUrl(path: string, places: JsonEntryPlaces, entry: Record<string, unknown>): void {
   // The same-machine CLI intentionally repairs malformed client JSON. The
   // remote connector is fail-closed because strict preflight and its TOCTOU
   // recheck run before this shared writer is called.
-  const root = readJsonObject(path);
-  removeEntries(root, places);
-  let parent = root;
-  for (const key of places[0]!) {
-    const next = parent[key];
-    parent[key] = next && typeof next === "object" && !Array.isArray(next) ? next : {};
-    parent = parent[key] as Record<string, unknown>;
+  const text = editableJsonText(path);
+  if (text === null) {
+    const root: Record<string, unknown> = {};
+    let parent = root;
+    for (const key of places[0]!) parent = (parent[key] = {}) as Record<string, unknown>;
+    parent["worktable"] = entry;
+    writeJsonObject(path, root);
+    return;
   }
-  parent["worktable"] = entry;
-  writeJsonObject(path, root);
+  // The entry in the first place is replaced where it stands; older places lose theirs.
+  let edited = withoutEntries(text, places.slice(1));
+  // A list that holds something other than an object becomes an empty one.
+  const keys = places[0]!;
+  for (let depth = 1; depth <= keys.length; depth++) {
+    let node: unknown = parseJsonText(edited);
+    for (const key of keys.slice(0, depth)) node = isObject(node) ? node[key] : undefined;
+    if (node !== undefined && !isObject(node))
+      edited = applyEdits(edited, modify(edited, keys.slice(0, depth), {}, JSON_FORMAT));
+  }
+  edited = applyEdits(edited, modify(edited, [...keys, "worktable"], entry, JSON_FORMAT));
+  writeFilePrivate(path, edited.endsWith("\n") ? edited : `${edited}\n`);
 }
 
 export function removeJsonUrl(path: string, places: JsonEntryPlaces): void {
   if (!existsSync(path)) return;
-  const root = readJsonObject(path);
-  removeEntries(root, places);
-  writeJsonObject(path, root);
+  const text = editableJsonText(path);
+  if (text === null) {
+    const root = readJsonObject(path);
+    removeEntries(root, places);
+    writeJsonObject(path, root);
+    return;
+  }
+  writeFilePrivate(path, withoutEntries(text, places));
 }
 
 // ---- Per-client config locations and entry shapes ---------------------------
+
+/**
+ * Every variable, besides HOME and XDG_CONFIG_HOME, that moves where the
+ * paths below find a client's servers or where its skills are copied. An
+ * isolated run clears them all; add a client's own here with its path.
+ */
+export const CLIENT_CONFIG_ENV_KEYS = [
+  "WORKTABLE_CODEX_CONFIG",
+  "WORKTABLE_CURSOR_MCP_CONFIG",
+  "WORKTABLE_OPENCODE_CONFIG",
+  "WORKTABLE_KILO_CONFIG",
+  "WORKTABLE_VSCODE_MCP_CONFIG",
+  "WORKTABLE_COPILOT_MCP_CONFIG",
+  "WORKTABLE_ANTIGRAVITY_MCP_CONFIG",
+  "WORKTABLE_DEVIN_MCP_CONFIG",
+  "WORKTABLE_JUNIE_MCP_CONFIG",
+  "WORKTABLE_ZED_SETTINGS",
+  "WORKTABLE_CLINE_MCP_CONFIG",
+  "WORKTABLE_WARP_MCP_CONFIG",
+  "WORKTABLE_PI_MCP_CONFIG",
+  "WORKTABLE_DROID_MCP_CONFIG",
+  "WORKTABLE_AMP_SETTINGS",
+  "WORKTABLE_KIRO_MCP_CONFIG",
+  "WORKTABLE_SKILL_HOME",
+  "CLAUDE_CONFIG_DIR",
+  "CODEX_HOME",
+  "COPILOT_HOME",
+  "JUNIE_HOME",
+  "CLINE_MCP_SETTINGS_PATH",
+  "CLINE_DATA_DIR",
+  "CLINE_DIR",
+  "PI_CODING_AGENT_DIR",
+] as const;
 
 export function cursorPath(): string {
   return process.env["WORKTABLE_CURSOR_MCP_CONFIG"]?.trim() || join(homedir(), ".cursor", "mcp.json");
@@ -309,6 +383,63 @@ export function juniePath(): string {
   return join(home || join(homedir(), ".junie"), "mcp", "mcp.json");
 }
 
+/** Zed's settings, which hold its servers among everything else. */
+export function zedPath(): string {
+  const explicit = process.env["WORKTABLE_ZED_SETTINGS"]?.trim();
+  if (explicit) return explicit;
+  const appData = process.env["APPDATA"]?.trim();
+  if (process.platform === "win32" && appData) return join(appData, "Zed", "settings.json");
+  return join(xdgConfigDir(), "zed", "settings.json");
+}
+
+/**
+ * The servers Cline CLI and Cline in editors share. Cline moves the file with
+ * CLINE_MCP_SETTINGS_PATH, its data folder with CLINE_DATA_DIR, and its whole
+ * folder with CLINE_DIR.
+ */
+export function clinePath(): string {
+  const explicit =
+    process.env["WORKTABLE_CLINE_MCP_CONFIG"]?.trim() || process.env["CLINE_MCP_SETTINGS_PATH"]?.trim();
+  if (explicit) return explicit;
+  const data =
+    process.env["CLINE_DATA_DIR"]?.trim() || join(process.env["CLINE_DIR"]?.trim() || join(homedir(), ".cline"), "data");
+  return join(data, "settings", "cline_mcp_settings.json");
+}
+
+/** Warp's own global servers. */
+export function warpPath(): string {
+  return process.env["WORKTABLE_WARP_MCP_CONFIG"]?.trim() || join(homedir(), ".warp", ".mcp.json");
+}
+
+/** Pi's user servers; PI_CODING_AGENT_DIR moves its folder. */
+export function piPath(): string {
+  const explicit = process.env["WORKTABLE_PI_MCP_CONFIG"]?.trim();
+  if (explicit) return explicit;
+  return join(process.env["PI_CODING_AGENT_DIR"]?.trim() || join(homedir(), ".pi", "agent"), "mcp.json");
+}
+
+/** Factory Droid's personal servers. */
+export function droidPath(): string {
+  return process.env["WORKTABLE_DROID_MCP_CONFIG"]?.trim() || join(homedir(), ".factory", "mcp.json");
+}
+
+/** Amp's user settings, which hold its servers among everything else. */
+export function ampPath(): string {
+  return process.env["WORKTABLE_AMP_SETTINGS"]?.trim() || join(xdgConfigDir(), "amp", "settings.json");
+}
+
+/** The servers Kiro IDE and kiro-cli share. */
+export function kiroPath(): string {
+  return process.env["WORKTABLE_KIRO_MCP_CONFIG"]?.trim() || join(homedir(), ".kiro", "settings", "mcp.json");
+}
+
+type ListedClient = keyof typeof SERVER_LISTS;
+
+/** A server entry for a client in SERVER_LISTS: its address and the bearer. */
+export function listedEntry(id: ListedClient, endpoint: string, token?: string): Record<string, unknown> {
+  return { ...SERVER_LISTS[id].extra, url: endpoint, ...(token ? { headers: bearerHeaders(token) } : {}) };
+}
+
 export function cursorEntry(endpoint: string, token?: string): Record<string, unknown> {
   return { url: endpoint, ...(token ? { headers: bearerHeaders(token) } : {}) };
 }
@@ -367,7 +498,35 @@ export const JSON_CLIENT_ENTRY_PLACES = {
   antigravity: [["mcpServers"]],
   devin: [["mcpServers"]],
   junie: [["mcpServers"]],
+  zed: [[SERVER_LISTS.zed.key]],
+  cline: [[SERVER_LISTS.cline.key]],
+  warp: [[SERVER_LISTS.warp.key]],
+  pi: [[SERVER_LISTS.pi.key]],
+  droid: [[SERVER_LISTS.droid.key]],
+  amp: [[SERVER_LISTS.amp.key]],
+  kiro: [[SERVER_LISTS.kiro.key]],
 } as const satisfies Record<string, JsonEntryPlaces>;
+
+export const LISTED_PATHS: Record<ListedClient, () => string> = {
+  zed: zedPath,
+  cline: clinePath,
+  warp: warpPath,
+  pi: piPath,
+  droid: droidPath,
+  amp: ampPath,
+  kiro: kiroPath,
+};
+
+/** How to load the new server in each of these clients. */
+const LISTED_RESTART_HINTS: Record<ListedClient, string> = {
+  zed: "Start a new Zed agent thread to load Worktable.",
+  cline: "Start a new Cline task to load Worktable.",
+  warp: "Start a new Warp agent conversation to load Worktable.",
+  pi: "Start a new Pi session, or run /reload, to load Worktable.",
+  droid: "Start a new Droid session to load Worktable.",
+  amp: "Start a new Amp thread to load Worktable.",
+  kiro: "Start a new Kiro chat to load Worktable.",
+};
 
 // ---- Codex (TOML) ------------------------------------------------------------
 
@@ -830,6 +989,14 @@ function configSurface(id: ConnectorInstallableMcpClientId): ConfigSurface | nul
       return { path: devinPath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.devin };
     case "junie":
       return { path: juniePath(), kind: "json", places: JSON_CLIENT_ENTRY_PLACES.junie };
+    case "zed":
+    case "cline":
+    case "warp":
+    case "pi":
+    case "droid":
+    case "amp":
+    case "kiro":
+      return { path: LISTED_PATHS[id](), kind: "json", places: JSON_CLIENT_ENTRY_PLACES[id] };
   }
 }
 
@@ -859,6 +1026,14 @@ function tokenlessEntry(id: ConnectorInstallableMcpClientId, endpoint: string): 
       return devinEntry(endpoint);
     case "junie":
       return junieEntry(endpoint);
+    case "zed":
+    case "cline":
+    case "warp":
+    case "pi":
+    case "droid":
+    case "amp":
+    case "kiro":
+      return listedEntry(id, endpoint);
   }
 }
 
@@ -1071,6 +1246,28 @@ export function detectClient(id: ConnectorInstallableMcpClientId): boolean {
       return commandExists("devin") || existsSync(dirname(devinPath()));
     case "junie":
       return commandExists("junie") || existsSync(dirname(dirname(juniePath())));
+    case "zed":
+      return commandExists("zed") || commandExists("zeditor") || existsSync(dirname(zedPath()));
+    case "cline":
+      // Its folder or data folder, wherever CLINE_DIR or CLINE_DATA_DIR moved them.
+      return (
+        commandExists("cline") ||
+        existsSync(join(homedir(), ".cline")) ||
+        Boolean(process.env["CLINE_DIR"]?.trim() && existsSync(process.env["CLINE_DIR"].trim())) ||
+        existsSync(dirname(dirname(clinePath())))
+      );
+    // Warp has no command of its own; its folder appears once it runs.
+    case "warp":
+      return existsSync(dirname(warpPath()));
+    // `pi` is a common name, so only Pi's own folder counts.
+    case "pi":
+      return existsSync(dirname(piPath()));
+    case "droid":
+      return commandExists("droid") || existsSync(dirname(droidPath()));
+    case "amp":
+      return commandExists("amp") || existsSync(dirname(ampPath()));
+    case "kiro":
+      return commandExists("kiro-cli") || existsSync(dirname(dirname(kiroPath())));
   }
 }
 
@@ -1179,6 +1376,17 @@ function installClientUnsafe(
       setupJsonUrl(path, JSON_CLIENT_ENTRY_PLACES.junie, junieEntry(target.endpoint, target.token));
       return { id, ok: true, configPath: path, restartHint: "Start a new Junie session to load Worktable." };
     }
+    case "zed":
+    case "cline":
+    case "warp":
+    case "pi":
+    case "droid":
+    case "amp":
+    case "kiro": {
+      const path = LISTED_PATHS[id]();
+      setupJsonUrl(path, JSON_CLIENT_ENTRY_PLACES[id], listedEntry(id, target.endpoint, target.token));
+      return { id, ok: true, configPath: path, restartHint: LISTED_RESTART_HINTS[id] };
+    }
   }
 }
 
@@ -1197,6 +1405,15 @@ function signInCommand(id: ConnectorInstallableMcpClientId): string[] | null {
       return commandExists("kilo") ? ["kilo", "mcp", "auth", "worktable"] : null;
     case "devin":
       return commandExists("devin") ? ["devin", "mcp", "login", "worktable"] : null;
+    case "pi":
+      return commandExists("pi") ? ["pi", "mcp", "login", "worktable"] : null;
+    case "droid":
+      return commandExists("droid") ? ["droid", "mcp", "auth"] : null;
+    case "zed":
+    case "cline":
+    case "warp":
+    case "amp":
+    case "kiro":
     case "junie":
     case "cursor":
     case "vscode":
@@ -1233,6 +1450,21 @@ export function signInInstruction(id: ConnectorInstallableMcpClientId): string {
         : "Open Devin, then sign in to worktable from its MCP settings.";
     case "junie":
       return "In Junie, run /mcp, choose worktable and Authorize.";
+    case "zed":
+      return "In Zed, open the agent panel's MCP servers and sign in to worktable.";
+    case "cline":
+      return "In Cline, open MCP Servers, choose worktable and Authorize.";
+    case "warp":
+      return "In Warp, open MCP servers and start worktable to sign in.";
+    case "pi":
+      return "Run: pi mcp login worktable";
+    case "droid":
+      return "Run: droid mcp auth";
+    // Amp signs in the first time a thread uses the server.
+    case "amp":
+      return "Start a new Amp thread and sign in to worktable when Amp asks.";
+    case "kiro":
+      return "In Kiro, open MCP servers and sign in to worktable.";
   }
 }
 
@@ -1305,6 +1537,13 @@ export async function connectClientOnce(id: ConnectorInstallableMcpClientId): Pr
     case "antigravity":
     case "devin":
     case "junie":
+    case "zed":
+    case "cline":
+    case "warp":
+    case "pi":
+    case "droid":
+    case "amp":
+    case "kiro":
       return false;
   }
 }

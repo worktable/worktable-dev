@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { join } from "node:path"
+import { CLIENT_CONFIG_ENV_KEYS } from "@worktable/mcp-connect"
 import {
   desktopAgentEnvironment,
   desktopAgentSessionMarker,
@@ -76,6 +77,18 @@ describe("Desktop lab agent launcher", () => {
       "CLAUDE_CODE_OAUTH_TOKEN",
     ])
       expect(environment[key]).toBeUndefined()
+  })
+
+  test("never inherits a variable that points a client at the real profile", () => {
+    const run = manifest("isolated")
+    const environment = desktopAgentEnvironment(
+      run,
+      Object.fromEntries(
+        CLIENT_CONFIG_ENV_KEYS.map((key) => [key, `/Users/real/${key}`])
+      )
+    )
+    for (const key of CLIENT_CONFIG_ENV_KEYS)
+      expect(environment[key] ?? run.paths.home).toStartWith(run.paths.home)
   })
 
   test("auto-selects exactly one active run and requires a name for ambiguity", () => {

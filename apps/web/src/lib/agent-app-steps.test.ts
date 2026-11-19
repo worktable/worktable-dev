@@ -105,6 +105,10 @@ describe("agent app ways", () => {
         "copilot",
         "devin",
         "junie",
+        "pi",
+        "droid",
+        "cline",
+        "amp",
       ] as const) {
         const way = best(app, at(place))
         expect(way).toMatchObject({
@@ -146,6 +150,23 @@ describe("agent app ways", () => {
     expect(JSON.parse(addressStep("junie", pinned).value)).toEqual({
       mcpServers: { worktable: { url: pinned } },
     })
+    // Pi's and Droid's commands add the server and the skills plugin; Cline,
+    // Amp, Zed and Warp take the address and Worktable's installer.
+    for (const app of ["pi", "droid"] as const) {
+      expect(best(app, at("cloud"))).toMatchObject({
+        kind: "address",
+        skills: { via: "plugin" },
+      })
+      expect(addressStep(app, pinned).value).toContain(pinned)
+    }
+    for (const app of ["cline", "amp", "zed", "warp"] as const)
+      expect(best(app, at("cloud"))).toMatchObject({
+        kind: "address",
+        skills: { via: "url", target: "agents" },
+      })
+    expect(JSON.parse(addressStep("zed", pinned).value)).toEqual({
+      context_servers: { worktable: { url: pinned } },
+    })
     // An address alone is tools without skills; the Gemini app takes a file.
     expect(best("gemini", at("cloud")).skills.via).toBe("files")
     expect(bringsSkills(best("other", at("cloud")))).toBe(false)
@@ -186,7 +207,10 @@ describe("agent app ways", () => {
 
   it("shows every app at once, in order, where its setup works", () => {
     const ids = (place: Place): AppId[] => appsFor(place).map((app) => app.id)
-    expect(ids("cloud")).toEqual(AGENT_APPS.map((app) => app.id))
+    // Kiro waits until its connection can be seen working.
+    expect(ids("cloud")).toEqual(
+      AGENT_APPS.map((app) => app.id).filter((id) => id !== "kiro")
+    )
     expect(ids("cloud").slice(0, 8)).toEqual([
       "claude",
       "chatgpt",
@@ -202,6 +226,9 @@ describe("agent app ways", () => {
       expect(ids(place)).not.toContain("perplexity")
       expect(ids(place)).not.toContain("gemini")
       expect(ids(place)).toContain("gemini-cli")
+      // Zed and Warp have no command that shows a connection working here.
+      expect(ids(place)).not.toContain("zed")
+      expect(ids(place)).not.toContain("warp")
     }
   })
 

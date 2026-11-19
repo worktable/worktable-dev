@@ -17,16 +17,16 @@ worktable mcp setup
 
 To set up one client, run `worktable mcp setup <client>` with `claude-code`,
 `codex`, `cursor`, `vscode`, `copilot`, `antigravity`, `devin`, `junie`,
-`opencode`, or `kilo`.
+`opencode`, `kilo`, `pi`, `droid`, `cline`, `amp`, `zed`, `warp`, or `kiro`.
 For Goose, use the
 configuration from `worktable mcp print-config goose`.
 
 For an agent on another computer, choose it under **Connect App** and copy its
 command, or run `worktable agent invite` on the Worktable host. The command
 redeems a single-use pairing code. For Claude Code, Codex, Copilot CLI, VS Code,
-Antigravity and Devin, the same command then installs Worktable's
-[skills](/agents/skills/) as a plugin, and copies them for Junie. For OpenCode
-and Kilo, it adds this Worktable's
+Antigravity, Devin, Pi and Factory Droid, the same command then installs
+Worktable's [skills](/agents/skills/) as a plugin, and copies them for Junie,
+Cline and Amp. For OpenCode and Kilo, it adds this Worktable's
 [skills address](/agents/skills/#skills-address), so they load the skills from
 it. The host must be reachable from that computer; see
 [Remote access](/guides/remote-access/).
@@ -119,14 +119,89 @@ choose `worktable` and **Authorize**:
 For the skills in either, run
 `curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents`.
 
+### Pi, Factory Droid, Cline and Amp
+
+On local or self-hosted Worktable, choose the app and run the command shown:
+
+- **Pi**: the server goes in `~/.pi/agent/mcp.json`, and the plugin's
+  repository is installed as a Pi package with `pi install`, which brings the
+  skills.
+- **Factory Droid**: the server goes in `~/.factory/mcp.json`, and the skills
+  plugin is installed with `droid plugin install`.
+- **Cline**: the server goes in `~/.cline/data/settings/cline_mcp_settings.json`,
+  which Cline CLI and Cline in your editor share.
+- **Amp**: the server goes in `~/.config/amp/settings.json` under
+  `amp.mcpServers`.
+
+Your other servers and settings stay as they are. Without `pi` or `droid`,
+and always for Cline and Amp, the skills are copied to `~/.agents/skills`,
+which each of them reads. Then start a new session.
+
+On Worktable Cloud, choose the app under **Connect App**. For Pi, run this and
+sign in when your browser opens:
+
+```sh
+pi mcp add worktable --url https://app.worktable.cloud/api/mcp
+pi mcp login worktable
+pi install git:github.com/worktable/worktable-plugin
+```
+
+For Factory Droid:
+
+```sh
+droid mcp add worktable https://app.worktable.cloud/api/mcp --type http
+droid plugin marketplace add worktable/worktable-plugin
+droid plugin install worktable-skills@worktable-plugin --scope user
+droid mcp auth
+```
+
+For Amp, run `amp mcp add worktable https://app.worktable.cloud/api/mcp`,
+then sign in when a new thread asks. For Cline, open **MCP Servers**, then
+**Configure**, and add the server below, then choose `worktable` and
+**Authorize**. For the skills in Cline or Amp, run
+`curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents`.
+
+```json
+{
+  "mcpServers": {
+    "worktable": { "type": "streamableHttp", "url": "https://app.worktable.cloud/api/mcp" }
+  }
+}
+```
+
+### Zed, Warp and Kiro
+
+On Worktable Cloud, add Cloud's address and sign in when the app asks, then
+run `curl -fsSL https://worktable.dev/install-skills | sh -s -- --target agents`
+for the skills, which Zed and Warp read from `~/.agents/skills`:
+
+- **Zed**: add this to your settings.
+
+  ```json
+  { "context_servers": { "worktable": { "url": "https://app.worktable.cloud/api/mcp" } } }
+  ```
+
+- **Warp**: open **MCP servers**, choose **Add** and paste this.
+
+  ```json
+  { "mcpServers": { "worktable": { "url": "https://app.worktable.cloud/api/mcp" } } }
+  ```
+
+On local or self-hosted Worktable, `worktable mcp setup zed`, `warp` or
+`kiro` writes the server to Zed's `settings.json`, keeping its comments, to
+`~/.warp/.mcp.json`, or to `~/.kiro/settings/mcp.json`, which Kiro IDE and
+`kiro-cli` share. The pairing command does the same with `--client zed`,
+`warp` or `kiro`. For Kiro it also installs the skills as a Power with
+`kiro-cli powers install`.
+
 ## Plugins
 
 The general Worktable plugin bundles skills and a **Cloud connection** to
 `https://app.worktable.cloud/api/mcp`. For local or self-hosted Worktable, the
 connect command sets up Claude Code, Codex, Copilot CLI, VS Code,
-Antigravity and Devin with this Worktable's connection and Worktable Skills,
-the same skills without the Cloud connection, and OpenCode and Kilo with its
-skills address. For other clients, use that installation's MCP configuration and install
+Antigravity, Devin, Pi, Factory Droid and Kiro with this Worktable's
+connection and Worktable Skills, the same skills without the Cloud
+connection, and OpenCode and Kilo with its skills address. For other clients, use that installation's MCP configuration and install
 [skills](/agents/skills/) separately if your client supports them.
 
 For Claude Code:

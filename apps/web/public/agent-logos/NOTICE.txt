@@ -116,3 +116,9 @@ the brand color Simple Icons lists:
 
 zed.svg      Zed (zedindustries), #084CCF. Zed belongs to Zed Industries, Inc.
 warp.svg     Warp, #01A4FF. Warp belongs to Denver Technologies, Inc.
+
+pi.svg       Pi mark from https://pi.dev/favicon.svg, with its color-scheme
+             style replaced by a black fill. Pi belongs to Earendil Inc.
+factory.svg  Factory mark from https://factory.ai/favicon.svg, with its
+             wrapper and theme filter removed. Factory and Droid belong to
+             The San Francisco AI Factory, Inc.

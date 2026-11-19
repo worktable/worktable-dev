@@ -262,10 +262,7 @@ export function applyThreadActivityToQueries(
   activity: ThreadActivity | undefined
 ): void {
   const detailKey = threadQueryKeys.detail(location, threadId)
-  const listKeys = [
-    threadQueryKeys.list({ kind: "all" }),
-    threadQueryKeys.list(location),
-  ]
+  const listKeys = threadListKeys(location)
   if (!activity?.messageId) {
     refreshLive(queryClient, [
       { queryKey: detailKey, exact: true },
@@ -767,9 +764,11 @@ export function revalidateSpaceAfterReconnect(
     { queryKey: activityQueryKeys.pending },
   ])
   if (!isSpaceLive(THREAD_STREAM)) {
-    // Activity's live replies read the workspace thread list.
+    // Activity's live replies read the workspace thread list; a missed
+    // message may also have brought a thread back out of the archive.
     refreshLive(queryClient, [
       { queryKey: threadQueryKeys.list({ kind: "all" }), exact: true },
+      { queryKey: threadQueryKeys.archivedList({ kind: "all" }), exact: true },
     ])
     void reconcileSpaceThreadQueries(queryClient, spaceId)
   }

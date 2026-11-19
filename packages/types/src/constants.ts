@@ -32,7 +32,11 @@ export interface ThreadLifetimeChoice {
  */
 export const THREAD_LIFETIME_KEY = "worktable.threadLifetime"
 
-/** A thread's lifetime choice; undefined when unset or not understood. */
+/**
+ * A thread's lifetime choice; undefined when unset or not understood. A choice
+ * whose time cannot be read is not understood: compared with a message's time
+ * it would hold the thread in the archive for good.
+ */
 export function threadLifetimeChoice(
   thread: object
 ): ThreadLifetimeChoice | undefined {
@@ -40,6 +44,7 @@ export function threadLifetimeChoice(
   if (typeof value !== "object" || value === null) return undefined
   const { state, at } = value as Record<string, unknown>
   return typeof at === "string" &&
+    Number.isFinite(Date.parse(at)) &&
     THREAD_LIFETIME_STATES.includes(state as ThreadLifetimeState)
     ? { state: state as ThreadLifetimeState, at }
     : undefined

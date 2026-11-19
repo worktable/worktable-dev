@@ -295,6 +295,13 @@ describe("thread REST routes", () => {
     expect(await listed("exclude")).toEqual([threadId])
     expect(await listed("only")).toEqual([])
 
+    // A choice whose time cannot be read is ignored, not held against the
+    // thread: its newest message is what counts.
+    const edited = JSON.parse(await readFile(path, "utf8"))
+    edited["worktable.threadLifetime"] = { state: "archived", at: "someday" }
+    await writeFile(path, `${JSON.stringify(edited, null, 2)}\n`, "utf8")
+    expect(await listed("exclude")).toEqual([threadId])
+
     expect((await choose("gone")).status).toBe(400)
     expect(
       (await request("GET", "/api/threads?archived=sometimes")).status

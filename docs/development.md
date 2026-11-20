@@ -5,7 +5,7 @@ To use Worktable without building it, follow the [installation guide](https://do
 
 ## Prerequisites
 
-- Node **24.15.0**.
+- Node **24.22.3**.
 - Bun **1.3.14**, as pinned by `packageManager` in `package.json`.
 - Git.
 

@@ -102,7 +102,7 @@ export function sourceReceipt(input: {
     !Number.isSafeInteger(input.runAttempt) ||
     input.runAttempt <= 0 ||
     input.bun !== "1.3.14" ||
-    input.node !== "24.15.0"
+    input.node !== "24.22.3"
   )
     throw new Error("Invalid source or toolchain identity")
   return {

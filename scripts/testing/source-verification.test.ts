@@ -54,7 +54,7 @@ test("reusable source proof requires the complete main execution and actual tool
     event: "push",
     ref: "refs/heads/main",
     bun: "1.3.14",
-    node: "24.15.0",
+    node: "24.22.3",
     lockfileSha256: "c".repeat(64),
     jobs: jobs(),
   }

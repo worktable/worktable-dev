@@ -35,20 +35,26 @@ class HostBinaryData {
   }
 }
 
-/** The most read ahead of what pdf.js asked for, when it reads in a row. */
-const READ_AHEAD_MAX_BYTES = 1024 * 1024
+/** The most fetched beyond what pdf.js asked for, when it reads in a row. */
+const READ_AHEAD_MAX_BYTES = 4 * 1024 * 1024
+
+/** The most fetched-ahead bytes kept for requests still to come. */
+const KEPT_AHEAD_MAX_BYTES = 16 * 1024 * 1024
 
 /**
  * The file's bytes, a piece at a time, from the page. pdf.js asks for one
- * piece after another when it reads a long table, each a round trip. When a
- * request starts where the last one ended, more is fetched than was asked
- * for, doubling each time, and the next requests are answered from it.
+ * piece after another when it walks a long table, forwards or, for some
+ * files, backwards, each a round trip. When a request lies next to the last
+ * one, more is fetched in that direction than was asked for, doubling each
+ * time, and later requests inside what was fetched are answered at once.
  */
 class HostTransport extends pdfjs.PDFDataRangeTransport {
   #length: number
-  #asked = new Map<number, number>()
-  #ahead: { begin: number; bytes: Uint8Array } | null = null
-  #lastEnd = -1
+  /** Reads sent to the page, by where they begin: what pdf.js asked for. */
+  #asked = new Map<number, { begin: number; end: number }>()
+  /** Fetched bytes pdf.js hasn't asked for yet, oldest first. */
+  #kept: { begin: number; bytes: Uint8Array }[] = []
+  #last: { begin: number; end: number } | null = null
   #extra = 0
 
   constructor(length: number, start: Uint8Array) {
@@ -57,43 +63,52 @@ class HostTransport extends pdfjs.PDFDataRangeTransport {
   }
 
   override requestDataRange(begin: number, end: number): void {
-    const inRow = begin === this.#lastEnd
-    this.#lastEnd = end
-    const ahead = this.#ahead
-    if (
-      ahead &&
-      ahead.begin === begin &&
-      ahead.bytes.byteLength >= end - begin
-    ) {
-      const rest = ahead.bytes.subarray(end - begin)
-      this.#ahead = rest.byteLength > 0 ? { begin: end, bytes: rest } : null
-      const now = ahead.bytes.slice(0, end - begin)
+    const last = this.#last
+    this.#last = { begin, end }
+    const kept = this.#kept.find(
+      (each) => each.begin <= begin && each.begin + each.bytes.byteLength >= end
+    )
+    if (kept) {
+      const now = kept.bytes.slice(begin - kept.begin, end - kept.begin)
       void Promise.resolve().then(() => this.onDataRange(begin, now))
       return
     }
-    this.#ahead = null
-    this.#extra = inRow
-      ? Math.min(
-          Math.max(this.#extra * 2, VIEWER_PIECE_BYTES),
-          READ_AHEAD_MAX_BYTES
-        )
-      : 0
-    this.#asked.set(begin, end)
-    say({
-      type: "viewer.read",
-      begin,
-      end: Math.min(this.#length, end + this.#extra),
-    })
+    const forwards = last !== null && begin === last.end
+    const backwards = last !== null && end === last.begin
+    this.#extra =
+      forwards || backwards
+        ? Math.min(
+            Math.max(this.#extra * 2, VIEWER_PIECE_BYTES),
+            READ_AHEAD_MAX_BYTES
+          )
+        : 0
+    const from = backwards ? Math.max(0, begin - this.#extra) : begin
+    const to = forwards ? Math.min(this.#length, end + this.#extra) : end
+    this.#asked.set(from, { begin, end })
+    say({ type: "viewer.read", begin: from, end: to })
   }
 
-  /** Bytes the page sent for a read that began at `begin`. */
-  arrived(begin: number, data: Uint8Array): void {
-    const wanted = (this.#asked.get(begin) ?? begin + data.byteLength) - begin
-    this.#asked.delete(begin)
-    if (data.byteLength > wanted) {
-      this.#ahead = { begin: begin + wanted, bytes: data.slice(wanted) }
+  /** Bytes the page sent for a read that began at `from`. */
+  arrived(from: number, data: Uint8Array): void {
+    const asked = this.#asked.get(from) ?? {
+      begin: from,
+      end: from + data.byteLength,
     }
-    this.onDataRange(begin, data.slice(0, wanted))
+    this.#asked.delete(from)
+    if (data.byteLength > asked.end - asked.begin) {
+      this.#kept.push({ begin: from, bytes: data })
+      let size = this.#kept.reduce(
+        (sum, each) => sum + each.bytes.byteLength,
+        0
+      )
+      while (size > KEPT_AHEAD_MAX_BYTES && this.#kept.length > 1) {
+        size -= this.#kept.shift()!.bytes.byteLength
+      }
+    }
+    this.onDataRange(
+      asked.begin,
+      data.slice(asked.begin - from, asked.end - from)
+    )
   }
 }
 

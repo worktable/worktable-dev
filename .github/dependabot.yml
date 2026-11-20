@@ -33,6 +33,10 @@ updates:
       - dependency-name: "@quickdrawjs/core"
       # Plugin compatibility target.
       - dependency-name: openclaw
+      # Change the tool schemas tools/list serves, which stay frozen while
+      # directory reviews are pending.
+      - dependency-name: zod
+      - dependency-name: "@modelcontextprotocol/*"
 
   - package-ecosystem: github-actions
     directory: /
@@ -45,6 +49,9 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: cargo
     directory: /apps/desktop/src-tauri

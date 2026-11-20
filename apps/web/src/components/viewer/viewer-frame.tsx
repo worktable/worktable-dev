@@ -14,6 +14,7 @@ import {
   VIEWER_WHOLE_FILE_BYTES,
   viewerAssetPath,
   viewerFrameMessage,
+  viewerFrameSecret,
   type ViewerCommand,
   type ViewerHostMessage,
   type ViewerKey,
@@ -115,7 +116,9 @@ export function ViewerFrame({
   // The frame starts in the theme of the moment and follows it from there,
   // so a change of theme never restarts it and loses the reader's place.
   const [startTheme] = useState(resolvedTheme)
-  const src = viewerUrl(viewer, "", [`theme=${startTheme}`])
+  // Only the frame this page loads learns its secret; see viewerFrameSecret.
+  const [secret] = useState(viewerFrameSecret)
+  const src = `${viewerUrl(viewer, "", [`theme=${startTheme}`])}#${secret}`
   useEffect(() => {
     post.current({ type: "viewer.theme", theme: resolvedTheme })
   }, [resolvedTheme])
@@ -129,7 +132,7 @@ export function ViewerFrame({
     const element = frame.current
     if (!element) return
     setSettled(false)
-    let token: string | null = null
+    let greeted = false
     let over = false
     let etag: string | null = null
     const whole = byteLength <= VIEWER_WHOLE_FILE_BYTES
@@ -191,8 +194,9 @@ export function ViewerFrame({
       const message = viewerFrameMessage(event.data)
       if (!message || over) return
       if (message.type === "viewer.handshake") {
-        if (token !== null) return
-        token = message.token
+        // Only the document this page loaded knows the secret.
+        if (greeted || message.token !== secret) return
+        greeted = true
         const data = await start
         if (!data) return refuse("failed")
         send(
@@ -207,7 +211,7 @@ export function ViewerFrame({
         )
         return
       }
-      if (message.token !== token) return
+      if (!greeted || message.token !== secret) return
       switch (message.type) {
         case "viewer.read": {
           const range = clampViewerRead(message.begin, message.end, byteLength)
@@ -295,7 +299,7 @@ export function ViewerFrame({
       window.removeEventListener("message", onMessage)
       element.removeEventListener("load", onLoad)
     }
-  }, [byteLength, fileUrl, src, startPage, viewer])
+  }, [byteLength, fileUrl, secret, src, startPage, viewer])
 
   return (
     <iframe

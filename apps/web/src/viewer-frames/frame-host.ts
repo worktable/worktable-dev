@@ -25,7 +25,8 @@ function randomId(): string {
   )
 }
 
-const token = randomId()
+// The secret the page gave this frame in its address; see viewerFrameSecret.
+const token = location.hash.slice(1)
 
 /** Tell the page something. */
 export function say(message: Outgoing): void {

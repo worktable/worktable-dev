@@ -109,6 +109,21 @@ const MESSAGE_TYPES = new Set([
   "viewer.key",
 ])
 
+/**
+ * The secret a page gives the one frame it loads, in the frame address's
+ * fragment: never sent to the server, and unreadable by any other page. The
+ * frame proves it is that document by naming the secret in every message, so
+ * a document something else navigated the frame to is never answered.
+ * Random bytes, not crypto.randomUUID, which a Worktable reached over plain
+ * HTTP doesn't have.
+ */
+export function viewerFrameSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    ""
+  )
+}
+
 /** A frame's message, or null for anything else that reaches the page. */
 export function viewerFrameMessage(data: unknown): ViewerFrameMessage | null {
   if (typeof data !== "object" || data === null) return null

@@ -268,6 +268,40 @@ test("a PDF whose bytes stop arriving says so instead of waiting", async ({
   await page.unroute("**/documents/file?*")
 })
 
+test("a document put in the viewer's place is never handed the file", async ({
+  page,
+}) => {
+  // Stands in for a page another site navigated the viewer frame to: no
+  // origin, the same frame, but not the document the app loaded there, so
+  // it can only guess the secret the app gave that document.
+  await page.route("**/api/viewers/pdf?*", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      headers: { "Content-Security-Policy": "sandbox allow-scripts" },
+      body: `<!doctype html><script>
+        addEventListener("message", (event) => {
+          if (event.data && event.data.type === "viewer.open") document.title = "handed the file"
+        })
+        for (const token of ["", "guess"])
+          parent.postMessage({ type: "viewer.handshake", token }, "*")
+      </script>`,
+    })
+  )
+  const opened: string[] = []
+  page.on("request", (request) => {
+    if (request.url().includes("/documents/file")) opened.push(request.url())
+  })
+  await page.goto(`${harness.webUrl}/spaces/papers/documents/report.pdf`)
+  const frame = page.frameLocator('iframe[data-viewer-frame="pdf"]')
+  await expect(frame.locator("script")).toHaveCount(1)
+  await page.waitForTimeout(3_000)
+  const inside = page
+    .frames()
+    .find((each) => each.url().includes("/api/viewers/pdf"))!
+  expect(await inside.title()).toBe("")
+  await page.unroute("**/api/viewers/pdf?*")
+})
+
 test("a file that can't be shown still says so and downloads", async ({
   page,
 }) => {

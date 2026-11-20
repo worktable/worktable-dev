@@ -7,6 +7,10 @@
 // reader (the file type table's contents surface), and every reader gives
 // the same page, so a new type adds a reader and nothing else.
 //
+// A file a reader must parse (PDF) is parsed in the contents lane and its
+// contents kept in the derived store (parsed-contents.ts); its pages come
+// from there.
+//
 // The text reader reads the file itself, at one revision, a chunk at a time:
 // it keeps only the lines of the page asked for and counts the rest, so a
 // file of any size pages without being held whole. A page stops at a line
@@ -20,17 +24,27 @@ import {
   CONTENTS_PAGE_MAX_BYTES,
 } from "./file-contents-limits.ts"
 import { readsAsText } from "./mcp/file-results.ts"
+import type { ParsingReaderId } from "./contents-reader-versions.ts"
+import { readParsedContents } from "./parsed-contents.ts"
 
 
-/** A file's contents reader. */
-export type ContentsReader = "text"
+/** A file's contents reader: the text itself, or a reader that parses it. */
+export type ContentsReader = "text" | ParsingReaderId
 
 /**
  * Whether a page holds everything it covers (ready), leaves part of it out
- * (partial, with what and why under missing), or the file has no contents
- * Worktable can read (unsupported, with why).
+ * (partial, with what and why under missing), is still being read
+ * (pending), or the file has no contents Worktable can read: of a kind or
+ * past a limit it doesn't read (unsupported), password protected
+ * (encrypted), or a reader that stopped (failed), each with why.
  */
-export type ContentsState = "ready" | "partial" | "unsupported"
+export type ContentsState =
+  | "ready"
+  | "partial"
+  | "pending"
+  | "unsupported"
+  | "encrypted"
+  | "failed"
 
 /** Something a page leaves out: where, when it is one place, and why. */
 export interface ContentsGap {
@@ -51,11 +65,16 @@ export interface ContentsPage {
   /** Where the next page starts, when there is more. */
   nextOffset?: number
   missing: ContentsGap[]
+  /** For a parsed file: where each part (a page) starts. */
+  outline?: { label: string; line: number }[]
+  /** For a parsed file: what it is, such as its page count. */
+  facts?: Record<string, string | number | boolean>
 }
 
 /** The reader for a file's contents, by its name, or null when it has none. */
 export function contentsReaderFor(path: string): ContentsReader | null {
-  if (fileTypePolicy(fileTypeFor(path), "contents") === "text") return "text"
+  const reader = fileTypePolicy(fileTypeFor(path), "contents")
+  if (reader !== "none") return reader
   return readsAsText(path) ? "text" : null
 }
 
@@ -244,8 +263,12 @@ export async function readFileContents(options: {
   path: string
   offset?: number
   limit?: number
+  /** Who is reading, for the bound on parses one caller may wait for. */
+  caller?: string
 }): Promise<(CurrentFileSource & { contents: ContentsPage }) | null> {
-  if (contentsReaderFor(options.path) !== "text") return null
+  const reader = contentsReaderFor(options.path)
+  if (reader === null) return null
+  if (reader !== "text") return readParsedContents({ ...options, reader })
   let page: TextLinePage | undefined
   const file = await readCurrentFileSource({
     spaceId: options.spaceId,

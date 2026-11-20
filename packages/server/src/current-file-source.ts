@@ -12,6 +12,7 @@
 // its bytes never mix two revisions.
 
 import type { DocumentId } from "@worktable/types"
+import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { resolveCurrentFile, type CurrentFile } from "./document-page-service.ts"
 import { DocumentSourceReadError } from "./document-source-errors.ts"
 import {
@@ -23,11 +24,39 @@ import {
   FILE_READ_CHUNK_BYTES,
   FileRevisionError,
   OpenFileRevision,
+  readIsKeepable,
 } from "./file-revision.ts"
 import { assertSpaceAccess } from "./team-policy.ts"
 
 /** Reads of a file that keeps changing before one completes. */
 const READ_ATTEMPTS = 3
+
+/**
+ * Source revisions worked out from a whole read, by the file as its source
+ * and its revision, so a file read again unchanged, such as a PDF paged from
+ * its kept contents, isn't hashed again. Kept only for a settled revision.
+ */
+const sourceRevisions = new Map<string, string>()
+const SOURCE_REVISIONS_MAX = 4096
+
+/** Forgets every kept source revision, so a test sees each read. */
+export function forgetSourceRevisionsForTests(): void {
+  sourceRevisions.clear()
+}
+
+/** Everything a source revision is worked out from, but the bytes, and their revision. */
+async function sourceRevisionKey(current: CurrentFile): Promise<string> {
+  return JSON.stringify([
+    // A workspace replacement changes every revision, bytes unchanged.
+    await getWorkspaceCollaborationEpoch(),
+    current.documentId,
+    current.path,
+    current.format,
+    current.source,
+    current.pinned.path,
+    current.pinned.revision,
+  ])
+}
 
 export interface CurrentFileSource {
   current: CurrentFile
@@ -122,6 +151,10 @@ async function readPinned(
   keepBytes: boolean,
   consumer?: { update(chunk: Uint8Array): void }
 ): Promise<{ sourceRevision: string; bytes?: Uint8Array }> {
+  const key = await sourceRevisionKey(current)
+  const known = keepBytes || consumer ? undefined : sourceRevisions.get(key)
+  if (known !== undefined) return { sourceRevision: known }
+  const startedAt = Date.now()
   const revision = await registeredDocumentSourceRevisionHasher({
     documentId: current.documentId as DocumentId,
     path: current.path,
@@ -144,8 +177,16 @@ async function readPinned(
       bytes?.set(chunk, position)
       position += chunk.byteLength
     }
+    const sourceRevision = revision.revision()
+    if (readIsKeepable(current.pinned.path, current.pinned.revision, file.changedAtNs, startedAt)) {
+      if (sourceRevisions.size >= SOURCE_REVISIONS_MAX) {
+        const oldest = sourceRevisions.keys().next().value
+        if (oldest !== undefined) sourceRevisions.delete(oldest)
+      }
+      sourceRevisions.set(key, sourceRevision)
+    }
     return {
-      sourceRevision: revision.revision(),
+      sourceRevision,
       ...(bytes ? { bytes } : {}),
     }
   } finally {

@@ -46,6 +46,14 @@ export const PARSING_LIMITS: ParsingLimits = {
 
 /** Background jobs queued at most; past it, background work is refused. */
 const BACKGROUND_QUEUE_MAX = 256
+/**
+ * Jobs someone waits for, queued at most, and at most per owner (the person
+ * or agent asking): past either, a read is answered busy at once, so one
+ * caller, however many Spaces it reads from, can't fill the lane for
+ * everyone else.
+ */
+const WAITING_QUEUE_MAX = 16
+const WAITING_PER_OWNER = 4
 
 /** Why a job ended without output from its reader. */
 export type ParsingFailure =
@@ -78,6 +86,8 @@ export interface ParsingJob {
   limits?: Partial<ParsingLimits>
   /** The worker to start; the server's own executable unless given. */
   command?: readonly string[]
+  /** Whose job it is, the person or agent asking, for the bound on jobs waited for. */
+  owner?: string
 }
 
 const FAILURE_MESSAGES: Record<ParsingFailure, string> = {
@@ -238,6 +248,14 @@ export function parseInLane(job: ParsingJob): Promise<ParsingResult> {
   if (readerSwitchedOff(job.reader)) return Promise.resolve(failed("off"))
   const queue = job.priority === "waiting" ? waiting : background
   if (queue === background && background.length >= BACKGROUND_QUEUE_MAX) {
+    return Promise.resolve(failed("busy"))
+  }
+  if (
+    queue === waiting &&
+    (waiting.length >= WAITING_QUEUE_MAX ||
+      (job.owner !== undefined &&
+        waiting.filter((queued) => queued.job.owner === job.owner).length >= WAITING_PER_OWNER))
+  ) {
     return Promise.resolve(failed("busy"))
   }
   return new Promise((resolve) => {

@@ -1,3 +1,4 @@
+import { forgetSourceRevisionsForTests } from "./current-file-source.ts"
 import { afterEach, beforeEach, expect, it, spyOn } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
@@ -337,7 +338,9 @@ it("shows agents a PDF's page and an image scaled down, on the preview surface, 
   })
 
   // A file that changes while its page is drawn fails the preview: the
-  // picture never mixes two revisions.
+  // picture never mixes two revisions. Its source revision is read again,
+  // not taken from what earlier renders kept, so the reads are counted.
+  forgetSourceRevisionsForTests()
   const readPiece = OpenFileRevision.prototype.read
   let reads = 0
   const changing = spyOn(OpenFileRevision.prototype, "read").mockImplementation(

@@ -103,9 +103,10 @@ export interface FileSurfacePolicies {
   picture: "image" | "pages" | "none"
   /**
    * Which reader gives its contents, as text with where each part came
-   * from, to agents and search: the text itself, or none yet.
+   * from, to agents and search: the text itself, the PDF reader, or none
+   * yet.
    */
-  contents: "text" | "none"
+  contents: "text" | "pdf" | "none"
 }
 
 export interface FileTypeEntry {
@@ -414,6 +415,7 @@ export const FILE_TYPES = {
       serve: "download",
       icon: "document",
       picture: "pages",
+      contents: "pdf",
     },
   },
   rtf: {

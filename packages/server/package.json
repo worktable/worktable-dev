@@ -22,6 +22,7 @@
     "@blocknote/code-block": "0.54.2",
     "@blocknote/core": "0.54.2",
     "@blocknote/server-util": "0.54.2",
+    "@firecrawl/pdf-inspector-wasm": "1.26.1",
     "@fontsource/caveat": "5.3.0",
     "@fontsource/noto-sans": "5.2.10",
     "@fontsource/noto-sans-mono": "5.3.0",

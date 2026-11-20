@@ -102,7 +102,7 @@ export const FILE_SURFACE_NOTES: {
   },
   contents: {
     where: "packages/server/src/file-contents.ts",
-    note: "Contents come to agents by line, a page at a time, within a byte limit per page that stays with the surface. A line past it is cut and the read says so; text that isn't UTF-8 has no contents and says why.",
+    note: "Contents come to agents by line, a page at a time, within a byte limit per page that stays with the surface. A line past it is cut and the read says so; text that isn't UTF-8 has no contents and says why. Text is read from the file itself; a PDF is parsed in the contents lane (contents-lane.ts) and its contents kept in the derived store.",
   },
   diff: {
     where: "packages/server/src/document-diff.ts",

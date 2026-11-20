@@ -1531,6 +1531,8 @@ async function _dispatchOperationInner(
         const read = await readFileContents({
           spaceId: args["spaceId"] as string,
           path: args["path"] as string,
+          // Parses one caller waits for are bounded per caller.
+          caller: principal.id,
           ...(args["offset"] !== undefined ? { offset: args["offset"] as number } : {}),
           ...(args["limit"] !== undefined ? { limit: args["limit"] as number } : {}),
         })

@@ -34,6 +34,8 @@ import { stringifyCanonicalYaml } from "./yaml.ts"
 import sharp from "sharp"
 import { withSyntheticPreview } from "./test-support/synthetic-preview.ts"
 import { avifDeclaredSizes } from "./agent-image-conversion.ts"
+import { derivedStore } from "./derived-store.ts"
+import { smallPdf } from "./test-support/small-pdf.ts"
 
 let root = ""
 let client: Client | null = null
@@ -581,6 +583,68 @@ describe("exact search in files", () => {
       const released = await search("released", { query: "ERROR disk full", exact: true })
       expect(released.matches).toEqual([])
       expect(released.skipped).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
+    }
+  }, 60_000)
+})
+
+describe("PDF contents for agents", () => {
+  it("reads a PDF's pages as contents, parsed once, and says when one is password protected", async () => {
+    const manifestPath = join(root, "worktable.workspace.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
+    await writeFile(manifestPath, `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`)
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
+    try {
+      const docs = join(root, "spaces", spaceId, "docs")
+      await writeFile(
+        join(docs, "report.pdf"),
+        smallPdf([{ text: "Quarterly report\nRevenue grew 12%" }, { text: "Appendix (a)" }])
+      )
+      await writeFile(join(docs, "locked.pdf"), smallPdf([{ text: "Secret" }], { encrypted: true }))
+      noteSpaceChanged(spaceId)
+      const read = async (surface: "released" | "preview", path: string, args: Record<string, unknown> = {}) => {
+        const connected = await connect(["documents:read"], surface)
+        const result = await connected.callTool({
+          name: "worktable_files_read",
+          arguments: { spaceId, path, source: true, ...args },
+        })
+        await connected.close()
+        expect(result.isError).not.toBe(true)
+        return result.structuredContent as Record<string, unknown> & {
+          contents: {
+            state: string
+            text: string
+            totalLines: number
+            missing: { why: string }[]
+            outline: { label: string; line: number }[]
+            facts: Record<string, unknown>
+          }
+        }
+      }
+
+      const first = await read("preview", "report.pdf")
+      expect(first.encoding).toBe("contents")
+      expect(first.contents).toMatchObject({ state: "ready", facts: { pages: 2 } })
+      expect(first.contents.outline.map((entry) => entry.label)).toEqual(["Page 1", "Page 2"])
+      expect(first.contents.text).toStartWith("<!-- Page 1 -->\n")
+      expect(first.contents.text).toContain("Revenue grew 12%")
+      // A page reads from its mark in the outline, from what was kept.
+      const second = await read("preview", "report.pdf", { offset: first.contents.outline[1]!.line })
+      expect(second.contents.text).toStartWith("<!-- Page 2 -->\n")
+      expect(second.contents.text).toContain("Appendix (a)")
+      expect(derivedStore().listing(spaceId).filter((row) => row.kind === "contents")).toHaveLength(1)
+
+      const locked = await read("preview", "locked.pdf")
+      expect(locked.contents.state).toBe("encrypted")
+      expect(locked.contents.missing[0]!.why).toContain("password protected")
+
+      // The released surface reads a PDF as before.
+      const released = await read("released", "report.pdf")
+      expect(released.encoding).toBe("base64")
+      expect(released["contents"]).toBeUndefined()
     } finally {
       if (previous === undefined) delete process.env["WORKTABLE_FILES"]
       else process.env["WORKTABLE_FILES"] = previous

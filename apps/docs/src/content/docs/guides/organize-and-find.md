@@ -51,7 +51,7 @@ Archived documents are never deleted automatically.
 - **Search** opens with Cmd+K (Ctrl+K on Windows and Linux), `/`, or the
   search field in the sidebar. It covers documents and records across Spaces
   and shows what you opened recently before you type. Archived results come
-  under **Archived**, below the rest. Narrow a search with **Kind** and
+  under **Archived**, below the rest. Narrow a search with **File Type** and
   **Space**, or type a place's name, such as a Space or Settings, to go
   there. Drawings match on typed text only.
 - **Home** opens on **Latest**: one row for each sitting of work, saying who

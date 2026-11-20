@@ -2,12 +2,12 @@ import { Search } from "lucide-react"
 import { useWorkspace } from "@/lib/queries"
 import { openSearch } from "@/lib/search-open"
 
-/** Cmd on Apple's keyboards, Ctrl elsewhere. */
-function shortcutLabel(): string {
+/** The keys that open search: Cmd on Apple's keyboards, Ctrl elsewhere. */
+function shortcutKeys(): readonly string[] {
   return typeof navigator !== "undefined" &&
     /Mac|iPhone|iPad/.test(navigator.platform)
-    ? "⌘K"
-    : "Ctrl K"
+    ? ["⌘", "K"]
+    : ["Ctrl", "K"]
 }
 
 /**
@@ -25,16 +25,23 @@ export function SidebarSearchButton({ onOpen }: { onOpen?: () => void }) {
         onOpen?.()
         openSearch()
       }}
-      className="well well-interactive flex h-9 w-full min-w-0 items-center gap-2 rounded-lg border border-input px-3 text-sm text-sidebar-foreground/50 transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="well well-interactive flex h-10 w-full min-w-0 items-center gap-2 rounded-lg border border-input px-3 text-sm text-sidebar-foreground/50 transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <Search className="size-4 shrink-0 text-sidebar-foreground/40" />
       <span className="min-w-0 flex-1 truncate text-left">
         Search {worktableName}…
       </span>
-      {/* No keys to press on a touch screen. */}
-      <kbd className="inline-code-accent shrink-0 font-mono text-[0.6875rem] pointer-coarse:hidden">
-        {shortcutLabel()}
-      </kbd>
+      {/* Each key on its own cap; none on a touch screen. */}
+      <span className="flex shrink-0 items-center gap-1 pointer-coarse:hidden">
+        {shortcutKeys().map((key) => (
+          <kbd
+            key={key}
+            className="inline-code-accent flex h-5 min-w-5 items-center justify-center font-sans text-xs leading-none"
+          >
+            {key}
+          </kbd>
+        ))}
+      </span>
     </button>
   )
 }

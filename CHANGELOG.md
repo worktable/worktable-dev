@@ -21,6 +21,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Smaller exports:** A file and the copy of it kept in its version history are stored once in an export, so a Worktable of uploaded files exports at about half the size. Exports from this version need this version of Worktable or later to import; older exports still import.
+- **Search:** Search opens over the page with Cmd+K, Ctrl+K or `/`, on a phone from the header. It shows what you opened recently, takes you to a Space or Settings by name, narrows by File Type and Space, and lists archived results below the rest.
 - **HTML Docs:** When an agent saves a new version of a page you have open, it opens where you were: the same scroll position, and a deck on the same slide if it keeps the slide number in its address. The loading placeholder no longer covers the page while the new version loads, and a deck's arrow keys work as soon as it fills the screen.
 - **HTML Docs:** Print PDF in an HTML Doc's menu, and Ctrl or Cmd+P, print the page itself instead of the app around it. A page prints with its own page rules, so a deck can print one slide per page; other pages print on white paper with the margins Docs print with. Large titles in the display font keep sturdy strokes.
 - **Visitor comments:** Send a visitor's comment to an agent in one click, or tick several and send them together. Choose who gets them in **To**; each page remembers your pick. A note is optional, and the visitor's name is left out unless you include it. The agent gets one thread message for each send, and each comment shows whether it was sent, is being worked on or is done.
@@ -34,9 +35,6 @@ infrastructure and personal context out of release notes.
 - **Export and import:** When a Worktable is too large to export with all its history, a package is too large to import, or the disk is full, Settings says so and what to do next, instead of "Export failed." with a technical reason.
 - **Export:** A Worktable at its 2 GiB limit always exports with all its history: packages can now be up to 2.25 GiB, room for the history, the offline viewer and a drawing saved a little past the limit. Before, a full Worktable of photos or PDFs could fail to export.
 - **Full Worktable:** When a Worktable is at its storage limit, or a file is larger than 64 MiB, uploads, new Docs and drawings, saved versions and pasted images now say so instead of asking you to try again. A drawing that can't save says why and saves once there is room, and a pasted image that can't be saved no longer leaves an empty block.
-### Changed
-
-- **Search:** Search opens over the page with Cmd+K, Ctrl+K or `/`, on a phone from the header. It shows what you opened recently, takes you to a Space or Settings by name, narrows by Kind and Space, and lists archived results below the rest.
 
 ## [0.1.52] - 2026-11-19
 

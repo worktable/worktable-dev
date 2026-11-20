@@ -570,8 +570,8 @@ function PaletteBody({
 
       <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
         <FilterMenu
-          label="Kind"
-          anyLabel="Any Kind"
+          label="File Type"
+          anyLabel="Any File Type"
           value={kind}
           valueLabel={kindLabel}
           options={KINDS.map((item) => ({

@@ -439,6 +439,8 @@ function ItemPicture({
         onLoad={() => {
           shownPictures.add(src)
           setLoadedSrc(src)
+          // One that failed before and loads now replaces the icon.
+          setFailedSrc(null)
         }}
         onError={() => {
           // One the browser no longer has, and can't get, shows the icon.

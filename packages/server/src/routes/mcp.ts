@@ -290,6 +290,10 @@ export async function handleRemoteMcpRequest(
     // clients (Claude, ChatGPT) surfaced as the whole server being
     // unreachable.
     enableJsonResponse: !options.stream,
+    // Bun.serve already bounds a body at its 128 MiB default, and a file's
+    // inline source may come close to it; the transport's own 4 MiB default
+    // would refuse calls Worktable documents.
+    maxRequestBodySize: 128 * 1024 * 1024,
   })
   const server = createWorktableMcpServer({
     ...remoteMcpServerOptions(request, identity, origin),

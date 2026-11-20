@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { ActivityActorSchema } from "./activity"
 import { DocumentSharingSummarySchema } from "./sharing"
+import { IsoTimestampSchema } from "./widgets"
 
 export const DOCUMENT_ARCHIVE_REASON_MAX_LENGTH = 500
 
@@ -171,13 +172,13 @@ export const DocumentSummarySchema = z.object({
   format: DocumentFormatClaimSchema,
   title: z.string(),
   health: DocumentHealthSchema,
-  updatedAt: z.string().datetime().optional(),
+  updatedAt: IsoTimestampSchema.optional(),
   /** When the document was created through Worktable; absent when unknown. */
-  createdAt: z.string().datetime().optional(),
+  createdAt: IsoTimestampSchema.optional(),
   /** Present on active documents whose storage records a lifetime. */
   lifetime: DocumentLifetimeSchema.optional(),
   /** Present on temporary documents: when the document archives itself. */
-  archiveOn: z.string().datetime().optional(),
+  archiveOn: IsoTimestampSchema.optional(),
   archived: z.literal(true).optional(),
   folderOperations: DocumentFolderOperationsSchema.optional(),
 })

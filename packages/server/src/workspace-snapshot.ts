@@ -23,6 +23,7 @@ import {
   sep,
 } from "node:path"
 import { z } from "zod"
+import { IsoTimestampSchema } from "@worktable/types"
 import { readBoundedRegularFile } from "./bounded-file.ts"
 import { removeWorkspaceTree } from "./workspace-tree-cleanup.ts"
 import {
@@ -55,13 +56,13 @@ const path = z.string().refine((value) => {
 const metadata = {
   path,
   mode: z.number().int().min(0).max(0o777),
-  mtime: z.iso.datetime(),
+  mtime: IsoTimestampSchema,
 }
 export const WorkspaceSnapshotManifestSchema = z.object({
   type: z.literal("worktable.workspace-snapshot"),
   backupFormatVersion: z.literal(1),
   snapshotId: z.string().regex(/^snap_[A-Za-z0-9_-]{22}$/),
-  capturedAt: z.iso.datetime(),
+  capturedAt: IsoTimestampSchema,
   workspaceId: z.string().min(1).max(1024),
   workspaceStorageVersion: z.union([z.literal(1), z.literal(2)]),
   sourceRelease: z.string().min(1).max(128),

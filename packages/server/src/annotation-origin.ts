@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { ANNOTATION_SENT_TO_KEY } from "@worktable/types"
+import { ANNOTATION_SENT_TO_KEY, IsoTimestampSchema } from "@worktable/types"
 
 export const ANNOTATION_ORIGIN_KEY = "worktable.origin"
 export const VISITOR_ANNOTATION_PREFIX = "visitor-comment:"
@@ -28,9 +28,9 @@ export const VisitorCommentOriginSchema = z.strictObject({
   visitorName: z.string().nullable(),
   linkId: z.string().min(1),
   linkLabel: z.string(),
-  receivedAt: z.iso.datetime(),
+  receivedAt: IsoTimestampSchema,
   passedBy: z.strictObject({ id: z.string().min(1), name: z.string() }),
-  passedAt: z.iso.datetime(),
+  passedAt: IsoTimestampSchema,
   quote: z.string(),
   quoteEdited: z.boolean(),
 })

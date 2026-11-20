@@ -99,10 +99,13 @@ export function createWorktableMcpServer(
   const { info, instructions } = serverIdentity(options)
   const skills = options.skillsExtension === true
   const server = new McpServer(info, {
-    // The team's skills over MCP too, for apps that load them.
+    // The team's skills over MCP too, for apps that load them. Tools are not
+    // declared here: McpServer installs its tool handlers when a capability
+    // is declared up front, before registerTools can wrap them for earlier
+    // calls and OpenAI's listing. The first registered tool declares them.
     capabilities: skills
-      ? { tools: {}, resources: {}, extensions: { [SKILLS_EXTENSION]: {} } }
-      : { tools: {} },
+      ? { resources: {}, extensions: { [SKILLS_EXTENSION]: {} } }
+      : {},
     instructions,
   })
   if (skills) registerSkillsExtension(server, () => skillReader(options))

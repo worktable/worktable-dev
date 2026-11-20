@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import { chmod, open, readFile, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { z } from "zod"
+import { IsoTimestampSchema } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
@@ -39,7 +40,7 @@ const StoredShare = z
     spaceId: z.string().min(1).max(256),
     artifactKey: z.string().min(1).max(2048),
     workspaceEpoch: z.string().regex(TOKEN_PATTERN),
-    createdAt: z.iso.datetime(),
+    createdAt: IsoTimestampSchema,
   })
   .strict()
 type StoredShare = z.infer<typeof StoredShare>

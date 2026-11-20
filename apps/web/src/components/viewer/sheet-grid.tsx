@@ -56,6 +56,7 @@ export function SheetGrid({
   columnCount,
   label,
   empty,
+  striped,
 }: {
   /** The header row's text, one per column; a missing one is blank. */
   header: readonly string[]
@@ -69,6 +70,8 @@ export function SheetGrid({
   label: string
   /** What the grid says when no row is shown. */
   empty: string
+  /** Shades every other row, counted as shown, so stripes survive sorting. */
+  striped: boolean
 }) {
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
     null
@@ -172,7 +175,7 @@ export function SheetGrid({
           </tr>
           <tr aria-rowindex={1}>
             <th
-              className="sticky left-0 z-30 border-r border-b border-border/60 bg-card"
+              className="sticky left-0 z-30 border-t border-r border-b border-border/60 bg-card"
               style={{ top: LETTER_HEIGHT, height: NAME_HEIGHT }}
             />
             {columns.map((index) => {
@@ -190,7 +193,7 @@ export function SheetGrid({
                         ? "descending"
                         : undefined
                   }
-                  className="sticky z-20 border-r border-b border-r-border/40 border-b-border/60 bg-card px-1 text-left font-normal last:border-r-0"
+                  className="sticky z-20 border-t border-r border-b border-t-border/60 border-r-border/40 border-b-border/60 bg-card px-1 text-left font-normal last:border-r-0"
                   style={{ top: LETTER_HEIGHT, height: NAME_HEIGHT }}
                 >
                   <button
@@ -258,10 +261,15 @@ export function SheetGrid({
               <tr
                 key={rowIndex}
                 aria-rowindex={first + offset + 2}
-                className="hover:[&>td]:bg-surface-hover"
+                data-striped={
+                  striped && (first + offset) % 2 === 1 ? "" : undefined
+                }
+                className="group/row data-[striped]:bg-surface-inset hover:[&>td:not(:first-child)]:bg-surface-hover"
               >
                 <td
-                  className="sticky left-0 z-10 border-r border-b border-border/60 bg-card pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums select-none"
+                  // The row numbers stay opaque as cells scroll under them;
+                  // a stripe or hover is laid over the card instead.
+                  className="sticky left-0 z-10 border-r border-b border-border/60 bg-card bg-[image:linear-gradient(var(--sheet-row-tint),var(--sheet-row-tint))] pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums select-none [--sheet-row-tint:transparent] group-hover/row:[--sheet-row-tint:var(--surface-hover)] group-data-[striped]/row:[--sheet-row-tint:var(--surface-inset)]"
                   style={{ height: ROW_HEIGHT }}
                 >
                   {rowIndex + 1}

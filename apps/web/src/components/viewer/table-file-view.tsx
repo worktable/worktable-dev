@@ -4,14 +4,33 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { Search } from "lucide-react"
+import { Rows3, Search } from "lucide-react"
 import { delimiterForFilename, parseDelimitedText } from "@worktable/types"
+import { Button } from "@worktable/ui/components/button"
 import { Input } from "@worktable/ui/components/input"
 import { Skeleton } from "@worktable/ui/components/skeleton"
 import { SheetGrid } from "@/components/viewer/sheet-grid"
 
 /** Columns the grid shows at most; the rest stay in the file. */
 const MAX_COLUMNS = 200
+/** Where this browser remembers whether table rows are striped. */
+const STRIPES_KEY = "worktable.table-file.stripes"
+
+function readStripes(): boolean {
+  try {
+    return localStorage.getItem(STRIPES_KEY) === "on"
+  } catch {
+    return false
+  }
+}
+
+function saveStripes(on: boolean) {
+  try {
+    localStorage.setItem(STRIPES_KEY, on ? "on" : "off")
+  } catch {
+    // Without storage, the choice lasts for this page only.
+  }
+}
 
 /**
  * A CSV or TSV file on its page, laid out as Records lays out a collection:
@@ -42,6 +61,7 @@ export default function TableFileView({
   const columnCount = Math.min(widest, MAX_COLUMNS)
 
   const [search, setSearch] = useState("")
+  const [striped, setStriped] = useState(readStripes)
   const query = useDeferredValue(search.trim().toLocaleLowerCase())
   // Each row's shown text, lowercased once, the first time someone searches.
   const searchable = useMemo(
@@ -87,11 +107,27 @@ export default function TableFileView({
           />
         </div>
         {table ? (
-          <div className="ml-auto px-1.5 text-xs text-muted-foreground tabular-nums">
-            {count}
-            {widest > columnCount
-              ? `, first ${columnCount.toLocaleString()} of ${widest.toLocaleString()} columns`
-              : ""}
+          <div className="ml-auto flex items-center gap-1">
+            <span className="px-1.5 text-xs text-muted-foreground tabular-nums">
+              {count}
+              {widest > columnCount
+                ? `, first ${columnCount.toLocaleString()} of ${widest.toLocaleString()} columns`
+                : ""}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Stripe Rows"
+              title="Stripe Rows"
+              aria-pressed={striped}
+              className="aria-pressed:bg-surface-selected"
+              onClick={() => {
+                setStriped(!striped)
+                saveStripes(!striped)
+              }}
+            >
+              <Rows3 className="size-4" />
+            </Button>
           </div>
         ) : null}
       </div>
@@ -104,6 +140,7 @@ export default function TableFileView({
             columnCount={columnCount}
             label={name}
             empty={query ? "No matching rows" : "No rows"}
+            striped={striped}
           />
         ) : (
           <div className="flex flex-col gap-2 p-4">

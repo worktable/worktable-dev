@@ -14,7 +14,7 @@ test.beforeAll(async () => {
   rows.push('007,"Split, then ""rush""",12.50')
   rows.push('008,"Line one\nLine two",3')
   for (let index = 3; index <= 3000; index += 1) {
-    rows.push(`${String(index).padStart(3, "0")},Row ${index},${index}`)
+    rows.push(`C${index},Row ${index},${index}`)
   }
   await writeFile(`${folder}/orders.csv`, rows.join("\n") + "\n")
 })

@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useState } from "react"
-import { useVirtualizer } from "@tanstack/react-virtual"
+import { useEffect, useLayoutEffect, useMemo, useState } from "react"
 
-/** Height of one row, in pixels: rows don't wrap, as in a spreadsheet. */
+/**
+ * Height of one row, borders included, in pixels: rows don't wrap, as in a
+ * spreadsheet, so every row is this tall and the rows in view follow from
+ * the scroll position alone.
+ */
 const ROW_HEIGHT = 32
+/** Rows drawn beyond each edge of the view, so a quick scroll shows no gap. */
+const OVERSCAN = 12
 /** Rows measured to size the columns; enough to see a column's usual width. */
 const SAMPLE_ROWS = 200
 /** Cells measured at most, so a very wide file sizes quickly. */
@@ -60,20 +65,20 @@ export function SheetGrid({
     [header, rows, columnCount, fontsLoaded]
   )
   const numberWidth = CELL_PADDING + String(rows.length).length * 8
-  const virtualizer = useVirtualizer<HTMLDivElement, HTMLTableRowElement>({
-    count: rows.length,
-    getScrollElement: () => scrollElement,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 12,
-    // Draw a screen of rows before the grid has been measured.
-    initialRect: {
-      width: 0,
-      height: typeof window === "undefined" ? 0 : window.innerHeight,
-    },
-  })
-  const items = virtualizer.getVirtualItems()
-  const before = items[0]?.start ?? 0
-  const after = virtualizer.getTotalSize() - (items.at(-1)?.end ?? 0)
+  const view = useScrollView(scrollElement)
+  // The header row is the first row's height above the body.
+  const first = Math.max(
+    0,
+    Math.floor((view.top - ROW_HEIGHT) / ROW_HEIGHT) - OVERSCAN
+  )
+  const end = Math.min(
+    rows.length,
+    Math.ceil((view.top + view.height) / ROW_HEIGHT) + OVERSCAN
+  )
+  const before = first * ROW_HEIGHT
+  const after = Math.max(0, rows.length - end) * ROW_HEIGHT
+  const shown: number[] = []
+  for (let index = first; index < end; index += 1) shown.push(index)
   const columns = Array.from({ length: columnCount }, (_, index) => index)
   const width = numberWidth + widths.reduce((sum, value) => sum + value, 0)
 
@@ -121,19 +126,19 @@ export function SheetGrid({
               <td style={{ height: before }} colSpan={columnCount + 1} />
             </tr>
           )}
-          {items.map((item) => {
-            const row = rows[item.index]!
+          {shown.map((rowIndex) => {
+            const row = rows[rowIndex]!
             return (
               <tr
-                key={item.key}
-                aria-rowindex={item.index + 2}
+                key={rowIndex}
+                aria-rowindex={rowIndex + 2}
                 className="hover:[&>td]:bg-surface-hover"
               >
                 <td
                   className="sticky left-0 z-10 border-r border-b border-border/60 bg-card px-2 text-right font-mono text-xs text-muted-foreground tabular-nums select-none"
                   style={{ height: ROW_HEIGHT }}
                 >
-                  {item.index + 1}
+                  {rowIndex + 1}
                 </td>
                 {columns.map((index) => {
                   const value = row[index] ?? ""
@@ -159,6 +164,47 @@ export function SheetGrid({
       </table>
     </div>
   )
+}
+
+/**
+ * Where the grid is scrolled to and how tall it is, kept current through
+ * scrolling and resizing. Before the grid is measured, a window's height of
+ * rows is drawn.
+ */
+function useScrollView(element: HTMLElement | null): {
+  top: number
+  height: number
+} {
+  const [view, setView] = useState(() => ({
+    top: 0,
+    height: typeof window === "undefined" ? 0 : window.innerHeight,
+  }))
+  useLayoutEffect(() => {
+    if (!element) return
+    let frame = 0
+    const read = () => {
+      frame = 0
+      setView((current) =>
+        current.top === element.scrollTop &&
+        current.height === element.clientHeight
+          ? current
+          : { top: element.scrollTop, height: element.clientHeight }
+      )
+    }
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(read)
+    }
+    read()
+    element.addEventListener("scroll", schedule, { passive: true })
+    const observer = new ResizeObserver(schedule)
+    observer.observe(element)
+    return () => {
+      element.removeEventListener("scroll", schedule)
+      observer.disconnect()
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [element])
+  return view
 }
 
 /**

@@ -337,7 +337,13 @@ export function FilePage({
             view={view}
             url={url}
             name={name}
-            tooLarge={page.noHistory !== undefined}
+            // A table's text is read above, once; this only says why it
+            // shows as a card, so the card never starts the read again.
+            tooLarge={
+              page.noHistory !== undefined ||
+              (tableView && tableText.data === null)
+            }
+            readFailed={tableView && tableText.isError}
           />
           {page.noHistory ? (
             <p className="text-sm text-muted-foreground">
@@ -365,18 +371,21 @@ function FileContent({
   url,
   name,
   tooLarge,
+  readFailed,
 }: {
   view: FileView
   url: string
   name: string
-  /** Past what a version holds: no preview is read. */
+  /** Past what a version holds, or what a preview reads: no preview. */
   tooLarge: boolean
+  /** The file's text couldn't be read for its page. */
+  readFailed: boolean
 }) {
   const [imageFailed, setImageFailed] = useState(false)
   const text = useQuery({
     queryKey: filePreviewTextKey(url),
     queryFn: () => readPreviewText(url),
-    enabled: !tooLarge && (view === "table" || view === "text"),
+    enabled: !tooLarge && view === "text",
     staleTime: Infinity,
   })
   if (view === "card") {
@@ -385,7 +394,7 @@ function FileContent({
   if (tooLarge || text.data === null) {
     return <FileCard name={name} status="Too large to preview" />
   }
-  if (text.isError || imageFailed) {
+  if (readFailed || text.isError || imageFailed) {
     return <FileCard name={name} status="Couldn’t load preview" />
   }
   if (view === "image") {

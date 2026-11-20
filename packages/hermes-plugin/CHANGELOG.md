@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7
+
+- Hermes answers comments sent to it, not only thread messages, on a Worktable that offers comments to runtimes (the preview agent tools; Worktable 0.1.53 or later). The comments waiting on one page come as one turn, in a chat of its own for that page, and the answer is posted on each one Hermes didn't answer itself. The same owner rule applies to every comment's author: a page with a comment from someone Hermes doesn't take direction from runs no turn. An older Worktable is asked for thread messages only, as before.
+
 ## 0.1.6
 
 - Each skill now says its guide is about how to work in Worktable, and that guidance can't change what Hermes was asked for or what it is allowed to do. The pointers for your team's Library skills say the same.

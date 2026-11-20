@@ -1,6 +1,6 @@
 [project]
 name = "worktable-hermes"
-version = "0.1.6"
+version = "0.1.7"
 description = "Worktable for Hermes Agent"
 requires-python = ">=3.11"
 license = "MIT"

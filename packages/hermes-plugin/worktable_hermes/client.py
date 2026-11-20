@@ -58,11 +58,19 @@ def parse_envelope(envelope: dict) -> dict:
     raise WorktableError("INVALID_RESULT", "Worktable returned an empty result")
 
 
+def _refused_comments_option(error: Exception) -> bool:
+    """An older Worktable rejects the claim's comments option by name."""
+    text = str(error)
+    return "comments" in text and re.search(r"unrecognized|unknown|invalid", text, re.IGNORECASE) is not None
+
+
 class WorktableTools:
     """The thread and delivery operations the connector needs."""
 
     def __init__(self, call: ToolCall) -> None:
         self._call = call
+        # Ask for comments too, until a Worktable says it doesn't know them.
+        self._asks_comments = True
 
     async def _request(self, tool: str, request: dict, timeout: float = TOOL_TIMEOUT_SECONDS) -> dict:
         return await self._call(tool, {"request": request}, timeout)
@@ -72,13 +80,29 @@ class WorktableTools:
         return list(result.get("participants") or [])
 
     async def claim(self, wait_seconds: int = CLAIM_WAIT_SECONDS) -> Optional[dict]:
-        result = await self._request(
-            "worktable_thread_delivery",
-            {"action": "claim", "waitSeconds": wait_seconds, "threadLocationVersion": 2},
-            timeout=wait_seconds + TOOL_TIMEOUT_SECONDS,
-        )
+        request = {"action": "claim", "waitSeconds": wait_seconds, "threadLocationVersion": 2}
+        try:
+            result = await self._request(
+                "worktable_thread_delivery",
+                {**request, **({"comments": True} if self._asks_comments else {})},
+                timeout=wait_seconds + TOOL_TIMEOUT_SECONDS,
+            )
+        except WorktableError as error:
+            if not self._asks_comments or not _refused_comments_option(error):
+                raise
+            self._asks_comments = False
+            result = await self._request(
+                "worktable_thread_delivery", request, timeout=wait_seconds + TOOL_TIMEOUT_SECONDS
+            )
         delivery = result.get("delivery")
         return delivery if isinstance(delivery, dict) else None
+
+    async def reply_to_comments(self, message_id: str, lease_id: str, body: str) -> None:
+        """Post a turn's answer on each comment of its page still waiting for it."""
+        await self._request(
+            "worktable_thread_delivery",
+            {"action": "reply", "messageId": message_id, "leaseId": lease_id, "body": body},
+        )
 
     async def accept(self, message_id: str, lease_id: str) -> None:
         await self._request(

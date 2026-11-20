@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Optional
 from urllib.parse import unquote, urlsplit
@@ -11,8 +12,18 @@ def location(delivery: dict) -> dict:
     return delivery.get("location") or {"kind": "worktable"}
 
 
+def is_comments(delivery: dict) -> bool:
+    """A page of comments sent to this agent, rather than a thread message."""
+    return delivery.get("kind") == "comments"
+
+
 def conversation_id(delivery: dict) -> str:
-    """One Hermes chat per Worktable thread and conversation identity."""
+    """One Hermes chat per Worktable thread and conversation identity, or per commented page."""
+    if is_comments(delivery):
+        # Keyed on the page's id when Worktable gives one, so a renamed page
+        # keeps its chat and a retried batch its saved answer.
+        page = delivery["page"]
+        return f"{page['spaceId']}/comments/{page.get('id') or page['path']}"
     where = location(delivery)
     thread = delivery.get("thread") or {}
     thread_id = delivery["threadId"]
@@ -28,7 +39,60 @@ def conversation_id(delivery: dict) -> str:
 
 
 def event_id(delivery: dict) -> str:
+    if is_comments(delivery):
+        # A batch keeps its id across retries, so a retried page finds the
+        # answer Hermes already gave it. Without one, the same comments make
+        # the same event.
+        batch = delivery.get("batchId") or hashlib.sha256(
+            ",".join(sorted(comment["requestId"] for comment in delivery["comments"])).encode()
+        ).hexdigest()[:22]
+        return f"{conversation_id(delivery)}/{batch}"
     return f"{conversation_id(delivery)}/{delivery['messageId']}"
+
+
+def authors(delivery: dict) -> list[dict]:
+    """Whose words start the turn; each must pass the owner rule."""
+    if not is_comments(delivery):
+        return [sender(delivery)]
+    found = []
+    for comment in delivery["comments"]:
+        author = comment.get("from") or {}
+        found.append(
+            {
+                "id": author.get("id") or "",
+                "kind": author.get("kind") or "unknown",
+                "name": author.get("name") or author.get("id") or "Someone",
+                # For an agent, who connected it: each author is judged on its own.
+                **({"connectedBy": author["connectedBy"]} if "connectedBy" in author else {}),
+            }
+        )
+    return found
+
+
+def comments_text(delivery: dict) -> str:
+    """The comments, as the agent reads them: where, what each says, and how to answer."""
+    page, comments = delivery["page"], delivery["comments"]
+    # The page by its path, not its title: anyone who can edit the page can
+    # change the title, and the owner rule checks only the comments' authors.
+    where = f"`{page['path']}` in Space `{page['spaceId']}`"
+    lines = [
+        f"A comment on {where} was sent to you in Worktable."
+        if len(comments) == 1
+        else f"{len(comments)} comments on {where} were sent to you in Worktable."
+    ]
+    for comment in comments:
+        lines += ["", f"Comment {comment['annotationId']}, from {(comment.get('from') or {}).get('name', 'someone')}:"]
+        if comment.get("quote"):
+            lines.append(f"On the text: “{comment['quote']}”")
+        # Only the words that asked: earlier replies may come from people the
+        # owner rule never checked. Hermes can read them with its tools.
+        lines.append(comment.get("body") or "")
+    lines += [
+        "",
+        "Do what they ask with your Worktable tools. You can answer a comment in it yourself; "
+        "what you answer here is posted on each comment you didn't answer.",
+    ]
+    return "\n".join(lines)
 
 
 def sender(delivery: dict) -> dict:
@@ -70,7 +134,8 @@ def reply_for(delivery: dict, body: str, idempotency_key: str) -> dict:
 def thread_for_conversation(conversation: str) -> Optional[dict]:
     """The Worktable thread a Hermes chat id addresses, for messages Hermes starts itself."""
     parts = conversation.split("/")
-    if len(parts) not in (2, 3) or not all(parts):
+    if len(parts) not in (2, 3) or not all(parts) or parts[1] == "comments":
+        # A commented page's chat has no thread to post into.
         return None
     scope, thread_id = parts[0], parts[1]
     thread: dict = (

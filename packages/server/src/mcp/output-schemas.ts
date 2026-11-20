@@ -229,6 +229,7 @@ const ClaimedCommentsOutput = z.looseObject({
       spaceId: z.string(),
       path: z.string(),
       title: z.string(),
+      id: z.string().optional(),
     }),
     comments: z
       .array(

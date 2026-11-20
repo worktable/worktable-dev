@@ -582,16 +582,29 @@ export async function retryGrokBotDelivery(input: {
         "Only a current failed assignment can be retried"
       )
     }
-    record.state = "queued"
-    record.leaseId = undefined
-    record.leaseExpiresAt = undefined
-    record.nextAttemptAt = undefined
-    record.error = undefined
-    record.attempts = 0
-    record.revision += 1
-    record.updatedAt = new Date().toISOString()
+    // A page of comments goes again whole: the batch failed together.
+    const members = record.batchId
+      ? file.deliveries.filter(
+          (member) =>
+            member.participantId === record.participantId &&
+            member.batchId === record.batchId &&
+            member.state === "failed" &&
+            !isRetiredThreadDelivery(member)
+        )
+      : [record]
+    const now = new Date().toISOString()
+    for (const member of members) {
+      member.state = "queued"
+      member.leaseId = undefined
+      member.leaseExpiresAt = undefined
+      member.nextAttemptAt = undefined
+      member.error = undefined
+      member.attempts = 0
+      member.revision += 1
+      member.updatedAt = now
+    }
     await saveFile(file)
-    notify(record)
+    for (const member of members) notify(member)
   })
 }
 

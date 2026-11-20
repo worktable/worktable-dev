@@ -1773,7 +1773,7 @@ export interface ClaimedComment {
 export interface ClaimedCommentDelivery
   extends Omit<ClaimedDelivery, "comments"> {
   kind: "comments"
-  page: { spaceId: string; path: string; title: string }
+  page: { spaceId: string; path: string; title: string; id?: string }
   comments: ClaimedComment[]
   connectedBy: ConnectedBy
 }
@@ -2053,10 +2053,10 @@ async function commentClaim(
   const { identities } = await readDocumentIdentities(spaceId).catch(() => ({
     identities: null,
   }))
-  const title =
-    [...(identities?.current.values() ?? [])].find(
-      (document) => document.path === path
-    )?.title ?? path
+  const found = [...(identities?.current.entries() ?? [])].find(
+    ([, document]) => document.path === path
+  )
+  const title = found?.[1].title ?? path
   const lead = comments[0]!
   let connectedBy: ConnectedBy
   try {
@@ -2099,7 +2099,8 @@ async function commentClaim(
     messageId: lead.requestId,
     threadId: lead.annotationId,
     kind: "comments",
-    page: { spaceId, path, title },
+    // The page's id, when it has one, stays the same when it is renamed.
+    page: { spaceId, path, title, ...(found ? { id: found[0] } : {}) },
     comments,
     connectedBy,
   }

@@ -193,6 +193,8 @@ describe("comments delivered to an agent's runtime", () => {
       const page = batches.find((b) => b.page.path === "deck")!
       const other = batches.find((b) => b.page.path === "notes")!
       expect(page.page).toMatchObject({ spaceId: "demo", path: "deck" })
+      // Its id stays when the page is renamed, for a runtime to key on.
+      expect((page.page as { id?: string }).id).toMatch(/^doc_/)
       expect(page.comments.map((c: { body: string }) => c.body).sort()).toEqual([
         "Fix the title.",
         "Shorten slide one.",
@@ -461,8 +463,10 @@ describe("comments delivered to an agent's runtime", () => {
       await new Promise((r) => setTimeout(r, 50))
     expect(rings).toBeGreaterThan(0)
 
-    // A comment Grok's run failed on can be retried from its connection.
+    // A page Grok's run failed on can be retried from its connection, whole.
+    await comment("deck", grokId, "And this one.")
     const failing = (await claimNextDelivery(grok, 0, 2, { comments: true }))!
+    expect((failing as { comments: unknown[] }).comments).toHaveLength(2)
     const again = await runtime(grok, "preview")
     await again.call("worktable_thread_delivery", {
       action: "fail",
@@ -480,7 +484,9 @@ describe("comments delivered to an agent's runtime", () => {
       method: "POST",
     })
     expect(retried.status).toBe(200)
-    expect((await commentDeliveryStates()).get(requestId)?.state).toBe("queued")
+    const states = await commentDeliveryStates()
+    for (const c of (failing as unknown as { comments: Array<{ requestId: string }> }).comments)
+      expect(states.get(c.requestId)?.state).toBe("queued")
 
     // A run Grok never confirms holds its other work, until its comment is
     // resolved.
@@ -500,11 +506,14 @@ describe("comments delivered to an agent's runtime", () => {
     await writeFile(path, JSON.stringify(file))
     await comment("notes", grokId, "Unrelated work.")
     expect(await claimNextDelivery(grok, 0, 2, { comments: true })).toBeNull()
-    const resolved = await app.request(
-      `/api/spaces/demo/annotations/${unconfirmed.threadId}/resolve`,
-      { method: "POST" }
-    )
-    expect(resolved.status).toBe(200)
+    for (const c of (unconfirmed as unknown as { comments: Array<{ annotationId: string }> })
+      .comments) {
+      const resolved = await app.request(
+        `/api/spaces/demo/annotations/${c.annotationId}/resolve`,
+        { method: "POST" }
+      )
+      expect(resolved.status).toBe(200)
+    }
     const next = (await claimNextDelivery(grok, 0, 2, { comments: true })) as {
       kind?: string
       page?: { path: string }

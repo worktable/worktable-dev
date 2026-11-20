@@ -22,6 +22,7 @@ import {
   type DocumentPage,
   type FileSurfacePolicies,
 } from "@worktable/types"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { DataTooltips } from "@/components/document/data-tooltip"
 import { ImageViewControl } from "@/components/viewer/image-view-control"
@@ -49,6 +50,8 @@ const ImportRecordsDialog = lazy(() =>
 
 // The grid loads only when a table file opens.
 const TableFileView = lazy(() => import("@/components/viewer/table-file-view"))
+// pdf.js and the viewer's tools load only when a PDF opens.
+const PdfFileView = lazy(() => import("@/components/viewer/pdf-file-view"))
 
 /** How a file shows on its page: the file type table's page policy. */
 type FileView = FileSurfacePolicies["page"]
@@ -121,6 +124,11 @@ export function FilePage({
     staleTime: Infinity,
   })
   const tableOn = tableView && !tableText.isError && tableText.data !== null
+  // A PDF fills the pane, in the viewer. Where the viewer is off, or the
+  // file is past what a preview reads, it is a card like any other file.
+  const deployment = useDeploymentInfo().data
+  const pdf = view === "pdf" && !page.noHistory && page.byteLength !== undefined
+  const pdfOn = pdf && deployment?.capabilities.pdfViewer === true
 
   const uploadVersion = useCallback(
     async (file: File, over: string | undefined) => {
@@ -283,6 +291,35 @@ export function FilePage({
     </>
   )
 
+  if (pdfOn) {
+    return (
+      <div className="flex h-full flex-col">
+        {dialogs}
+        <Suspense fallback={null}>
+          <PdfFileView
+            key={url}
+            spaceId={spaceId}
+            path={path}
+            name={name}
+            fileUrl={url}
+            byteLength={page.byteLength!}
+            leading={
+              <DocumentByline
+                spaceId={spaceId}
+                docPath={path}
+                {...(page.document.updatedAt
+                  ? { updatedAt: page.document.updatedAt }
+                  : {})}
+                {...(page.backlinks ? { backlinks: page.backlinks } : {})}
+                {...(page.referrers ? { referrers: page.referrers } : {})}
+              />
+            }
+          />
+        </Suspense>
+      </div>
+    )
+  }
+
   if (tableOn) {
     return (
       <div className="flex h-full flex-col">
@@ -334,7 +371,8 @@ export function FilePage({
           />
           <FileContent
             key={url}
-            view={view}
+            // While the page learns whether the viewer is on, nothing shows.
+            view={pdf ? (deployment ? "card" : "pending") : view}
             url={url}
             name={name}
             // A table's text is read above, once; this only says why it
@@ -373,7 +411,7 @@ function FileContent({
   tooLarge,
   readFailed,
 }: {
-  view: FileView
+  view: FileView | "pending"
   url: string
   name: string
   /** Past what a version holds, or what a preview reads: no preview. */
@@ -388,7 +426,9 @@ function FileContent({
     enabled: !tooLarge && view === "text",
     staleTime: Infinity,
   })
-  if (view === "card") {
+  if (view === "pending") return null
+  // A PDF reaches here only where its viewer is off or the file is too large.
+  if (view === "card" || (view === "pdf" && !tooLarge)) {
     return <FileCard name={name} status="No preview for this file type" />
   }
   if (tooLarge || text.data === null) {

@@ -21,7 +21,7 @@ const POLICY_VALUES: {
   readonly [S in FileSurface]: readonly FileSurfacePolicies[S][]
 } = {
   serve: ["inline", "download", "bytes"],
-  page: ["image", "frame", "table", "text", "card"],
+  page: ["image", "frame", "table", "text", "pdf", "card"],
   icon: ["image", "spreadsheet", "document", "presentation", "code", "audio", "video", "archive", "file"],
   agent: ["image", "text", "bytes"],
   share: ["inline", "placeholder"],

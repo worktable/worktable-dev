@@ -67,9 +67,11 @@ export interface FileSurfacePolicies {
   /**
    * How the file's own page shows it in the app; a card offers Download. A
    * frame shows the page the file makes, in a frame sandboxed with no
-   * scripts, as the server's sandboxed response does too.
+   * scripts, as the server's sandboxed response does too. A pdf shows in
+   * the PDF viewer, which parses the file inside a viewer frame: a frame
+   * with no origin that is handed the file's bytes and nothing else.
    */
-  page: "image" | "frame" | "table" | "text" | "card"
+  page: "image" | "frame" | "table" | "text" | "pdf" | "card"
   /** The icon lists show for it. */
   icon:
     | "image"
@@ -393,6 +395,7 @@ export const FILE_TYPES = {
     family: "document",
     surfaces: {
       ...BINARY,
+      page: "pdf",
       serve: "download",
       icon: "document",
       picture: "pages",

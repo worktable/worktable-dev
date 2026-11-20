@@ -146,14 +146,16 @@ disk without reading the file), `document-page-service.ts`,
 An unreadable Doc's page names the check it failed: an unknown field by name,
 or that its contents aren't Doc blocks (`document-page-service.ts`, read only
 for that page and kept until the file changes). A file whose type has no
-preview says so: "No preview for this file type".
+preview says so: "No preview for this file type". A PDF the viewer can't show
+keeps its page, with a card that says why (password protected, or it couldn't
+be loaded) and Download beside it.
 
 **Gaps:**
 
 - Downloading an unreadable Doc's source is for the owner only and stops at
   64 MiB.
-- The file page's preview states ("Too large to preview", "Couldn't load
-  preview") have no test.
+- The file page's "Too large to preview" state has no test; "Couldn't load
+  preview" is tested for a PDF only (`apps/web/e2e/pdf-viewer.browser.ts`).
 
 ### 4. Editors keep what they don't show
 
@@ -520,9 +522,36 @@ and still reads and downloads. Pictures for tiles wait in the browser's
 background lane: they run only when no other job waits, and never take a
 place in its queue.
 
-**Gaps:** no test covers the web page's `sandbox=""` frame. Worktable has no
-container parsers in its own process yet; the first one must follow this
-rule.
+A PDF is the one format parsed for people, and it is parsed in the browser,
+never on the server and never in the app's own page. pdf.js runs inside a
+viewer frame: a document served with `sandbox allow-scripts`, so it has no
+origin, and a policy that lets it fetch, frame, submit and navigate to
+nothing. The frame is one self-contained document, with its code allowed by
+hash (`apps/web/viewer-frames.ts` builds it, `viewer-frames.ts` serves it).
+The app's page fetches the file at one version and hands the frame the bytes
+it asks for, inside that file only, and the viewer's own fonts and decoders by
+plain name (`apps/web/src/components/viewer/viewer-frame.tsx`). Scripts inside
+a PDF never run, forms can't be filled in, and a link out is opened by the
+app's page, to the web or mail only. Its limits: a file up to 64 MiB, images
+up to 64 megapixels, and 30 seconds to show the first page; past any of them
+the page shows the card. `WORKTABLE_VIEWER_PDF=off` turns the viewer off, and
+PDFs go back to a card with Download. Another viewer of a parsed format uses
+the same frame, host and messages (`viewer-frame-protocol.ts`).
+
+- `apps/web/e2e/pdf-viewer.browser.ts` "a PDF opens and reads on its page,
+  inside a frame that can reach nothing": the frame has no origin, cookies,
+  storage, API or network, and can't read its parent.
+- `apps/web/viewer-frames.test.ts` "is one document that loads nothing, under
+  a policy that lets it reach nothing".
+- `viewer-frames.test.ts` "sends a frame only under the policy that takes its
+  origin away", "serves a viewer's own files by plain name, and nothing beside
+  them" and "turns a viewer off without a release".
+- `apps/web/src/lib/viewer-frame-protocol.test.ts`: what a frame may ask for.
+
+**Gaps:** no test covers the web page's `sandbox=""` frame for an outside
+`.html`. Worktable has no container parsers in its own process yet; the first
+one must follow this rule. The PDF viewer is tested in Chromium only by the
+required checks.
 
 ## Cost
 
@@ -686,8 +715,11 @@ picture of a plain file: one page of a PDF, with its page count, or an image
 scaled down, which shows it an image too large to read as one. People see no
 pictures of files yet.
 
+A PDF is pages to people and bytes, or a download link, to agents: the type
+table records the difference and why (`file-type-notes.ts`).
+
 **Gaps:** a code type the table doesn't list, and a `Dockerfile`, is a card to
-people but text to agents. No test checks that the
+people but text to agents. Agents can't read a PDF's text yet. No test checks that the
 HTTP API and agent tools report the same identity and revision for one file.
 
 ### 16. Everything can be taken out
@@ -823,3 +855,5 @@ A new file type ships when it passes the tests for the guarantees it uses. A
 text viewer needs rules 1, 3, 7, 12 and 15; raising a size limit also needs 13,
 14 and 16. Add the type to `packages/types/src/file-types.ts` with a policy for
 every surface, and write down any deliberate difference with its reason.
+A type whose format has to be parsed to be shown, as a PDF's does, is shown
+from a viewer frame (rule 12), never by a parser in the app's own page.

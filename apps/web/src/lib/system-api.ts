@@ -153,6 +153,8 @@ export interface DeploymentInfo {
     shareLinks: boolean
     /** File features are on: off only where WORKTABLE_FILES=0. */
     files: boolean
+    /** PDFs open in the viewer: off where WORKTABLE_VIEWER_PDF=off. */
+    pdfViewer?: boolean
     /** Comments can be sent to people and agents. */
     commentRecipients?: boolean
     /** People manage the skill libraries agents read (Preview agent tools). */

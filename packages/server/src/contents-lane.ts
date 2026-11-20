@@ -47,9 +47,10 @@ export const PARSING_LIMITS: ParsingLimits = {
 /** Background jobs queued at most; past it, background work is refused. */
 const BACKGROUND_QUEUE_MAX = 256
 /**
- * Jobs someone waits for, queued at most, and at most per owner (a Space):
- * past either, a read is answered busy at once, so one caller can't fill the
- * lane for everyone else.
+ * Jobs someone waits for, queued at most, and at most per owner (the person
+ * or agent asking): past either, a read is answered busy at once, so one
+ * caller, however many Spaces it reads from, can't fill the lane for
+ * everyone else.
  */
 const WAITING_QUEUE_MAX = 16
 const WAITING_PER_OWNER = 4
@@ -85,7 +86,7 @@ export interface ParsingJob {
   limits?: Partial<ParsingLimits>
   /** The worker to start; the server's own executable unless given. */
   command?: readonly string[]
-  /** Whose job it is, such as its Space, for the bound on jobs waited for. */
+  /** Whose job it is, the person or agent asking, for the bound on jobs waited for. */
   owner?: string
 }
 

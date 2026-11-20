@@ -61,7 +61,8 @@ function keptFor(result: ParsingResult): boolean {
 export function parseVersion(
   key: DerivedKey,
   pinned: PinnedFile,
-  priority: "waiting" | "background"
+  priority: "waiting" | "background",
+  caller?: string
 ): Promise<ParsingResult> {
   const id = keyId(key)
   const running = parsing.get(id)
@@ -70,7 +71,8 @@ export function parseVersion(
   const job = parseInLane({
     reader: key.maker,
     priority,
-    owner: key.spaceId,
+    // Bounded per caller, or per Space when no caller is named.
+    owner: caller ?? key.spaceId,
     bytes: async (write) => {
       // The bytes parsed are the version the output is kept for.
       for await (const chunk of pinnedFileStream(pinned, 0, pinned.size, sha256Check(hex))) {
@@ -138,6 +140,7 @@ export async function readParsedContents(options: {
   reader: ParsingReaderId
   offset?: number
   limit?: number
+  caller?: string
 }): Promise<(CurrentFileSource & { contents: ContentsPage }) | null> {
   const file = await readCurrentFileSource({ spaceId: options.spaceId, path: options.path })
   if (!file) return null
@@ -151,7 +154,7 @@ export async function readParsedContents(options: {
       timer = setTimeout(() => resolve(null), PARSE_WAIT_MS)
     })
     const result = await Promise.race([
-      parseVersion(key, file.current.pinned, "waiting"),
+      parseVersion(key, file.current.pinned, "waiting", options.caller),
       waited,
     ]).finally(() => clearTimeout(timer))
     if (result && !keptFor(result) && result.kind === "failed") {

@@ -263,6 +263,8 @@ export async function readFileContents(options: {
   path: string
   offset?: number
   limit?: number
+  /** Who is reading, for the bound on parses one caller may wait for. */
+  caller?: string
 }): Promise<(CurrentFileSource & { contents: ContentsPage }) | null> {
   const reader = contentsReaderFor(options.path)
   if (reader === null) return null

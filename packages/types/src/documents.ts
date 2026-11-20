@@ -399,6 +399,12 @@ export type DocumentContributors = z.infer<typeof DocumentContributorsSchema>
  */
 export type WithContentRevision<T> = T & { revision?: string }
 
+/**
+ * A pin the app shows, with the version its picture is of when it has one.
+ * Only the app's REST responses carry it; agent tools return the plain pin.
+ */
+export type WithPicture<T> = T & { picture?: string }
+
 /** `GET …/documents/content?path=&rev=`: the content of one revision. */
 export interface DocumentContent {
   revision: string
@@ -504,8 +510,6 @@ export const ResolvedStartHerePinSchema = StartHerePinSchema.extend({
   status: z.enum(["active", "archived", "missing"]),
   title: z.string().optional(),
   format: DocumentFormatClaimSchema.optional(),
-  /** For an item with a picture, the version its picture is of. */
-  picture: z.string().optional(),
 })
 
 export type ResolvedStartHerePin = z.infer<typeof ResolvedStartHerePinSchema>

@@ -5,6 +5,7 @@ import type {
   RecordCollectionSummary,
   ResolvedStartHerePin,
   WithContentRevision,
+  WithPicture,
 } from "@worktable/types"
 import type { SpaceView } from "./api"
 import { spaceDocsQueryOptions } from "./docs-queries"
@@ -16,7 +17,7 @@ import { rememberOneSpaceAccess } from "./team-access"
 /** One Space's sidebar contents, each part as its own route sends it. */
 interface SidebarSpace {
   id: string
-  page?: { space: SpaceView; pins?: WithContentRevision<ResolvedStartHerePin>[] }
+  page?: { space: SpaceView; pins?: WithPicture<WithContentRevision<ResolvedStartHerePin>>[] }
   docs: DocListEntry[]
   documents?: WithContentRevision<DocumentListItem>[]
   collections?: RecordCollectionSummary[]

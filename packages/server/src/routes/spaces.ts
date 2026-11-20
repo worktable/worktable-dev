@@ -24,6 +24,7 @@ import {
   type ResolvedStartHerePin,
   type SpaceFile,
   type WithContentRevision,
+  type WithPicture,
 } from "@worktable/types";
 import { withContentRevisions } from "../document-content-revision.ts";
 import { pictureVersions } from "../item-pictures.ts";
@@ -179,7 +180,7 @@ export async function readSpacePage(spaceId: string, scopes: string[]) {
           return picture ? { ...pin, picture } : pin;
         }),
         (pin) => (pin.status === "missing" ? null : { spaceId, path: pin.path }),
-        (pin, revision): WithContentRevision<ResolvedStartHerePin> => ({
+        (pin, revision): WithPicture<WithContentRevision<ResolvedStartHerePin>> => ({
           ...pin,
           revision,
         })

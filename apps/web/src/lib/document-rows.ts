@@ -5,6 +5,7 @@ import type {
   ResolvedStartHerePin,
   SearchResult,
   WithContentRevision,
+  WithPicture,
 } from "@worktable/types"
 import { documentQueryKeys } from "./documents-queries.ts"
 import { recentQueryKeys, type RecentDocuments } from "./lifetime.ts"
@@ -33,7 +34,7 @@ const RENDERERS: Record<string, DocumentOpenHint["renderer"]> = {
 }
 
 type SpaceDetail = {
-  pins?: WithContentRevision<ResolvedStartHerePin>[]
+  pins?: WithPicture<WithContentRevision<ResolvedStartHerePin>>[]
 }
 type SearchData = { results: WithContentRevision<SearchResult>[] }
 

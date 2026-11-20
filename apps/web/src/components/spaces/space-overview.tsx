@@ -8,6 +8,7 @@ import type {
   DocumentSummary,
   ResolvedStartHerePin,
   WithContentRevision,
+  WithPicture,
 } from "@worktable/types"
 import { recognitionColor } from "@worktable/types/recognition"
 import { Button } from "@worktable/ui/components/button"
@@ -55,7 +56,7 @@ export function SpaceOverview({
   /** Undefined only until the Space list or details arrive. */
   spaceName: string | undefined
   /** Undefined while the Space's details load. */
-  pins: WithContentRevision<ResolvedStartHerePin>[] | undefined
+  pins: WithPicture<WithContentRevision<ResolvedStartHerePin>>[] | undefined
   /** Set when the details failed, so the pins show a retry. */
   onRetryPins?: () => void
   canEdit: boolean

@@ -587,6 +587,50 @@ export async function updateDocumentAnnotation(options: {
   })
 }
 
+/**
+ * Merge the same metadata into several comments on one document, reading and
+ * writing that document's comments once, as a batch needs.
+ */
+export async function setDocumentAnnotationsMetadataV2(options: {
+  spaceId: string
+  path: string
+  annotationIds: readonly string[]
+  metadata: Record<string, unknown>
+  updatedBy: string
+}): Promise<Annotation[]> {
+  await requireV2AnnotationWrites()
+  return useDurableDocument(options.spaceId, options.path, async (document) => {
+    const owner = await ownerForDocument(options.spaceId, document)
+    const wanted = new Set(options.annotationIds)
+    const now = new Date().toISOString()
+    const changed: DocumentAnnotationV2[] = []
+    owner.annotations = owner.annotations.map((annotation) => {
+      if (!wanted.has(annotation.id)) return annotation
+      const next: DocumentAnnotationV2 = {
+        ...annotation,
+        metadata: { ...annotation.metadata, ...options.metadata },
+        updatedAt: now,
+        updatedBy: options.updatedBy,
+      }
+      changed.push(next)
+      return next
+    })
+    if (changed.length !== wanted.size)
+      throw new DocumentAnnotationError(
+        "not-found",
+        "A comment is no longer on this document"
+      )
+    await writeOwner(options.spaceId, owner)
+    return changed.map((annotation) => {
+      noteChanged(options.spaceId, owner, annotation)
+      const projected = legacyAnnotation(owner, annotation)
+      if (!projected)
+        throw new Error("Annotation selector requires the common API")
+      return projected
+    })
+  })
+}
+
 export async function replyDocumentAnnotation(options: {
   spaceId: string
   annotationId: string

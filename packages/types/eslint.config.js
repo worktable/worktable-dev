@@ -10,8 +10,8 @@ export default defineConfig([
     languageOptions: { ecmaVersion: 2022 },
   },
   {
-    // The web app's startup path imports this module; keep Zod out of it.
-    files: ["src/constants.ts"],
+    // Modules the web app imports directly; keep Zod out of them.
+    files: ["src/constants.ts", "src/sent-comment.ts"],
     rules: {
       "@typescript-eslint/no-restricted-imports": [
         "error",

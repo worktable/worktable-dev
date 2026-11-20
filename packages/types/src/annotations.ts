@@ -179,6 +179,21 @@ export const AnnotationSchema = z.object({
   passageAuthor: AnnotationPassageAuthorSchema.optional(),
 });
 
+/**
+ * Where a comment was sent as part of a batch: the thread message that asks
+ * the recipient about it, in the comment's Space. The message is the only ask;
+ * the comment holds no request of its own for it.
+ */
+export const AnnotationSentToSchema = z.object({
+  threadId: z.string().min(1),
+  messageId: z.string().min(1),
+  to: AnnotationRecipientSchema,
+  at: z.string(),
+  /** How far the recipient has got, from the thread. Added to responses; never kept. */
+  state: z.enum(["queued", "working", "receiving", "replied", "failed"]).optional(),
+});
+export type AnnotationSentTo = z.infer<typeof AnnotationSentToSchema>;
+
 export const AnnotationFileSchema = z.object({
   type: z.literal("worktable.annotations"),
   version: z.literal(1),

@@ -6,6 +6,7 @@ import type {
 import type { SearchSkill } from "./skills";
 
 export * from "./constants";
+export * from "./sent-comment";
 export * from "./mermaid";
 export * from "./markdown";
 export * from "./delimited-text";

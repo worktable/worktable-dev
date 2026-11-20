@@ -110,8 +110,10 @@ name and may need a human check.
 A link made under **More links** has its own **Allow comments** switch in
 **New Link** and **Edit Link**. A new one starts the way the main link is set.
 
-Visitor comments appear in the document's comments panel. Agents do not see
-them until a member chooses **Pass to Team**.
+Visitor comments appear under **Visitors** in the document's comments panel.
+Agents don't see them until a member sends them. Choose who they go to in
+**To**, then send one, or tick several and send them together. The agent gets
+one thread message for each send, and each comment shows how far it got.
 
 ## Stop sharing
 

@@ -1,12 +1,14 @@
-import { Suspense, lazy, useCallback, useId, useState } from "react"
+import { Suspense, lazy, useCallback, useId, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import { MoreVertical } from "lucide-react"
 import type {
   Annotation,
-  PassVisitorCommentInput,
+  SendVisitorCommentsInput,
   VisitorComment,
 } from "@worktable/types"
 import { VISITOR_COMMENT_MAX_LENGTH } from "@worktable/types"
+import { annotationSentTo, type SentCommentRef } from "@worktable/types/sent-comment"
 import { Badge } from "@worktable/ui/components/badge"
 import { Callout } from "@worktable/ui/components/callout"
 import { Button } from "@worktable/ui/components/button"
@@ -20,15 +22,13 @@ import {
   DropdownMenuTrigger,
 } from "@worktable/ui/components/dropdown-menu"
 import { Textarea } from "@worktable/ui/components/textarea"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@worktable/ui/components/tooltip"
 import { toast } from "@worktable/ui/components/sonner"
+import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { annotationQueryKeys } from "@/lib/annotations-queries"
+import { HttpError } from "@/lib/http"
 import { refreshLive } from "@/lib/live-refresh"
+import { RelativeTime } from "@/lib/time"
 import {
   applyVisitorCommentChange,
   visitorCommentsQueryKey,
@@ -36,13 +36,17 @@ import {
 import {
   finishVisitorComment,
   getVisitorComments,
-  passVisitorToTeam,
   replyToVisitor,
+  sendVisitorComments,
 } from "@/lib/visitor-comments-api"
 import { updateShareLink } from "@/lib/share-link-management-api"
 import type { AnnotationPanelProps } from "./annotation-panel"
 import { Quote } from "@/components/quote"
-import { NO_RECIPIENT, useCommentRecipients } from "@/lib/comment-recipients"
+import {
+  NO_RECIPIENT,
+  useCommentRecipients,
+  type CommentRecipients,
+} from "@/lib/comment-recipients"
 
 // Only loads where comments can be sent to someone (Preview agent tools).
 const CommentRecipientSelect = lazy(() =>
@@ -52,6 +56,72 @@ const CommentRecipientSelect = lazy(() =>
 )
 
 type Context = NonNullable<AnnotationPanelProps["visitorComments"]>
+
+/** Who comments go to, remembered per page and as the last pick anywhere. */
+const LAST_PICK_KEY = "worktable-visitor-send"
+function pageKey(context: Context): string {
+  return `${LAST_PICK_KEY}:${context.spaceId}:${context.documentId}`
+}
+
+function readRemembered(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function remember(context: Context, value: string): void {
+  try {
+    localStorage.setItem(pageKey(context), value)
+    if (value !== NO_RECIPIENT) localStorage.setItem(LAST_PICK_KEY, value)
+  } catch {
+    // Remembering is a convenience; the choice still applies now.
+  }
+}
+
+/**
+ * The recipient chosen here: the last one picked on this page, else the
+ * agent that last changed the page, else the last one picked anywhere, else
+ * the Space's only agent.
+ */
+function useRecipient(context: Context, recipients: CommentRecipients | null) {
+  const [picked, setPicked] = useState<string | null>(() =>
+    readRemembered(pageKey(context))
+  )
+  const [lastAnywhere] = useState(() => readRemembered(LAST_PICK_KEY))
+  const offered = (id: string | null) =>
+    id === NO_RECIPIENT ||
+    Boolean(id && recipients?.options.some((option) => option.id === id))
+  const agents = recipients?.options.filter((option) => option.kind === "agent")
+  const value = !recipients
+    ? NO_RECIPIENT
+    : offered(picked)
+      ? picked!
+      : recipients.suggested !== NO_RECIPIENT
+        ? recipients.suggested
+        : offered(lastAnywhere)
+          ? lastAnywhere!
+          : agents?.length === 1
+            ? agents[0]!.id
+            : NO_RECIPIENT
+  const choose = (next: string) => {
+    setPicked(next)
+    remember(context, next)
+  }
+  const name =
+    recipients?.options.find((option) => option.id === value)?.name ?? null
+  return { value, name, choose }
+}
+
+/** The send button's words: who it goes to, or that it stays a comment. */
+function sendLabel(name: string | null): string {
+  return name ? `Send to ${name}` : "Add to Comments"
+}
+
+function newRequestId(): string {
+  return crypto.randomUUID().replaceAll("-", "")
+}
 
 export function VisitorCommentsPanel({
   context,
@@ -75,10 +145,97 @@ export function VisitorCommentsPanel({
   )
   const queryClient = useQueryClient()
   const [resuming, setResuming] = useState<string | null>(null)
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+  // Sent comments aren't offered again before the lists show them sent.
+  const [held, setHeld] = useState<ReadonlySet<string>>(new Set())
+  const [sending, setSending] = useState(false)
+  const recipients = useCommentRecipients(
+    context.spaceId,
+    context.contributors,
+    true
+  )
+  const recipient = useRecipient(context, recipients)
+  // A send whose answer was lost is retried under the same id, so the
+  // server asks the recipient once even if the first attempt went through.
+  const unsettled = useRef<{ key: string; id: string } | null>(null)
   const list = useQuery({
     queryKey: visitorCommentsQueryKey(context.spaceId, context.documentId),
     queryFn: () => getVisitorComments(context.spaceId, context.documentId),
   })
+  const byAnnotation = useMemo(
+    () => new Map(annotations.map((annotation) => [annotation.id, annotation])),
+    [annotations]
+  )
+
+  /** Send one or several comments in one go: one thread message to the recipient. */
+  const send = async (
+    comments: SendVisitorCommentsInput["comments"],
+    to = recipient.value,
+    includeName = false
+  ): Promise<boolean> => {
+    if (sending) return false
+    setSending(true)
+    const key = JSON.stringify([comments, to, includeName])
+    const requestId =
+      unsettled.current?.key === key ? unsettled.current.id : newRequestId()
+    unsettled.current = { key, id: requestId }
+    try {
+      await sendVisitorComments(context.spaceId, {
+        comments,
+        to: to === NO_RECIPIENT ? null : to,
+        includeName,
+        requestId,
+      })
+      unsettled.current = null
+      // Added for the team without a recipient, a comment stays sendable.
+      if (to !== NO_RECIPIENT)
+        setHeld((current) => new Set([...current, ...comments.map((c) => c.id)]))
+      setSelected(new Set())
+      const linkId = list.data?.comments.find(
+        (comment) => comment.id === comments[0]?.id
+      )?.linkId
+      if (linkId)
+        applyVisitorCommentChange(queryClient, context.spaceId, {
+          documentId: context.documentId,
+          linkId,
+        })
+      refreshLive(
+        queryClient,
+        [false, true].flatMap((includeResolved) => [
+          {
+            queryKey: annotationQueryKeys.doc(
+              context.spaceId,
+              context.path,
+              includeResolved
+            ),
+            exact: true,
+          },
+          {
+            queryKey: annotationQueryKeys.widget(
+              context.spaceId,
+              context.path,
+              includeResolved
+            ),
+            exact: true,
+          },
+        ])
+      )
+      return true
+    } catch (error) {
+      // A refusal is settled; only an unanswered send keeps its id.
+      if (error instanceof HttpError && error.status < 500)
+        unsettled.current = null
+      toast.error(
+        error instanceof HttpError && error.status === 409
+          ? error.message
+          : "Couldn’t send. Try again."
+      )
+      return false
+    } finally {
+      setSending(false)
+    }
+  }
+
   // Render no cached visitor text after an authorization or availability failure.
   if (list.isError)
     return (
@@ -96,89 +253,382 @@ export function VisitorCommentsPanel({
       </p>
     )
   const { comments, pausedLinks } = list.data
+  const sentOf = (comment: VisitorComment) => {
+    const annotation = comment.passed
+      ? byAnnotation.get(comment.passed.annotationId)
+      : undefined
+    return annotation ? annotationSentTo(annotation) : null
+  }
+  const isHeld = (comment: VisitorComment) =>
+    held.has(comment.id) && !sentOf(comment)
+  const fresh = comments.filter(
+    (comment) => comment.status === "new" && comment.body && !isHeld(comment)
+  )
+  const earlier = comments.filter((comment) => !fresh.includes(comment))
+  // Earlier comments that never reached anyone, or whose recipient isn't
+  // answering, can still be sent, so the picker stays for them.
+  const canSendEarlier = earlier.some((comment) => {
+    if (!comment.body || isHeld(comment)) return false
+    if (!comment.passed) return true
+    const annotation = byAnnotation.get(comment.passed.annotationId)
+    if (!annotation) return false
+    const sent = annotationSentTo(annotation)
+    return !sent || sent.state === "failed"
+  })
+  // A send that went unanswered keeps its comments ticked, those it passed
+  // included, so trying again sends the same ones under the same id.
+  const chosen = comments.filter(
+    (comment) => selected.has(comment.id) && !isHeld(comment)
+  )
+  const toggle = (id: string, on: boolean) =>
+    setSelected((current) => {
+      const next = new Set(current)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  const batches = activeBatches(
+    earlier.flatMap((comment) => {
+      const annotation = comment.passed
+        ? byAnnotation.get(comment.passed.annotationId)
+        : undefined
+      const sent = annotation ? annotationSentTo(annotation) : null
+      return sent ? [sent] : []
+    })
+  )
+
   return (
-    <div
-      ref={panelRef}
-      className="scroll-fade h-full min-h-0 overflow-auto px-4 pb-4"
-    >
-      {pausedLinks?.map((link) => (
-        <Callout key={link.id} variant="warning" className="my-3">
-          <div className="space-y-2">
-            <p>
-              Comments paused after a burst on {link.label || "Shared link"}.
-            </p>
-            {link.canResume && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={resuming !== null}
-                onClick={async () => {
-                  setResuming(link.id)
-                  try {
-                    await updateShareLink(link.id, {
-                      comments: { acceptComments: true },
-                    })
-                    applyVisitorCommentChange(queryClient, context.spaceId, {
-                      documentId: context.documentId,
-                      linkId: link.id,
-                    })
-                  } catch {
-                    toast.error("Couldn’t resume comments. Try again.")
-                  } finally {
-                    setResuming(null)
-                  }
-                }}
-              >
-                {resuming === link.id ? "Resuming…" : "Resume comments"}
-              </Button>
-            )}
+    <div className="flex h-full min-h-0 flex-col">
+      <div
+        ref={panelRef}
+        className="scroll-fade min-h-0 flex-1 overflow-auto px-4 pb-4"
+      >
+        {pausedLinks?.map((link) => (
+          <Callout key={link.id} variant="warning" className="my-3">
+            <div className="space-y-2">
+              <p>
+                Comments paused after a burst on {link.label || "Shared link"}.
+              </p>
+              {link.canResume && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={resuming !== null}
+                  onClick={async () => {
+                    setResuming(link.id)
+                    try {
+                      await updateShareLink(link.id, {
+                        comments: { acceptComments: true },
+                      })
+                      applyVisitorCommentChange(queryClient, context.spaceId, {
+                        documentId: context.documentId,
+                        linkId: link.id,
+                      })
+                    } catch {
+                      toast.error("Couldn’t resume comments. Try again.")
+                    } finally {
+                      setResuming(null)
+                    }
+                  }}
+                >
+                  {resuming === link.id ? "Resuming…" : "Resume comments"}
+                </Button>
+              )}
+            </div>
+          </Callout>
+        ))}
+        {batches.map((batch) => (
+          <div
+            key={batch.name + batch.threadId}
+            role="status"
+            className="mt-3 flex items-center gap-2 rounded-lg bg-surface-inset px-3 py-2 text-sm"
+          >
+            <StateDot state={batch.state} />
+            <span className="min-w-0 flex-1 truncate">
+              {batch.state === "queued"
+                ? `Sent ${count(batch.count)} to ${batch.name}`
+                : `${batch.name} is working on ${count(batch.count)}`}
+            </span>
+            <Link
+              to="/spaces/$spaceId/threads/$"
+              params={{ spaceId: context.spaceId, _splat: batch.threadId }}
+              className="shrink-0 font-medium text-primary-text hover:underline"
+            >
+              Open Thread
+            </Link>
           </div>
-        </Callout>
-      ))}
-      {comments.length ? (
-        <div className="divide-y divide-border">
-          {comments.map((comment) => (
-            <VisitorRow
-              key={comment.id}
-              context={context}
-              comment={comment}
-              annotations={annotations}
-              onViewComment={onViewComment}
-              portalContainer={portalContainer}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="py-8 text-center">
-          <p className="text-sm font-medium">No visitor comments</p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Comments from people with a link appear here. Agents can’t see them
-            until you pass one to the team.
-          </p>
+        ))}
+        {comments.length === 0 ? (
+          <div className="py-8 text-center">
+            <p className="text-sm font-medium">No visitor comments</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Comments from people with a link appear here. Agents can’t see
+              them until you send them.
+            </p>
+          </div>
+        ) : (
+          <>
+            {(fresh.length > 0 || canSendEarlier) && (
+              <div className="flex items-center gap-2 pt-3">
+                {recipients && (
+                  <Suspense fallback={null}>
+                    <CommentRecipientSelect
+                      recipients={recipients}
+                      value={recipient.value}
+                      onChange={recipient.choose}
+                    />
+                  </Suspense>
+                )}
+                {fresh.length > 1 && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="ml-auto h-auto p-0"
+                    onClick={() =>
+                      setSelected(
+                        chosen.length === fresh.length
+                          ? new Set()
+                          : new Set(fresh.map((comment) => comment.id))
+                      )
+                    }
+                  >
+                    {chosen.length === fresh.length ? "Clear" : "Select All"}
+                  </Button>
+                )}
+              </div>
+            )}
+            <div className="divide-y divide-border">
+              {fresh.map((comment) => (
+                <VisitorRow
+                  key={comment.id}
+                  context={context}
+                  comment={comment}
+                  annotation={undefined}
+                  recipients={recipients}
+                  recipient={recipient}
+                  selected={selected.has(comment.id)}
+                  selecting={chosen.length > 0}
+                  onSelect={(on) => toggle(comment.id, on)}
+                  sending={sending}
+                  onSend={send}
+                  onViewComment={onViewComment}
+                  portalContainer={portalContainer}
+                />
+              ))}
+            </div>
+            {earlier.length > 0 && (
+              <>
+                <h3 className="pt-5 pb-1 text-xs font-medium text-muted-foreground">
+                  Earlier
+                </h3>
+                <div className="divide-y divide-border">
+                  {earlier.map((comment) => (
+                    <VisitorRow
+                      key={comment.id}
+                      context={context}
+                      comment={comment}
+                      annotation={
+                        comment.passed
+                          ? byAnnotation.get(comment.passed.annotationId)
+                          : undefined
+                      }
+                      recipients={recipients}
+                      recipient={recipient}
+                      held={isHeld(comment)}
+                      sending={sending}
+                      onSend={send}
+                      onViewComment={onViewComment}
+                      portalContainer={portalContainer}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+      {chosen.length > 0 && (
+        <div className="sticky bottom-0 z-10 flex shrink-0 items-center gap-2 border-t border-border bg-background px-4 py-3 xl:bg-card">
+          <span className="min-w-0 flex-1 text-sm font-medium">
+            {chosen.length} Selected
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={sending}
+            onClick={async () => {
+              setSending(true)
+              try {
+                for (const comment of chosen)
+                  await finishVisitorComment(context.spaceId, comment.id, false)
+                setSelected(new Set())
+              } catch {
+                toast.error("Couldn’t update these comments. Try again.")
+              } finally {
+                setSending(false)
+                applyVisitorCommentChange(queryClient, context.spaceId, {
+                  documentId: context.documentId,
+                  linkId: chosen[0]!.linkId,
+                })
+              }
+            }}
+          >
+            Mark Done
+          </Button>
+          <Button
+            size="sm"
+            disabled={sending}
+            onClick={() =>
+              void send(chosen.map((comment) => ({ id: comment.id })))
+            }
+          >
+            {sending ? "Sending…" : sendLabel(recipient.name)}
+          </Button>
         </div>
       )}
     </div>
   )
 }
 
+function count(n: number): string {
+  return n === 1 ? "1 comment" : `${n} comments`
+}
+
+/**
+ * Who still has comments to get to, one line each: how many, whether they
+ * have started, and their latest thread.
+ */
+function activeBatches(sent: SentCommentRef[]) {
+  const batches = new Map<
+    string,
+    { threadId: string; name: string; state: "queued" | "working"; count: number; at: string }
+  >()
+  for (const ref of sent) {
+    const state = ref.state ?? "queued"
+    if (state !== "queued" && state !== "working" && state !== "receiving")
+      continue
+    const batch = batches.get(ref.to.id)
+    if (!batch) {
+      batches.set(ref.to.id, {
+        threadId: ref.threadId,
+        name: ref.to.name,
+        state: state === "queued" ? "queued" : "working",
+        count: 1,
+        at: ref.at,
+      })
+      continue
+    }
+    batch.count += 1
+    if (state !== "queued") batch.state = "working"
+    if (ref.at > batch.at) {
+      batch.at = ref.at
+      batch.threadId = ref.threadId
+    }
+  }
+  return [...batches.values()].sort((a, b) => b.at.localeCompare(a.at))
+}
+
+function StateDot({ state }: { state: SentCommentRef["state"] | "done" }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "size-2 shrink-0 rounded-full",
+        state === "working" || state === "receiving"
+          ? "bg-primary ring-3 ring-primary/20"
+          : state === "replied" || state === "done"
+            ? "bg-success"
+            : state === "failed"
+              ? "bg-warning"
+              : "bg-muted-foreground"
+      )}
+    />
+  )
+}
+
+/** Where a comment is now: sent, worked on, done, or stuck. */
+function SentState({
+  comment,
+  annotation,
+}: {
+  comment: VisitorComment
+  annotation: Annotation | undefined
+}) {
+  if (!comment.passed)
+    return comment.status === "done" ? (
+      <Badge variant="secondary">Done</Badge>
+    ) : null
+  const sent = annotation ? annotationSentTo(annotation) : null
+  if (!sent)
+    return (
+      <p className="text-xs text-muted-foreground">
+        Added to Comments by {comment.passed.by.name}
+      </p>
+    )
+  const state = sent.state ?? "queued"
+  const name = sent.to.name
+  const text =
+    state === "working" || state === "receiving"
+      ? `${name} is working`
+      : state === "replied"
+        ? "Done"
+        : state === "failed"
+          ? `${name} isn’t answering`
+          : `Sent to ${name}`
+  return (
+    <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+      <StateDot state={state} />
+      {text}
+    </p>
+  )
+}
+
+/** The latest reply an agent left on the team's comment. */
+function agentReply(annotation: Annotation | undefined) {
+  return annotation?.thread
+    .filter((message) => message.author.type === "agent")
+    .at(-1)
+}
+
 function VisitorRow({
   context,
   comment,
-  annotations,
+  annotation,
+  recipients,
+  recipient,
+  selected,
+  held,
+  selecting,
+  onSelect,
+  sending,
+  onSend,
   onViewComment,
   portalContainer,
 }: {
   context: Context
   comment: VisitorComment
-  annotations: Annotation[]
+  annotation: Annotation | undefined
+  recipients: CommentRecipients | null
+  recipient: ReturnType<typeof useRecipient>
+  selected?: boolean
+  /** Just sent: not offered again until the lists show it sent. */
+  held?: boolean
+  /** Ticked comments are sent from the bar below, not from each row. */
+  selecting?: boolean
+  onSelect?: (on: boolean) => void
+  sending: boolean
+  onSend: (
+    comments: SendVisitorCommentsInput["comments"],
+    to?: string,
+    includeName?: boolean
+  ) => Promise<boolean>
   onViewComment: (annotation: Annotation) => void
   portalContainer: HTMLElement | null
 }) {
   const queryClient = useQueryClient()
-  const [form, setForm] = useState<"pass" | "reply" | null>(null)
+  const [form, setForm] = useState<"note" | "reply" | null>(null)
   const [removing, setRemoving] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [passed, setPassed] = useState<Annotation | null>(null)
   const refresh = () =>
     applyVisitorCommentChange(queryClient, context.spaceId, {
       documentId: context.documentId,
@@ -199,174 +649,181 @@ function VisitorRow({
       setBusy(false)
     }
   }
-  const annotation =
-    passed ??
-    annotations.find(
-      (annotation) => annotation.id === comment.passed?.annotationId
-    )
+  const isNew = comment.status === "new" && Boolean(comment.body)
+  // Not sent to anyone yet, or its recipient isn't answering: it can still
+  // go to someone, new, marked done, or already a team comment.
+  const sent = annotation ? annotationSentTo(annotation) : null
+  // A team comment not loaded here (a page past the comments list's first
+  // page) is unknown, not unsent, so it is not offered again.
+  const sendable =
+    !held &&
+    Boolean(comment.body) &&
+    (!comment.passed ||
+      (annotation !== undefined &&
+        (!sent || sent.state === "failed") &&
+        recipient.value !== NO_RECIPIENT))
+  const reply = agentReply(annotation)
+  const name = comment.body
+    ? comment.visitorName || "Anonymous visitor"
+    : "Visitor"
   return (
-    <article className="space-y-3 py-4">
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium break-words">
-            {comment.body
-              ? (comment.visitorName ?? "Anonymous visitor")
-              : "Visitor"}
-          </p>
-          <p className="text-xs break-words text-muted-foreground">
-            via {comment.linkLabel || "Shared link"}
-          </p>
-        </div>
-        <Badge variant="outline">Unverified</Badge>
-        {(comment.body || comment.canDelete) && (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Visitor comment actions"
-                  disabled={busy}
-                />
-              }
-            >
-              <MoreVertical className="size-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              container={portalContainer ?? undefined}
-            >
-              {comment.body && (
-                <DropdownMenuItem onClick={() => setForm("reply")}>
-                  Reply
-                </DropdownMenuItem>
-              )}
-              {comment.body && comment.status === "new" && (
-                <DropdownMenuItem
-                  onClick={() =>
-                    void act(() =>
-                      finishVisitorComment(context.spaceId, comment.id, false)
-                    )
-                  }
-                >
-                  Mark done
-                </DropdownMenuItem>
-              )}
-              {comment.canDelete && (
-                <>
-                  {comment.body && <DropdownMenuSeparator />}
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onClick={() => setRemoving(true)}
-                  >
-                    Delete
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
-      <time
-        className="block text-xs text-muted-foreground"
-        dateTime={comment.receivedAt}
-      >
-        {new Date(comment.receivedAt).toLocaleString()}
-      </time>
-      {comment.body ? (
-        <p className="text-sm break-words whitespace-pre-wrap">
-          {comment.body}
-        </p>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          Visitor text has been erased.
-        </p>
+    <article
+      className={cn(
+        "flex gap-3 py-4",
+        selected && "-mx-4 bg-surface-selected px-4"
       )}
-      {comment.replies.map((reply) => (
-        <div key={reply.id} className="border-l-2 border-border pl-3">
-          <p className="text-xs font-medium">{reply.author.name}</p>
-          <p className="mt-1 text-sm break-words whitespace-pre-wrap">
-            {reply.body}
+    >
+      {onSelect && (
+        <Checkbox
+          className="mt-0.5"
+          checked={selected}
+          aria-label={`Select comment from ${name}`}
+          onCheckedChange={(checked) => onSelect(checked === true)}
+        />
+      )}
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="flex items-start gap-2">
+          <p className="min-w-0 flex-1 text-sm break-words">
+            <span className="font-medium">{name}</span>{" "}
+            <span className="text-xs text-muted-foreground">
+              <RelativeTime iso={comment.receivedAt} />
+            </span>
           </p>
-        </div>
-      ))}
-      {comment.passed ? (
-        <div className="space-y-1 text-xs text-muted-foreground">
-          <p>Passed by {comment.passed.by.name}</p>
-          {annotation && (
-            <Button
-              variant="link"
-              size="sm"
-              className="h-auto p-0"
-              onClick={() => onViewComment(annotation)}
-            >
-              View comment
-            </Button>
-          )}
-        </div>
-      ) : (
-        comment.body && (
-          <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger
+          {(comment.body || comment.canDelete) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
                 render={
                   <Button
-                    variant="outline"
-                    size="sm"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="-my-1.5"
+                    aria-label="Visitor comment actions"
                     disabled={busy}
-                    onClick={() => setForm(form === "pass" ? null : "pass")}
                   />
                 }
               >
-                Pass to Team
-              </TooltipTrigger>
-              <TooltipContent>Your team and agents will see it.</TooltipContent>
-            </Tooltip>
-            {comment.status === "done" && (
-              <Badge variant="secondary">Done</Badge>
+                <MoreVertical className="size-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                container={portalContainer ?? undefined}
+              >
+                {sendable && !comment.passed && (
+                  <DropdownMenuItem onClick={() => setForm("note")}>
+                    Add Note
+                  </DropdownMenuItem>
+                )}
+                {comment.body && (
+                  <DropdownMenuItem onClick={() => setForm("reply")}>
+                    Reply to Visitor
+                  </DropdownMenuItem>
+                )}
+                {isNew && (
+                  <DropdownMenuItem
+                    onClick={() =>
+                      void act(() =>
+                        finishVisitorComment(context.spaceId, comment.id, false)
+                      )
+                    }
+                  >
+                    Mark Done
+                  </DropdownMenuItem>
+                )}
+                {comment.canDelete && (
+                  <>
+                    {comment.body && <DropdownMenuSeparator />}
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => setRemoving(true)}
+                    >
+                      Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+        {comment.body ? (
+          <p
+            className={cn(
+              "text-sm break-words whitespace-pre-wrap",
+              !isNew && "text-muted-foreground"
+            )}
+          >
+            {comment.body}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Visitor text has been erased.
+          </p>
+        )}
+        {comment.replies.map((visitorReply) => (
+          <div key={visitorReply.id} className="border-l-2 border-border pl-3">
+            <p className="text-xs font-medium">{visitorReply.author.name}</p>
+            <p className="mt-1 text-sm break-words whitespace-pre-wrap">
+              {visitorReply.body}
+            </p>
+          </div>
+        ))}
+        {reply && (
+          <div className="border-l-2 border-border pl-3">
+            <p className="line-clamp-3 text-sm break-words">
+              <span className="font-medium">
+                {reply.author.name ?? sent?.to.name ?? "Agent"}
+              </span>{" "}
+              {reply.body}
+            </p>
+          </div>
+        )}
+        {sendable && form !== "note" && !selecting && (
+          <Button
+            variant="outline"
+            size="xs"
+            disabled={sending}
+            onClick={() => void onSend([{ id: comment.id }])}
+          >
+            {sendLabel(recipient.name)}
+          </Button>
+        )}
+        {!isNew && (comment.passed || comment.status === "done") && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <SentState comment={comment} annotation={annotation} />
+            {annotation && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                onClick={() => onViewComment(annotation)}
+              >
+                View Comment
+              </Button>
             )}
           </div>
-        )
-      )}
-      {form === "reply" && comment.body && (
-        <ReplyForm
-          busy={busy}
-          onCancel={() => setForm(null)}
-          onSubmit={(body) =>
-            act(() => replyToVisitor(context.spaceId, comment.id, body))
-          }
-        />
-      )}
-      {form === "pass" && comment.body && (
-        <PassForm
-          spaceId={context.spaceId}
-          comment={comment}
-          busy={busy}
-          onCancel={() => setForm(null)}
-          onSubmit={(input) =>
-            act(async () => {
-              const result = await passVisitorToTeam(
-                context.spaceId,
-                comment.id,
-                input
-              )
-              setPassed(result.annotation)
-              const target = result.annotation.target
-              const key =
-                target.type === "widget"
-                  ? annotationQueryKeys.widget
-                  : annotationQueryKeys.doc
-              refreshLive(
-                queryClient,
-                [false, true].map((includeResolved) => ({
-                  queryKey: key(context.spaceId, context.path, includeResolved),
-                  exact: true,
-                }))
-              )
-            })
-          }
-        />
-      )}
+        )}
+        {form === "reply" && comment.body && (
+          <ReplyForm
+            busy={busy}
+            onCancel={() => setForm(null)}
+            onSubmit={(body) =>
+              act(() => replyToVisitor(context.spaceId, comment.id, body))
+            }
+          />
+        )}
+        {form === "note" && sendable && !comment.passed && (
+          <NoteForm
+            comment={comment}
+            recipients={recipients}
+            initialRecipient={recipient.value}
+            onChooseRecipient={recipient.choose}
+            busy={sending}
+            onCancel={() => setForm(null)}
+            onSubmit={async (item, to, includeName) => {
+              if (await onSend([item], to, includeName)) setForm(null)
+            }}
+          />
+        )}
+      </div>
       <ConfirmDialog
         open={removing}
         onOpenChange={setRemoving}
@@ -443,50 +900,69 @@ function ReplyForm({
   )
 }
 
-function PassForm({
-  spaceId,
+/** A note for the team with the comment, a trimmed quote, and the visitor's name if wanted. */
+function NoteForm({
   comment,
+  recipients,
+  initialRecipient,
+  onChooseRecipient,
   busy,
   onSubmit,
   onCancel,
 }: {
-  spaceId: string
   comment: VisitorComment
+  recipients: CommentRecipients | null
+  initialRecipient: string
+  /** A pick made here is remembered like one made in To. */
+  onChooseRecipient: (id: string) => void
   busy: boolean
-  onSubmit: (input: PassVisitorCommentInput) => Promise<boolean>
+  onSubmit: (
+    item: SendVisitorCommentsInput["comments"][number],
+    to: string,
+    includeName: boolean
+  ) => Promise<void>
   onCancel: () => void
 }) {
-  const recipients = useCommentRecipients(spaceId, undefined, true)
-  const [recipient, setRecipient] = useState(NO_RECIPIENT)
+  const [picked, setTo] = useState(initialRecipient)
+  // One that left the list since it was picked goes nowhere, as the button says.
+  const to =
+    picked === NO_RECIPIENT ||
+    recipients?.options.some((option) => option.id === picked)
+      ? picked
+      : NO_RECIPIENT
   const [note, setNote] = useState("")
   const [quote, setQuote] = useState(comment.body ?? "")
   const [editingQuote, setEditingQuote] = useState(false)
   const [includeName, setIncludeName] = useState(false)
   const id = useId()
+  const name =
+    recipients?.options.find((option) => option.id === to)?.name ?? null
   return (
     <form
       className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault()
-        if (note.trim() && quote.trim())
-          void onSubmit({
-            ...(recipients && recipient !== NO_RECIPIENT
-              ? { to: [recipient] }
-              : {}),
-            note: note.trim(),
-            quote: quote.trim(),
-            includeName,
-          })
+        if (quote.trim())
+          void onSubmit(
+            {
+              id: comment.id,
+              ...(note.trim() ? { note: note.trim() } : {}),
+              ...(quote.trim() !== comment.body ? { quote: quote.trim() } : {}),
+            },
+            to,
+            includeName
+          )
       }}
     >
       <fieldset disabled={busy} className="space-y-3">
         <div className="space-y-2">
           <label htmlFor={`${id}-note`} className="text-sm font-medium">
-            What should happen?
+            Note
           </label>
           <Textarea
             id={`${id}-note`}
             value={note}
+            autoFocus
             onChange={(event) => setNote(event.target.value)}
             maxLength={10_000}
           />
@@ -502,7 +978,7 @@ function PassForm({
               variant="ghost"
               onClick={() => setEditingQuote((value) => !value)}
             >
-              {editingQuote ? "Keep quote" : "Edit quote"}
+              {editingQuote ? "Keep Quote" : "Edit Quote"}
             </Button>
           </div>
           {editingQuote ? (
@@ -530,8 +1006,11 @@ function PassForm({
             <Suspense fallback={null}>
               <CommentRecipientSelect
                 recipients={recipients}
-                value={recipient}
-                onChange={setRecipient}
+                value={to}
+                onChange={(next) => {
+                  setTo(next)
+                  onChooseRecipient(next)
+                }}
               />
             </Suspense>
           </div>
@@ -540,12 +1019,8 @@ function PassForm({
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={!note.trim() || !quote.trim()}
-          >
-            {busy ? "Passing…" : "Pass to Team"}
+          <Button type="submit" size="sm" disabled={!quote.trim()}>
+            {busy ? "Sending…" : sendLabel(name)}
           </Button>
         </div>
       </fieldset>

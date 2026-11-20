@@ -403,6 +403,14 @@ export function applyThreadEvent(
         message.threadId,
         update
       )
+      // Comments sent in this thread show how far their recipient got. Loaded
+      // when a delivery moves, so it stays off the startup bundle.
+      if (update) {
+        const threadId = message.threadId
+        void import("./sent-comments").then(({ applySentCommentActivity }) =>
+          applySentCommentActivity(queryClient, threadId, update)
+        )
+      }
     }
     // Progress while an agent works leaves Pending as it was; a delivery
     // that ends, fails or starts over can change it.

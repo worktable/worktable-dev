@@ -412,7 +412,12 @@ function PaletteBody({
 
   const rows = useMemo<Row[]>(() => {
     if (!typed) {
-      return recent.map((open, index) => ({
+      // Only pages in Spaces this person can still open.
+      const reachable = recent.filter((open) => {
+        const spaceId = open.path.match(/^\/(?:threads\/)?spaces\/([^/]+)/)?.[1]
+        return !spaceId || !spaces || spacesById.has(spaceId)
+      })
+      return reachable.map((open, index) => ({
         ...recentRow(open, spacesById),
         ...(index === 0 ? { heading: "Recent" } : {}),
       }))
@@ -434,7 +439,16 @@ function PaletteBody({
       found.push(row)
     }
     return found
-  }, [typed, searched, recent, places, results, spacesById, worktableName])
+  }, [
+    typed,
+    searched,
+    recent,
+    places,
+    results,
+    spaces,
+    spacesById,
+    worktableName,
+  ])
 
   // The row the keys act on: the one last pointed at or moved to, or the
   // first. Typing puts it back at the top.

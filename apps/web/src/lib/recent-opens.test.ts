@@ -18,10 +18,14 @@ describe("recent opens", () => {
   const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage")
   beforeEach(() => {
     stored.clear()
-    ;(globalThis as Record<string, unknown>).localStorage = {
-      getItem: (key: string) => stored.get(key) ?? null,
-      setItem: (key: string, value: string) => void stored.set(key, value),
-    }
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      writable: true,
+      value: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => void stored.set(key, value),
+      },
+    })
   })
   afterEach(() => {
     if (original) Object.defineProperty(globalThis, "localStorage", original)

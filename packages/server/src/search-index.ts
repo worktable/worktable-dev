@@ -1235,14 +1235,20 @@ export async function searchWithStatus(
 
   const isArchived = (entry: IndexEntry) =>
     (entry.type === "doc" && entry.archived === true) || inArchivedSpace(entry.spaceId);
-  // Current work first, so archived matches never crowd it out of the limit.
-  const ordered = opts?.archivedLast
+  // In the app's order, current and archived work are each ranked up to the
+  // limit, and the limit is applied once records have joined them, so
+  // archived matches never crowd current Docs or Records out.
+  const docHits = opts?.archivedLast
     ? [
-        ...filtered.filter((hit) => !isArchived(hit.result as unknown as IndexEntry)),
-        ...filtered.filter((hit) => isArchived(hit.result as unknown as IndexEntry)),
+        ...filtered
+          .filter((hit) => !isArchived(hit.result as unknown as IndexEntry))
+          .slice(0, maxResults),
+        ...filtered
+          .filter((hit) => isArchived(hit.result as unknown as IndexEntry))
+          .slice(0, maxResults),
       ]
-    : filtered;
-  const results: SearchResult[] = ordered.slice(0, maxResults).map(({ result: r, displayBody }) => {
+    : filtered.slice(0, maxResults);
+  const results: SearchResult[] = docHits.map(({ result: r, displayBody }) => {
     const entry = r as unknown as IndexEntry;
     // r.terms holds the document-side matched terms (prefix/fuzzy already
     // expanded, e.g. query "pair" → term "pairing"), so they locate in the body.
@@ -1286,9 +1292,10 @@ export async function searchWithStatus(
     const hits = recordIndex.searchRecords(query, maxResults, opts?.spaceId, allowedSpaces) ?? [];
     // FTS matches on query-token prefixes, so the raw tokens locate in the text.
     const queryTerms = query.trim().split(/\s+/);
+    let records = 0;
     for (const [i, hit] of hits.entries()) {
       if (!canAccessSpace(hit.spaceId)) continue;
-      if (results.length >= maxResults) break;
+      if ((opts?.archivedLast ? records : results.length) >= maxResults) break;
       // The record index keeps a deleted Space's rows until its sweep: a
       // Space that is gone shows none of them, archived ones included.
       const { data: space } = await spaceOf(hit.spaceId);
@@ -1307,6 +1314,7 @@ export async function searchWithStatus(
           ? { archived: true as const }
           : {}),
       });
+      records += 1;
     }
   }
 
@@ -1315,7 +1323,7 @@ export async function searchWithStatus(
       ? [
           ...results.filter((result) => !result.archived),
           ...results.filter((result) => result.archived),
-        ]
+        ].slice(0, maxResults)
       : results,
     complete: indexComplete && recordMode !== "building",
   };

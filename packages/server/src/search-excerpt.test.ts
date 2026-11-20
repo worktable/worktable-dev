@@ -534,9 +534,21 @@ describe("search excerpts", () => {
       ),
     ).toEqual(["pairing-today"]);
 
+    // Nor do archived Docs crowd out a current Record.
+    recordIndex.start();
+    await recordIndex.whenReady();
+    await req(app, "POST", "/api/spaces/meta/records/tasks", {
+      data: { title: "Pairing checklist" },
+    });
+    const withRecord = await find("pairing", "&includeArchived=true&archivedLast=true&maxResults=2");
+    expect(withRecord.map((result) => [result.type, result.archived])).toEqual([
+      ["doc", undefined],
+      ["record", undefined],
+    ]);
+
     // Without the app's order, results say nothing more than before.
     const plain = await find("pairing", "&includeArchived=true");
-    expect(plain).toHaveLength(3);
+    expect(plain).toHaveLength(4);
     expect(plain.every((result) => result.archived === undefined)).toBe(true);
 
     // A current Doc whose name differs from the archived one's only by case
@@ -558,10 +570,12 @@ describe("search excerpts", () => {
     expect(
       (await req(app, "POST", "/api/spaces/meta/docs/pairing-notes/restore", {})).status,
     ).toBe(200);
-    expect((await find("pairing")).map((result) => result.path).sort()).toEqual([
-      "pairing-notes",
-      "pairing-today",
-    ]);
+    expect(
+      (await find("pairing"))
+        .filter((result) => result.type === "doc")
+        .map((result) => result.path)
+        .sort(),
+    ).toEqual(["pairing-notes", "pairing-today"]);
   });
 
   it("narrows a search to the kinds asked for", async () => {

@@ -1,6 +1,8 @@
 // What a person opened on this device, newest first, for search to offer
-// before they type. Kept in the browser: it costs no request, and nobody
-// else sees it.
+// before they type. Kept in the browser, so it costs no request. On a team,
+// each member keeps their own, and signing out clears it.
+
+import { browserTeamCacheKey } from "./team-context"
 
 export type RecentOpenRole =
   | "document"
@@ -34,7 +36,10 @@ export function isRecentOpenRole(role: string): role is RecentOpenRole {
 }
 
 function storageKey(worktableId: string): string {
-  return `worktable-recent-opens:${worktableId}`
+  const member = browserTeamCacheKey()
+  return member
+    ? `worktable-recent-opens:member:${member}`
+    : `worktable-recent-opens:${worktableId}`
 }
 
 /** `opens` with `open` first, once, and no longer than the limit. */

@@ -197,7 +197,7 @@ async function deleteTeamStores(
 
 /**
  * Remove one member's local data for one Worktable: their cached rooms,
- * drafts and profile. Other Worktables on the same origin and solo caches are
+ * drafts, profile and what search lists as Recent. Other Worktables on the same origin and solo caches are
  * left alone. Without a scope, every member's team data on this origin goes.
  */
 export async function clearTeamBrowserData(
@@ -212,7 +212,8 @@ export async function clearTeamBrowserData(
       if (
         (name.startsWith("worktable:drawing-draft:") ||
           name.startsWith("worktable-profile:") ||
-          name.startsWith("worktable-sidebar-open:")) &&
+          name.startsWith("worktable-sidebar-open:") ||
+          name.startsWith("worktable-recent-opens:")) &&
         owns(name)
       )
         localStorage.removeItem(name)

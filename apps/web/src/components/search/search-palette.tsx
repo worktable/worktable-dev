@@ -346,8 +346,6 @@ function PaletteBody({
       new Map((spaces ?? []).map((space) => [space.id, space as SpaceFile])),
     [spaces]
   )
-  // Menus opened from the filters belong inside the dialog.
-  const [container, setContainer] = useState<HTMLElement | null>(null)
 
   // What was typed last time is still there, selected, so typing replaces it.
   useEffect(() => {
@@ -534,7 +532,7 @@ function PaletteBody({
     typed !== "" && settled && results !== undefined && rows.length === 0
 
   return (
-    <div ref={setContainer} className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-border/60 px-4">
         <Search className="size-4 shrink-0 text-muted-foreground" />
         <input
@@ -581,7 +579,6 @@ function PaletteBody({
           onChange={(next) =>
             onKindChange(KINDS.find((item) => item.kind === next)?.kind ?? null)
           }
-          container={container}
           returnFocus={input}
         />
         <FilterMenu
@@ -594,7 +591,6 @@ function PaletteBody({
             label: space.name,
           }))}
           onChange={onSpaceChange}
-          container={container}
           returnFocus={input}
         />
       </div>
@@ -642,7 +638,6 @@ function FilterMenu({
   valueLabel,
   options,
   onChange,
-  container,
   returnFocus,
 }: {
   label: string
@@ -651,7 +646,6 @@ function FilterMenu({
   valueLabel: string | undefined
   options: ReadonlyArray<{ value: string; label: string }>
   onChange: (value: string | null) => void
-  container: HTMLElement | null
   returnFocus: RefObject<HTMLInputElement | null>
 }) {
   return (
@@ -674,7 +668,6 @@ function FilterMenu({
         <ChevronDown className="size-3.5 shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        container={container}
         finalFocus={false}
         className="max-h-72 w-auto min-w-44"
       >

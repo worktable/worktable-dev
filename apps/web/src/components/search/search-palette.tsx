@@ -480,6 +480,12 @@ function PaletteBody({
     }
   }
 
+  // A filter's menu hands the keys back to the field once it closes, so the
+  // arrows move through results again.
+  const backToField = (open: boolean) => {
+    if (!open) input.current?.focus()
+  }
+
   const kindLabel = KINDS.find((item) => item.kind === kind)?.label
   const spaceName = spaceId ? spacesById.get(spaceId)?.name : undefined
   const noMatches =
@@ -526,6 +532,7 @@ function PaletteBody({
           onValueChange={(next) =>
             onKindChange(KINDS.find((item) => item.kind === next)?.kind ?? null)
           }
+          onOpenChangeComplete={backToField}
         >
           <FilterTrigger label="Kind" set={kind !== null}>
             {kindLabel ?? "Kind"}
@@ -545,6 +552,7 @@ function PaletteBody({
           onValueChange={(next) =>
             onSpaceChange(next && next !== ANY ? next : null)
           }
+          onOpenChangeComplete={backToField}
         >
           <FilterTrigger label="Space" set={spaceId !== null}>
             {spaceName ?? "Space"}
@@ -641,7 +649,7 @@ function PaletteRow({
             <Highlighted text={row.title} tokens={tokens} />
           </span>
           {row.location && (
-            <span className="flex max-w-[45%] min-w-0 shrink-0 justify-end">
+            <span className="hidden max-w-[45%] min-w-0 shrink-0 justify-end sm:flex">
               {row.location}
             </span>
           )}
@@ -650,6 +658,10 @@ function PaletteRow({
           <span className="truncate text-xs text-muted-foreground">
             <Highlighted text={row.excerpt} tokens={tokens} />
           </span>
+        )}
+        {/* A phone gives the title the whole width and the place a line. */}
+        {row.location && (
+          <span className="flex min-w-0 sm:hidden">{row.location}</span>
         )}
       </span>
     </>

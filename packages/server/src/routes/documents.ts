@@ -840,8 +840,8 @@ documentsRouter.put("/", requireScope("documents:write"), async (c) => {
     )
   }
   try {
-    const principal = c.get("identity").principal
-    const attribution = documentWriteAttribution(principal)
+    const identity = c.get("identity")
+    const attribution = documentWriteAttribution(identity.principal)
     const result = await replaceRegisteredDocument({
       spaceId: c.req.param("spaceId") ?? "",
       path: parsed.data.path,
@@ -850,6 +850,7 @@ documentsRouter.put("/", requireScope("documents:write"), async (c) => {
       updatedBy: attribution.actor,
       source: attribution.source,
       reason: parsed.data.reason,
+      personSave: isPersonWriter(identity),
     })
     return c.json({ ok: true, ...result })
   } catch (error) {

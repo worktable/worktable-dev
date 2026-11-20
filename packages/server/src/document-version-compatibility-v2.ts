@@ -818,8 +818,8 @@ export async function prunedDocumentHistoryV2(
 }
 
 /**
- * The bytes of a Doc's or HTML document's current version that a write
- * replacing it may count as given back under the storage limit; see
+ * The bytes of a Doc's or HTML document's history that a write replacing
+ * its current version may count as given back under the storage limit; see
  * reclaimableAfterReplacementV2. None outside Storage V2. Read only near the
  * limit.
  */
@@ -829,7 +829,7 @@ export async function reclaimableDocVersionBytesV2(
   kind: "doc" | "html",
   options: { writesCheckpoint: boolean }
 ): Promise<number> {
-  if (options.writesCheckpoint || !(await usesDocumentVersionStoreV2())) return 0
+  if (!(await usesDocumentVersionStoreV2())) return 0
   const owner = await resolveOwner(
     spaceId,
     path,
@@ -843,7 +843,7 @@ export async function reclaimableDocVersionBytesV2(
     workspaceRoot: getWorkspaceRoot(),
     spaceId,
     documentId: owner.documentId,
-    writesCheckpoint: false,
+    writesCheckpoint: options.writesCheckpoint,
   })
 }
 

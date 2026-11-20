@@ -876,13 +876,10 @@ export async function writeDocumentGenerationV2(
               registry: input.registry,
             })
           }
-          // A new ordinary version, not one continuing the open one: the
-          // version before it is now history pruning may remove. A first
-          // version, a baseline or a checkpoint leaves the one before it
-          // protected (protectedDocumentGenerations).
-          if (!continues && input.operation === "update" && !input.checkpoint) {
-            notePrunableHistory()
-          }
+          // A new version, not one continuing the open one: a version two
+          // or more before it may now be history pruning can remove
+          // (protectedDocumentGenerations).
+          if (!continues) notePrunableHistory()
           return prepared.manifest
         } catch (error) {
           await rm(staging, { recursive: true, force: true })
@@ -1276,16 +1273,18 @@ export async function pruneDocumentGenerationsV2(input: {
 
 /**
  * Which of a document's generations pruning may never remove: the newest
- * (the document's current version), the newest that is not a checkpoint
- * (the one a save may continue, as count retention keeps it), and every
- * meaningful checkpoint (restore points: saved, restored, before an agent
- * took over, reviewed).
+ * (the document's current version), the one before it (what the last change
+ * replaced, so a replace at the limit can always be undone), the newest that
+ * is not a checkpoint (the one a save may continue, as count retention keeps
+ * it), and every meaningful checkpoint (restore points: saved, restored,
+ * before an agent took over, reviewed).
  */
 export function protectedDocumentGenerations(
-  newestFirst: readonly DocumentGenerationManifestV2[]
+  newestFirst: readonly Pick<DocumentGenerationManifestV2, "id" | "checkpoint">[]
 ): Set<string> {
   const kept = new Set<string>()
   if (newestFirst[0]) kept.add(newestFirst[0].id)
+  if (newestFirst[1]) kept.add(newestFirst[1].id)
   const open = newestFirst.find((manifest) => !manifest.checkpoint?.meaningful)
   if (open) kept.add(open.id)
   for (const manifest of newestFirst) {
@@ -1296,28 +1295,69 @@ export function protectedDocumentGenerations(
 
 /**
  * The bytes a write replacing a document's current version may count as
- * given back under the storage limit: that version's, when afterwards
- * pruning can remove it or the write continues it. None when it is a
- * meaningful checkpoint, or when the write makes one, since the version
- * before a checkpoint stays as the newest that is not one (see
- * `protectedDocumentGenerations`). `generationId` names the current version
- * when known; otherwise it is the newest. Read only near the limit.
+ * given back under the storage limit: what the write itself removes (the
+ * version it continues), and what pruning may remove only once the write
+ * is done, because the new version leaves it unprotected (see
+ * `protectedDocumentGenerations`). The version the write replaces is never
+ * among them: it stays as the one before the current version. A write that
+ * may continue the current version or add a new one counts the smaller of
+ * the two. Read only near the limit.
  */
 export async function reclaimableAfterReplacementV2(input: {
   workspaceRoot: string
   spaceId: string
   documentId: DocumentId
-  generationId?: string
   writesCheckpoint: boolean
+  /** Whether the write may continue the current version; true unless known otherwise. */
+  mayContinue?: boolean
+  /** The save, when known: whether it continues the current version is then exact. */
+  save?: Parameters<typeof continuesDocumentGeneration>[1]
 }): Promise<number> {
-  if (input.writesCheckpoint) return 0
-  const current = input.generationId
-    ? await readDocumentGenerationManifestV2({
-        ...input,
-        generationId: input.generationId,
-      }).catch(() => null)
-    : ((await listDocumentGenerationsV2(input).catch(() => []))[0] ?? null)
-  return current && !current.checkpoint?.meaningful ? current.totalBytes : 0
+  const newestFirst = await listDocumentGenerationsV2(input).catch(() => [])
+  const current = newestFirst[0]
+  if (!current) return 0
+  const before = protectedDocumentGenerations(newestFirst)
+  const added = {
+    id: "\0new",
+    ...(input.writesCheckpoint
+      ? { checkpoint: { meaningful: true, kind: "manual" } as const }
+      : {}),
+  } as Pick<DocumentGenerationManifestV2, "id" | "checkpoint">
+  const freed = (
+    after: readonly Pick<DocumentGenerationManifestV2, "id" | "checkpoint">[],
+    removed?: string
+  ) => {
+    const kept = protectedDocumentGenerations([added, ...after])
+    let bytes = 0
+    for (const manifest of newestFirst) {
+      if (manifest.id === removed || (before.has(manifest.id) && !kept.has(manifest.id)))
+        bytes += manifest.totalBytes
+    }
+    return bytes
+  }
+  // A write from another kind of author also marks the version it replaces
+  // as a checkpoint (a source transition), which can keep an older version
+  // protected as the newest that is not one. Count only what goes either way.
+  const asNew = Math.min(
+    freed(newestFirst),
+    freed([
+      {
+        id: current.id,
+        checkpoint: { meaningful: true, kind: "source-transition" },
+      },
+      ...newestFirst.slice(1),
+    ])
+  )
+  if (
+    input.mayContinue === false ||
+    input.writesCheckpoint ||
+    current.checkpoint?.meaningful
+  )
+    return asNew
+  const asContinued = freed(newestFirst.slice(1), current.id)
+  if (input.save)
+    return continuesDocumentGeneration(current, input.save) ? asContinued : asNew
+  return Math.min(asNew, asContinued)
 }
 
 /**

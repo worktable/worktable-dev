@@ -55,6 +55,10 @@ const GIB = 1024 * 1024 * 1024
 export const DEFAULT_STORAGE_LIMIT_BYTES = 2 * GIB
 /** The most an operator may set outside Cloud. */
 export const STORAGE_LIMIT_CEILING_BYTES = DEFAULT_STORAGE_LIMIT_BYTES
+/** How far past the limit a person's drawing saves may go: this share of it... */
+const GRACE_RATIO = 0.05
+/** ...and at most this much. */
+const GRACE_MAX_BYTES = 64 * 1024 * 1024
 /** Settings warns once usage passes this share of the limit. */
 export const STORAGE_WARNING_RATIO = 0.8
 /** Pruning frees room down to this share of the limit. */
@@ -116,17 +120,21 @@ export class StorageLimitError extends Error {
   readonly details: { limitBytes: number; usedBytes: number }
   /** What the refused write asked for; 0 when pruning can't help it. */
   readonly requestedBytes: number
+  /** The most the write may take the Worktable to: the limit, or past it by an allowance. */
+  readonly ceilingBytes: number
 
   constructor(
     limitBytes: number,
     usedBytes: number,
     message?: string,
-    requestedBytes = 0
+    requestedBytes = 0,
+    ceilingBytes = limitBytes
   ) {
     super(message ?? storageLimitMessage(limitBytes))
     this.name = "StorageLimitError"
     this.details = { limitBytes, usedBytes }
     this.requestedBytes = requestedBytes
+    this.ceilingBytes = ceilingBytes
   }
 }
 
@@ -191,18 +199,36 @@ function reserve(bytes: number): StorageReservation {
 }
 
 /**
+ * How far past its limit a person's drawing saves may take a Worktable: 5%
+ * of the limit, at most 64 MiB. Enough that nobody loses what they were
+ * drawing when the Worktable fills; bounded, so saves can't fill the disk.
+ */
+export function storageGraceBytes(limit = storageLimitBytes()): number {
+  return Math.min(GRACE_MAX_BYTES, Math.round(limit * GRACE_RATIO))
+}
+
+/** What a write admits beyond its bytes: `grace` lets it pass the limit by storageGraceBytes. */
+export interface StorageAdmission {
+  grace?: boolean
+}
+
+/**
  * Admit a write that adds `bytes`, at the moment it publishes. It never
  * waits, so a caller holding locks may use it. Throws StorageLimitError when
  * there is no room; `retryAfterPruning` then makes room and tries again.
  */
-export function admitStorageWrite(bytes: number): StorageReservation {
+export function admitStorageWrite(
+  bytes: number,
+  options: StorageAdmission = {}
+): StorageReservation {
   if (!(bytes > 0)) return NO_RESERVATION
   const usage = storageUsage()
   if (!usage) return NO_RESERVATION
   const limit = storageLimitBytes()
+  const ceiling = limit + (options.grace ? storageGraceBytes(limit) : 0)
   const used = usedBytes(usage)
-  if (used + bytes <= limit) return reserve(bytes)
-  throw new StorageLimitError(limit, used, undefined, bytes)
+  if (used + bytes <= ceiling) return reserve(bytes)
+  throw new StorageLimitError(limit, used, undefined, bytes, ceiling)
 }
 
 /** Whether `bytes` more fit now. No side effects; nothing is reserved. */
@@ -254,14 +280,14 @@ export async function withStorageRoom<T>(
  * refusal waits for pruning and tries once more, as `retryAfterPruning`.
  */
 export function withAdmittedRoom<T>(
-  write: (admit: (bytes: number) => void) => Promise<T>
+  write: (admit: (bytes: number, options?: StorageAdmission) => void) => Promise<T>
 ): Promise<T> {
   return retryAfterPruning(async () => {
     const room: { reservation: StorageReservation | null } = { reservation: null }
     try {
-      return await write((bytes) => {
+      return await write((bytes, options) => {
         room.reservation?.release()
-        room.reservation = admitStorageWrite(bytes)
+        room.reservation = admitStorageWrite(bytes, options)
       })
     } finally {
       room.reservation?.release()
@@ -282,7 +308,7 @@ export async function retryAfterPruning<T>(write: () => Promise<T>): Promise<T> 
     if (!(error instanceof StorageLimitError) || !(error.requestedBytes > 0)) {
       throw error
     }
-    await waitForRoom(error.requestedBytes)
+    await waitForRoom(error.requestedBytes, error.ceilingBytes)
     return write()
   }
 }
@@ -308,7 +334,7 @@ let again = false
 let stopped = true
 let promptPruneMs = PROMPT_PRUNE_MS
 /** Writes waiting for room, in the order they asked. */
-const waiting = new Set<{ bytes: number }>()
+const waiting = new Set<{ bytes: number; ceiling: number }>()
 /** What the last plan could remove, still; null when it may be stale. */
 let known: {
   epoch: number
@@ -327,7 +353,7 @@ function dueBytes(reclaimable: number): number {
   let fitting = 0
   for (const write of waiting) {
     // One that can't fit even if all of it went isn't pruned for.
-    if (used + fitting + write.bytes - reclaimable > limit) continue
+    if (used + fitting + write.bytes - reclaimable > write.ceiling) continue
     fitting += write.bytes
   }
   if (fitting > 0) {
@@ -383,10 +409,13 @@ function runPruning(): Promise<void> {
   return pruning
 }
 
-/** A write of `bytes` waits, a few seconds at most, while pruning makes room. */
-async function waitForRoom(bytes: number): Promise<void> {
+/**
+ * A write of `bytes` waits, a few seconds at most, while pruning makes room
+ * for it under `ceiling`: the limit, or past it by the write's allowance.
+ */
+async function waitForRoom(bytes: number, ceiling: number): Promise<void> {
   if (stopped) return
-  const write = { bytes }
+  const write = { bytes, ceiling }
   waiting.add(write)
   let timer: ReturnType<typeof setTimeout> | undefined
   try {

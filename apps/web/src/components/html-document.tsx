@@ -18,6 +18,7 @@ import {
   MessageSquarePlus,
   Minimize,
   Pencil,
+  Printer,
   RotateCcw,
   Trash,
 } from "lucide-react"
@@ -746,6 +747,33 @@ function WidgetDetailPage({
     el.requestFullscreen().catch(() => setOverlayFullscreen(true))
   }, [overlayFullscreen])
 
+  // The page prints itself, with its own page rules, not the app around it.
+  const printPage = useCallback(() => {
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "worktable.print" },
+      "*"
+    )
+  }, [])
+  // Ctrl or Cmd+P while the page is open prints the page too. The page
+  // handles it itself when it has the keyboard; a saved version beside it
+  // prints the comparison as before.
+  useEffect(() => {
+    if (previewVersionId) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        !(event.ctrlKey || event.metaKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        event.key.toLowerCase() !== "p"
+      )
+        return
+      event.preventDefault()
+      printPage()
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [previewVersionId, printPage])
+
   const handleCopyHtml = useCallback(() => {
     exportWidgetHtml(spaceId, widgetId)
       .then(copyText)
@@ -851,6 +879,12 @@ function WidgetDetailPage({
         label: "Copy HTML",
         icon: Code,
         onSelect: handleCopyHtml,
+      },
+      {
+        id: "print-pdf",
+        label: "Print PDF",
+        icon: Printer,
+        onSelect: printPage,
       }
     )
     // Changes wait for the route's check of this path.
@@ -896,6 +930,7 @@ function WidgetDetailPage({
     handleCopyHtml,
     handleRestore,
     newTabUrl,
+    printPage,
     openVersions,
     validated,
   ])
@@ -1006,7 +1041,7 @@ function WidgetDetailPage({
               onLoad={() => setLoadedFrameSrc(frameSrc)}
               title={title}
               src={frameSrc}
-              sandbox="allow-scripts"
+              sandbox="allow-scripts allow-modals"
               referrerPolicy="no-referrer"
               data-worktable-widget-frame="true"
               className="h-full w-full flex-1 border-0 bg-background"

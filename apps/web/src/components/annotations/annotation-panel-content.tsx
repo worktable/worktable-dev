@@ -26,7 +26,14 @@ import { ThreadMarkdownProvider } from "@/components/threads/thread-markdown"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useWorkspace } from "@/lib/queries"
 
-type CommentRequest = NonNullable<Annotation["requests"]>[number];
+/**
+ * A comment's request as the comments list returns it: for an agent whose
+ * runtime takes comments, working while a turn answers it, failed when the
+ * runtime stopped answering.
+ */
+type CommentRequest = NonNullable<Annotation["requests"]>[number] & {
+  delivery?: "working" | "failed";
+};
 
 type RequestState = "sent" | "delivered" | "read" | "working" | "stuck" | "replied";
 

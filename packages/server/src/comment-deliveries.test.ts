@@ -76,7 +76,7 @@ async function listedDelivery(docPath: string) {
     new Request(`http://localhost/api/spaces/demo/annotations?docPath=${docPath}`)
   )
   const { annotations } = (await response.json()) as { annotations: Annotation[] }
-  return annotations.map((annotation) => annotation.requests?.[0]?.delivery)
+  return annotations.map((annotation) => (annotation.requests?.[0] as { delivery?: string } | undefined)?.delivery)
 }
 
 async function comment(docPath: string, to: string, body: string) {

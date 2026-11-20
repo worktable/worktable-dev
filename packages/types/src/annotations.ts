@@ -139,12 +139,6 @@ export const AnnotationRequestSchema = z.object({
    */
   deliveredAt: z.string().optional(),
   readAt: z.string().optional(),
-  /**
-   * For an agent whose runtime takes comments: working while a turn answers
-   * it, failed when the runtime stopped answering. Added to responses; never
-   * kept in the comment's file.
-   */
-  delivery: z.enum(["working", "failed"]).optional(),
 });
 
 /** The version that put a commented passage in the Doc, and its author. */

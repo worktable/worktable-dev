@@ -22,7 +22,7 @@ const POLICY_VALUES: {
 } = {
   serve: ["inline", "download", "bytes"],
   page: ["image", "frame", "table", "text", "card"],
-  icon: ["image", "spreadsheet", "document", "code", "audio", "video", "archive", "file"],
+  icon: ["image", "spreadsheet", "document", "presentation", "code", "audio", "video", "archive", "file"],
   agent: ["image", "text", "bytes"],
   share: ["inline", "placeholder"],
   drawing: [true, false],

@@ -50,6 +50,7 @@ export type FileFamily =
   | "data"
   | "code"
   | "document"
+  | "presentation"
   | "audio"
   | "video"
   | "archive"
@@ -74,6 +75,7 @@ export interface FileSurfacePolicies {
     | "image"
     | "spreadsheet"
     | "document"
+    | "presentation"
     | "code"
     | "audio"
     | "video"
@@ -244,6 +246,25 @@ export const FILE_TYPES = {
     family: "spreadsheet",
     surfaces: { ...BINARY, serve: "bytes", icon: "spreadsheet" },
   },
+  xlsm: {
+    extensions: ["xlsm"],
+    mediaType: "application/vnd.ms-excel.sheet.macroenabled.12",
+    family: "spreadsheet",
+    surfaces: { ...BINARY, serve: "bytes", icon: "spreadsheet" },
+  },
+  xltx: {
+    extensions: ["xltx"],
+    mediaType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+    family: "spreadsheet",
+    surfaces: { ...BINARY, serve: "bytes", icon: "spreadsheet" },
+  },
+  xlsb: {
+    extensions: ["xlsb"],
+    mediaType: "application/vnd.ms-excel.sheet.binary.macroenabled.12",
+    family: "spreadsheet",
+    surfaces: { ...BINARY, serve: "bytes", icon: "spreadsheet" },
+  },
   ods: {
     extensions: ["ods"],
     mediaType: "application/vnd.oasis.opendocument.spreadsheet",
@@ -395,6 +416,72 @@ export const FILE_TYPES = {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     family: "document",
     surfaces: { ...BINARY, serve: "bytes", icon: "document" },
+  },
+  docm: {
+    extensions: ["docm"],
+    mediaType: "application/vnd.ms-word.document.macroenabled.12",
+    family: "document",
+    surfaces: { ...BINARY, serve: "bytes", icon: "document" },
+  },
+  dotx: {
+    extensions: ["dotx"],
+    mediaType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+    family: "document",
+    surfaces: { ...BINARY, serve: "bytes", icon: "document" },
+  },
+  odt: {
+    extensions: ["odt"],
+    mediaType: "application/vnd.oasis.opendocument.text",
+    family: "document",
+    surfaces: { ...BINARY, serve: "bytes", icon: "document" },
+  },
+  pages: {
+    extensions: ["pages"],
+    mediaType: "application/vnd.apple.pages",
+    family: "document",
+    surfaces: { ...BINARY, serve: "bytes", icon: "document" },
+  },
+  pptx: {
+    extensions: ["pptx"],
+    mediaType:
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    family: "presentation",
+    surfaces: { ...BINARY, serve: "bytes", icon: "presentation" },
+  },
+  ppsx: {
+    extensions: ["ppsx"],
+    mediaType:
+      "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+    family: "presentation",
+    surfaces: { ...BINARY, serve: "bytes", icon: "presentation" },
+  },
+  pptm: {
+    extensions: ["pptm"],
+    mediaType: "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+    family: "presentation",
+    surfaces: { ...BINARY, serve: "bytes", icon: "presentation" },
+  },
+  potx: {
+    extensions: ["potx"],
+    mediaType:
+      "application/vnd.openxmlformats-officedocument.presentationml.template",
+    family: "presentation",
+    surfaces: { ...BINARY, serve: "bytes", icon: "presentation" },
+  },
+  // Keynote's .key stays an unknown file: the name is as often a private
+  // key, and an icon shouldn't call that a deck.
+  ppt: {
+    extensions: ["ppt", "pps"],
+    mediaType: "application/vnd.ms-powerpoint",
+    family: "presentation",
+    surfaces: { ...BINARY, serve: "bytes", icon: "presentation" },
+  },
+  odp: {
+    extensions: ["odp"],
+    mediaType: "application/vnd.oasis.opendocument.presentation",
+    family: "presentation",
+    surfaces: { ...BINARY, serve: "bytes", icon: "presentation" },
   },
   mp3: {
     extensions: ["mp3"],

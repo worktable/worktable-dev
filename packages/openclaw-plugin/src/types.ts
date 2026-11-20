@@ -170,6 +170,8 @@ export interface WorktableClient {
     spaceId: string
     annotationIds: string[]
     body: string
+    /** OpenClaw's id for this send, the same when it sends it again. */
+    deliveryId?: string
   }): Promise<string[]>
   /** Answer a page of comments under its lease. */
   replyToComments(input: {

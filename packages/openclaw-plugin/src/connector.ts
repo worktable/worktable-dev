@@ -261,9 +261,9 @@ function commentsText(delivery: ClaimedWorktableComments): string {
   for (const comment of comments) {
     lines.push("", `Comment ${comment.annotationId}, from ${comment.from.name}:`)
     if (comment.quote) lines.push(`On the text: “${comment.quote}”`)
+    // Only the words that asked: earlier replies may come from people the
+    // owner rule never checked. The agent can read them with its tools.
     lines.push(comment.body)
-    for (const reply of comment.replies)
-      lines.push(`Reply from ${reply.from}: ${reply.body}`)
   }
   lines.push(
     "",

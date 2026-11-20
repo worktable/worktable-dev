@@ -468,7 +468,11 @@ export const worktableChannel = createChatChannelPlugin({
         const commentsTarget = resolveWorktableCommentsTarget(target)
         if (commentsTarget) {
           const answered = await withClient(account, (client) =>
-            client.answerComments({ ...commentsTarget, body: ctx.text })
+            client.answerComments({
+              ...commentsTarget,
+              body: ctx.text,
+              ...(ctx.deliveryQueueId ? { deliveryId: ctx.deliveryQueueId } : {}),
+            })
           )
           return { messageId: answered[0] ?? "", conversationId: target }
         }

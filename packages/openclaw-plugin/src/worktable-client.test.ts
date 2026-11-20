@@ -166,7 +166,7 @@ describe("OpenClaw Worktable client", () => {
     }
   })
 
-  it("answers recovered comments once each, skips gone ones, and fails the send while Worktable is down", async () => {
+  it("answers recovered comments once per send, skips gone ones, and fails the send while Worktable is down", async () => {
     const replies: string[] = []
     let down = false
     const server = Bun.serve({
@@ -210,18 +210,22 @@ describe("OpenClaw Worktable client", () => {
       },
     })
     const client = new McpWorktableClient(server.url.href, "test-token")
-    const send = () =>
+    const send = (deliveryId: string) =>
       client.answerComments({
         spaceId: "demo",
         annotationIds: ["ann_first", "ann_gone", "ann_down"],
-        body: "Recovered answer.",
+        body: "Done.",
+        deliveryId,
       })
     try {
       down = true
-      await expect(send()).rejects.toThrow()
+      await expect(send("out_1")).rejects.toThrow()
       down = false
-      expect(await send()).toEqual(["ann_first", "ann_down"])
+      expect(await send("out_1")).toEqual(["ann_first", "ann_down"])
       expect(replies).toEqual(["ann_first", "ann_down"])
+      // Another send with the same words is another answer.
+      await send("out_2")
+      expect(replies).toEqual(["ann_first", "ann_down", "ann_first", "ann_down"])
     } finally {
       await client.close()
       server.stop(true)

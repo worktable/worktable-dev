@@ -1,5 +1,4 @@
 import { name as packageName, version as packageVersion } from "../package.json"
-import { createHash } from "node:crypto"
 import type {
   ClaimedWorktableComments,
   ClaimedWorktableDelivery,
@@ -385,14 +384,17 @@ export class McpWorktableClient implements WorktableClient {
     spaceId: string
     annotationIds: string[]
     body: string
+    /** OpenClaw's id for this send, the same when it sends it again. */
+    deliveryId?: string
   }): Promise<string[]> {
     const answered: string[] = []
-    const answer = createHash("sha256").update(input.body).digest("base64url")
     for (const annotationId of new Set(input.annotationIds)) {
       // OpenClaw sends again after a failure; comments that already got
-      // this answer don't get it twice.
-      const key = `${input.spaceId}\0${annotationId}\0${answer}`
-      if (answeredComments.has(key)) {
+      // this send don't get it twice.
+      const key = input.deliveryId
+        ? `${input.deliveryId}\0${input.spaceId}\0${annotationId}`
+        : undefined
+      if (key && answeredComments.has(key)) {
         answered.push(annotationId)
         continue
       }
@@ -403,7 +405,7 @@ export class McpWorktableClient implements WorktableClient {
           annotationId,
           body: input.body,
         })
-        rememberAnswered(key)
+        if (key) rememberAnswered(key)
         answered.push(annotationId)
       } catch (error) {
         // Worktable refused it: deleted or out of reach since the turn

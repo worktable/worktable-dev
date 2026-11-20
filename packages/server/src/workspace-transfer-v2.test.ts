@@ -359,18 +359,18 @@ describe("workspace export v2", () => {
   })
 
   it("publishes the supported transfer envelope as one coherent contract", () => {
-    // A Worktable at its limit fits in a package with all its history: its
-    // files, older history up to its allowance of half the limit (a file's
-    // current version in history is stored once, so it adds nothing), what a
+    // A Worktable at its limits fits in a package with all its history:
+    // everything the total limit keeps (history included, since a Worktable
+    // of small files may hold nearly all of it as old versions), what a
     // person's drawing saves may add past the limit, the offline viewer, and
     // ZIP headers for every entry an archive holds. Everything it takes on
-    // disk, the history copies included, stays within what an import expands.
+    // disk stays within what an import expands.
     const limit = storageLimitBytes()
     expect(storageTotalLimitBytes(limit)).toBeLessThanOrEqual(
       WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES
     )
     expect(WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES).toBeGreaterThanOrEqual(
-      limit * 1.5 +
+      storageTotalLimitBytes(limit) +
         storageGraceBytes(limit) +
         64 * 1024 ** 2 +
         WORKSPACE_EXPORT_V2_MAX_ARCHIVE_ENTRIES * 200

@@ -606,12 +606,15 @@ limit, as Settings and the History panel tell a person. What people delete
 leaves the backed-up folder at once and is removed after the history window.
 
 The default limit is 2 GiB of files (`PROVEN_WORKTABLE_BYTES` in
-`worktable-size.ts`). An export holds up to 1.5 times that
-(`EXPORT_CONTENT_RATIO`: the files and older history within its allowance;
-the history copy of a file's current version is stored once, package version
-3) plus 256 MiB (`EXPORT_HEADROOM_BYTES`): room for what a person's drawing
-saves may add past the limit, the offline viewer and ZIP headers, so a
-Worktable within its limits always exports with all its history.
+`worktable-size.ts`). An export holds up to the total limit, 2.5 times
+that (`EXPORT_CONTENT_RATIO`), plus 256 MiB (`EXPORT_HEADROOM_BYTES`): room
+for what a person's drawing saves may add past the limit, the offline viewer
+and ZIP headers, so a Worktable within its limits always exports with all
+its history. Pruning keeps history within the total, so a Worktable of small
+files with large old versions can hold nearly all of it as history; a full
+one of uploaded files packs at about 1.5 times the limit, since the history
+copy of a file's current version is stored once (package version 3). Past
+4 GiB a package is ZIP64.
 `WORKTABLE_STORAGE_LIMIT_BYTES` sets another; outside Cloud it is capped at
 2 GiB. Cloud can pass a plan's limit the same way, but passes none today, so
 every Cloud Worktable has the default.

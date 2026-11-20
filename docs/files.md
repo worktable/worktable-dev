@@ -693,10 +693,15 @@ support for any file type.
 **Why:** people trust a place with their files when they can leave with all of
 them.
 
-**Enforced in:** `workspace-transfer-v2.ts`, `workspace-transfer-jobs.ts`.
+**Enforced in:** `workspace-transfer-v2.ts`, `workspace-transfer-jobs.ts`,
+`routes/workspace.ts` (a package downloads by range, under `If-Range` with
+its hash, so a broken-off download resumes and never mixes two packages).
 
 **Proved by:**
 
+- `routes-workspace.test.ts` "keeps a browser navigation alive until a
+  deferred export downloads": a download resumes by range, a tag from
+  another package gets the whole package, and a range past the end gets 416.
 - `workspace-transfer-v2.test.ts` "creates a standard, independently browsable
   ZIP and round-trips content".
 - `workspace-transfer-v2.test.ts` "keeps a file opened as an HTML Doc one

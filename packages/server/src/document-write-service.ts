@@ -1739,16 +1739,22 @@ type ReplaceRegisteredDocumentOptions = Parameters<
   typeof replaceRegisteredDocumentWithRoom
 >[0]
 
+/** Drawings: what a person draws keeps saving at the storage limit. */
+function isDrawingFormat(formatId: string): boolean {
+  return (
+    formatId === QUICKDRAW_FORMAT ||
+    formatId === BUILTIN_DOCUMENT_FORMATS.excalidraw
+  )
+}
+
 /**
  * Room under the storage limit for a replacement: the change to the source,
- * the new version, and a pre-edit baseline when one has to be made. It
- * counts the version it replaces as given back only when that version can
- * go afterwards (pruning can remove it, or this save continues it), never
- * a meaningful checkpoint, nor the version before a checkpoint this write
- * makes, which both stay. So replacing something with something smaller
- * passes unless what it replaces must be kept. Room is admitted under the
- * lock, where these are known; a refusal waits a few seconds for pruning
- * and tries once more.
+ * the new version, and a pre-edit baseline when one has to be made, less
+ * what the write lets go (see reclaimableAfterReplacementV2). The version it
+ * replaces always stays, so a replace at the limit can be undone: one that
+ * would need it gone is refused instead. Room is admitted under the lock,
+ * where these are known; a refusal waits a few seconds for pruning and tries
+ * once more. A person's drawing save is counted, never refused.
  */
 export async function replaceRegisteredDocument(
   options: ReplaceRegisteredDocumentOptions
@@ -1785,6 +1791,11 @@ async function replaceRegisteredDocumentWithRoom(options: {
   separateVersion?: boolean
   /** Given the bytes being replaced, as read under the lock for the write. */
   onPrevious?: (bytes: Uint8Array, formatId: string) => void
+  /**
+   * A person saving from the app. A drawing they save is counted toward the
+   * storage limit, never refused.
+   */
+  personSave?: boolean
 }, admit: (bytes: number) => void = () => undefined): Promise<DocumentWriteResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
@@ -1906,11 +1917,14 @@ async function replaceRegisteredDocumentWithRoom(options: {
         content: before,
         beforeCreatedAt: now,
         registry,
-        beforeWrite: async ({ creates, generationId }) => {
+        beforeWrite: async ({ creates }) => {
           const adds =
             2 * content.byteLength -
             before.byteLength +
             (creates ? before.byteLength : 0)
+          // A person's drawing keeps saving at the limit, as typing in a
+          // Doc does: counted, never refused.
+          if (options.personSave && isDrawingFormat(current.format.id)) return
           if (creates || storageFits(adds)) return admit(adds)
           admit(
             adds -
@@ -1918,8 +1932,8 @@ async function replaceRegisteredDocumentWithRoom(options: {
                 workspaceRoot,
                 spaceId: options.spaceId,
                 documentId,
-                generationId,
                 writesCheckpoint: Boolean(options.checkpoint),
+                mayContinue: !options.separateVersion,
               }))
           )
         },

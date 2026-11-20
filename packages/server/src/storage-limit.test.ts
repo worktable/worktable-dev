@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
-import type { DocumentId, SpaceFile } from "@worktable/types"
+import {
+  emptyQuickdrawDocument,
+  QUICKDRAW_FORMAT,
+  type DocumentId,
+  type SpaceFile,
+} from "@worktable/types"
 import { ENV } from "@worktable/hosted-contract"
 import { setAppDirOverride } from "./app-storage.ts"
 import { runDeletedItemsPass } from "./deleted-items.ts"
@@ -47,6 +52,7 @@ import { Hono } from "hono"
 import { apiErrorResponse } from "./api-error-response.ts"
 import { ownerIdentity } from "./auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
+import type { TokenIdentity } from "./token-store.ts"
 import { appendThreadMessage, createThread } from "./thread-store.ts"
 import { WorkspaceWatcher } from "./watcher.ts"
 import {
@@ -195,9 +201,10 @@ describe("storage limit", () => {
     expect(await generations(newer)).toEqual(newerBefore)
     expect(usage).toBeLessThanOrEqual(storageLimitBytes())
 
-    // Then the oldest versions in the whole Worktable, never a current one.
-    // Two writes ask at once, the second while the first one's pass runs;
-    // pruning makes room for both, from the oldest, and stops there.
+    // Then the oldest versions in the whole Worktable, never a current one
+    // or the one it replaced. Two writes ask at once, the second while the
+    // first one's pass runs; pruning makes room for both, from the oldest,
+    // and stops there.
     setStorageLimitForTests((await settled()) + 2 * KB, { promptPruneMs: 10_000 })
     let second: Promise<unknown> | null = null
     setStoragePruningHooksForTests({
@@ -210,7 +217,7 @@ describe("storage limit", () => {
     setStoragePruningHooksForTests({})
     usage = await settled()
     expect(usage).toBeLessThanOrEqual(storageLimitBytes())
-    expect(await generations(older)).toEqual(olderBefore.slice(0, 1))
+    expect(await generations(older)).toEqual(olderBefore.slice(0, 2))
     expect(await generations(newer)).toEqual(newerBefore)
     expect(
       (await readRegisteredDocumentSource({ spaceId: "notes", path: "older" }))
@@ -219,7 +226,7 @@ describe("storage limit", () => {
 
     // What went is recorded for the item, for its history route, and for
     // Settings.
-    expect(prunedHistoryFor("notes", { documentId: older })?.versions).toBe(2)
+    expect(prunedHistoryFor("notes", { documentId: older })?.versions).toBe(1)
     const api = new Hono()
       .use("*", async (c, next) => {
         c.set("identity", { ...ownerIdentity(), scopes: ["*"] })
@@ -229,14 +236,28 @@ describe("storage limit", () => {
     const history = (await (
       await api.request("/api/spaces/notes/documents/versions?path=older&all=true")
     ).json()) as { versions: unknown[]; pruned?: { versions: number } }
-    expect(history.versions).toHaveLength(1)
-    expect(history.pruned?.versions).toBe(2)
-    expect(storageSummary()!.pruned).toMatchObject({ versions: 2, deletedItems: 1 })
+    expect(history.versions).toHaveLength(2)
+    expect(history.pruned?.versions).toBe(1)
+    expect(storageSummary()!.pruned).toMatchObject({ versions: 1, deletedItems: 1 })
   })
 
   it("admits restores and saved versions for what they keep, prunes a version once no restore holds it, and refuses when nothing is left", async () => {
-    // Two versions of the same size; the older one isn't current, so it can go.
-    const kept = await docWithVersions("kept", 2, 16 * KB)
+    // Three versions. The oldest is neither current nor the one the current
+    // version replaced, so it can go.
+    const first = await createDoc("kept", 16 * KB)
+    let written = first
+    for (const [size, fill] of [[2 * KB, "kept1"], [16 * KB, "kept2"]] as const) {
+      written = await replaceRegisteredDocument({
+        spaceId: "notes",
+        path: "kept",
+        bytes: bytes(size, fill),
+        expectedRevision: written.sourceRevision,
+        updatedBy: "test",
+        source: "test",
+        separateVersion: true,
+      })
+    }
+    const kept = first.documentId as DocumentId
     const oldest = (await generations(kept)).at(-1)!
     setStorageLimitForTests((await settled()) + 4 * KB, { promptPruneMs: 10_000 })
     let before = workspaceFiles()
@@ -348,6 +369,117 @@ describe("storage limit", () => {
     const prunedItems = storageSummary()!.pruned?.deletedItems ?? 0
     await createDoc("after-delete", 6.5 * KB)
     expect(storageSummary()!.pruned?.deletedItems).toBe(prunedItems + 1)
+  })
+
+  it("keeps the version a replace supersedes, and lets a person keep drawing, at the limit", async () => {
+    const older = await docWithVersions("older", 3, 16 * KB)
+    const report = await createDoc("report", 16 * KB)
+    const reportId = report.documentId as DocumentId
+    const single = await createDoc("single", 16 * KB)
+    const singleId = single.documentId as DocumentId
+    const original = await generations(reportId)
+    const sketchSource = (text: string) =>
+      new TextEncoder().encode(
+        JSON.stringify({
+          ...emptyQuickdrawDocument("Sketch"),
+          snapshot: {
+            document: {
+              store: {
+                note: {
+                  id: "note",
+                  typeName: "shape",
+                  type: "text",
+                  x: 0,
+                  y: 0,
+                  rot: 0,
+                  z: 0,
+                  props: { color: "black", size: "m", text, font: "draw" },
+                },
+              },
+            },
+          },
+        })
+      )
+    let sketch = await createRegisteredDocument({
+      spaceId: "notes",
+      path: "sketch",
+      format: { id: QUICKDRAW_FORMAT, sourceVersion: 1 },
+      bytes: sketchSource("a"),
+      createdBy: "test",
+      source: "test",
+    })
+    setStorageLimitForTests((await settled()) + 4 * KB, { promptPruneMs: 10_000 })
+    const replaceReport = (fill: string, basedOn: string) =>
+      replaceRegisteredDocument({
+        spaceId: "notes",
+        path: "report",
+        bytes: bytes(16 * KB, fill),
+        expectedRevision: basedOn,
+        updatedBy: "test",
+        source: "test",
+        separateVersion: true,
+      })
+
+    // Replacing the report makes room from the oldest history elsewhere;
+    // the version it replaced stays.
+    const second = await replaceReport("report2", report.sourceRevision)
+    expect(await generations(reportId)).toEqual([second.versionId, ...original])
+    expect((await generations(older)).length).toBe(2)
+    // Each later replace lets the version before the one it replaces go,
+    // never that one.
+    const third = await replaceReport("report3", second.sourceRevision)
+    await settled()
+    expect(await generations(reportId)).toEqual([third.versionId, second.versionId])
+
+    // With no other history left, a replace that would need the version it
+    // replaces gone is refused, and that version stays.
+    const before = await generations(singleId)
+    const refused = await replaceRegisteredDocument({
+      spaceId: "notes",
+      path: "single",
+      bytes: bytes(16 * KB, "single2"),
+      expectedRevision: single.sourceRevision,
+      updatedBy: "test",
+      source: "test",
+      separateVersion: true,
+    }).catch((error) => error)
+    expect(refused).toBeInstanceOf(StorageLimitError)
+    expect(await generations(singleId)).toEqual(before)
+    expect(
+      (await readRegisteredDocumentSource({ spaceId: "notes", path: "single" })).bytes
+    ).toEqual(bytes(16 * KB, "single"))
+
+    // A person's drawing keeps saving, counted; an agent's save is refused.
+    const save = async (identity: TokenIdentity, text: string) => {
+      const api = new Hono()
+        .use("*", async (c, next) => {
+          c.set("identity", identity)
+          return next()
+        })
+        .route("/api/spaces/:spaceId/documents", documentsRouter)
+        .onError(apiErrorResponse)
+      return api.request("/api/spaces/notes/documents", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: "sketch",
+          source: new TextDecoder().decode(sketchSource(text)),
+          expectedRevision: sketch.sourceRevision,
+        }),
+      })
+    }
+    const agent = { ...ownerIdentity(), agent: "claude-code" }
+    expect((await save(agent, "b".repeat(24 * KB))).status).toBe(507)
+    const drawn = await save(ownerIdentity(), "c".repeat(24 * KB))
+    expect(drawn.status).toBe(200)
+    sketch = (await drawn.json()) as typeof sketch
+    await settled()
+    expect(storageSummary()!.limit.countedBytes).toBeGreaterThan(storageLimitBytes())
+    expect(
+      new TextDecoder().decode(
+        (await readRegisteredDocumentSource({ spaceId: "notes", path: "sketch" })).bytes
+      )
+    ).toContain("c".repeat(24 * KB))
   })
 
   it("leaves transfers out, counts a write on disk past the limit, and refuses the next new write", async () => {

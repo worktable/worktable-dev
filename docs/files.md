@@ -576,18 +576,21 @@ Limits count live files, history, deleted items and derived output. Transfers
 in progress (uploads being received, export packages and import staging) are
 temporary and don't count, by decision, so disk use can briefly exceed the
 limit. Writes through Worktable can't pass it; writes on disk are counted. At
-the limit the oldest history is pruned first, visibly. A write is refused (507
-`STORAGE_LIMIT`) when it couldn't fit even if all prunable history went, in
-which case nothing is pruned for it, or when pruning can't make room within a
-few seconds. A person typing in a Doc
-keeps saving at the limit, counted but never refused. At its limit a Worktable
+the limit the oldest history is pruned first, visibly. Pruning never removes
+an item's current version or the version that one replaced, so the last
+change to anything can be undone; a replace that would need the version it
+replaces gone is refused instead. A write is refused (507 `STORAGE_LIMIT`)
+when it couldn't fit even if all prunable history went, in which case nothing
+is pruned for it, or when pruning can't make room within a few seconds. A
+person typing in a Doc or drawing keeps saving at the limit, counted but never
+refused. At its limit a Worktable
 still opens, reads, deletes and exports. What people delete leaves the
 backed-up folder at once and is removed after the history window.
 
 The default limit is 2 GiB, the most today's export can carry.
 `WORKTABLE_STORAGE_LIMIT_BYTES` sets another; outside Cloud it is capped at
-2 GiB. On Cloud it carries the plan's limit, which can be higher, while export
-still stops at 2 GiB compressed (rule 16).
+2 GiB. Cloud can pass a plan's limit the same way, but passes none today, so
+every Cloud Worktable has the default.
 
 **Why:** a Worktable that fills its disk, or grows past what its backup and
 export can carry, can't be recovered.
@@ -604,6 +607,10 @@ export can carry, can't be recovered.
   left": reads, a smaller replace and a delete still work at the limit.
 - `storage-limit.test.ts` "leaves transfers out, counts a write on disk past the
   limit, and refuses the next new write".
+- `storage-limit.test.ts` "keeps the version a replace supersedes, and lets a
+  person keep drawing, at the limit": a replace prunes older history, never
+  the version it replaced, and is refused when only that could make room; a
+  person's drawing save is counted while an agent's is refused.
 - `storage-usage.test.ts` "matches the disk through writes, a change on disk, a
   delete and an emptied trash".
 - `deleted-items.test.ts` "move out of the workspace folder at once and are
@@ -612,8 +619,8 @@ export can carry, can't be recovered.
 **Gaps:**
 
 - Nothing is refused until the first count, a few seconds after start.
-- With history kept forever, deleted items are kept forever too.
-- Removing Cloud backups after 30 days isn't built in this repository yet.
+- Each file's current version is also kept as a history copy that pruning
+  can't remove, so uploaded files take twice their size.
 - The limit check doesn't cover annotations, Space metadata or pre-V2 HTML
   snapshots.
 - No test covers a move or export at the limit.
@@ -690,9 +697,11 @@ them.
 - `workspace-transfer-v2.test.ts` "leaves links and special files out of a
   person's export, keeps hidden items, and refuses unsafe destinations".
 
-**Gaps:** export stops at 2 GiB compressed and 8 GiB expanded. Outside Cloud
-the storage limit is set to fit; a Cloud plan's limit can be higher. Share links and visitor comments live in app data, so an export doesn't
-carry them.
+**Gaps:** export stops at 2 GiB compressed and 8 GiB expanded, and the
+storage limit is a separate 2 GiB figure of uncompressed bytes, so a
+Worktable near its limit with files that don't compress may not export. No
+test exports at the limit. Share links and visitor comments live in app data,
+so an export doesn't carry them.
 
 ## Hidden files
 

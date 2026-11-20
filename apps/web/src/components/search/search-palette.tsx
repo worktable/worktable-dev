@@ -461,7 +461,8 @@ function PaletteBody({
       // Only pages in Spaces this person can still open.
       const reachable = recent.filter((open) => {
         const spaceId = open.path.match(/^\/(?:threads\/)?spaces\/([^/]+)/)?.[1]
-        return !spaceId || !spaces || spacesById.has(spaceId)
+        // A Space's pages show once its list confirms access.
+        return !spaceId || spacesById.has(spaceId)
       })
       return reachable.map((open, index) => ({
         ...recentRow(open, spacesById),

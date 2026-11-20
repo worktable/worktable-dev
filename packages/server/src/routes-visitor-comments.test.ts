@@ -670,13 +670,13 @@ it("sends visitor comments to an agent as one thread message, and shows how far 
     ...owner,
     agent: "openclaw",
     principal: {
-      id: "token:klaus",
+      id: "token:robin",
       type: "agent",
-      displayName: "Klaus",
+      displayName: "Robin",
       authorizedBy: owner.principal.id,
     },
   }
-  const agentId = (await resolveParticipant(agent, { name: "Klaus" }))
+  const agentId = (await resolveParticipant(agent, { name: "Robin" }))
     .participant.id
   await pendingList()
   const send = (body: unknown) =>
@@ -685,6 +685,25 @@ it("sends visitor comments to an agent as one thread message, and shows how far 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
+  // A batch with a deleted comment is refused whole: nothing is passed, so
+  // every comment can still be sent.
+  const gone = visitor(4)
+  await app().request(`/api/spaces/space/visitor-comments/${gone.id}`, {
+    method: "DELETE",
+  })
+  const refused = await send({
+    comments: [{ id: first.id }, { id: gone.id }],
+    to: agentId,
+    requestId: "send-with-a-gone-one",
+  })
+  expect(refused.status).toBe(404)
+  const untouched = (await (
+    await app().request(`/api/spaces/space/visitor-comments?documentId=${documentId}`)
+  ).json()) as { comments: Array<{ id: string; status: string }> }
+  expect(
+    untouched.comments.find((comment) => comment.id === first.id)?.status
+  ).toBe("new")
+
   const input = {
     comments: [{ id: first.id }, { id: second.id }],
     to: agentId,

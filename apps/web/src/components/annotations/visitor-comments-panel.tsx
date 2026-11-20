@@ -603,9 +603,13 @@ function VisitorRow({
     }
   }
   const isNew = comment.status === "new" && Boolean(comment.body)
-  // Not sent yet, so it can still go to someone, new or marked done.
-  const sendable = Boolean(comment.body) && !comment.passed
+  // Not sent to anyone yet, or its recipient isn't answering: it can still
+  // go to someone, new, marked done, or already a team comment.
   const sent = annotation ? annotationSentTo(annotation) : null
+  const sendable =
+    Boolean(comment.body) &&
+    (!comment.passed ||
+      ((!sent || sent.state === "failed") && recipient.value !== NO_RECIPIENT))
   const reply = agentReply(annotation)
   const name = comment.body
     ? comment.visitorName || "Anonymous visitor"
@@ -733,17 +737,6 @@ function VisitorRow({
         {!isNew && (comment.passed || comment.status === "done") && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <SentState comment={comment} annotation={annotation} />
-            {sent?.state === "failed" &&
-              recipient.value !== NO_RECIPIENT && (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  disabled={sending}
-                  onClick={() => void onSend([{ id: comment.id }])}
-                >
-                  {sendLabel(recipient.name)}
-                </Button>
-              )}
             {annotation && (
               <Button
                 variant="link"

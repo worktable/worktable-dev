@@ -29,6 +29,7 @@ import {
 } from "./visitor-comment-store.ts"
 import { wsManager } from "./ws.ts"
 import { CommentRecipientError, commentRecipients } from "./comment-recipients.ts"
+import { encodeTargetPath } from "./link-rewrite.ts"
 import { withStoreWriteLock } from "./store.ts"
 import { postThreadMessage } from "./thread-service.ts"
 
@@ -212,6 +213,15 @@ export async function sendVisitorComments(
       )[0]!
     : null
   const context = await visitorCommentNamespace()
+  // Check the whole selection before passing any of it, so a send that is
+  // refused leaves every comment as it was.
+  const rows = input.comments.map((item) =>
+    readVisitorComment(context.worktableId, item.id)
+  )
+  if (rows.some((row) => !row || row.status === "deleted" || !row.body))
+    throw new VisitorCommentPassError("A comment is gone", 404)
+  if (new Set(rows.map((row) => row!.document_id)).size !== 1)
+    throw new VisitorCommentPassError("Send comments from one page at a time", 409)
   const passed: Array<{ row: StoredVisitorComment; annotation: Annotation }> =
     []
   for (const item of input.comments) {
@@ -232,9 +242,6 @@ export async function sendVisitorComments(
       )
     )
   }
-  const documentIds = new Set(passed.map(({ row }) => row.document_id))
-  if (documentIds.size !== 1)
-    throw new VisitorCommentPassError("Send comments from one page at a time", 409)
   if (!to) return { annotations: passed.map(({ annotation }) => annotation), thread: null }
 
   const { identities } = await readDocumentIdentities(spaceId)
@@ -249,7 +256,7 @@ export async function sendVisitorComments(
     to: to.id,
     expectsReply: true,
     body: [
-      `${count === 1 ? "1 comment" : `${count} comments`} on [${linkText(document.title)}](/${document.path}#comments) ${count === 1 ? "is" : "are"} for you. Answer each in its comment, then reply here.`,
+      `${count === 1 ? "1 comment" : `${count} comments`} on [${linkText(document.title)}](/${encodeTargetPath(document.path)}#comments) ${count === 1 ? "is" : "are"} for you. Answer each in its comment, then reply here.`,
       "",
       `Comments: ${ids_.map((id) => `\`${id}\``).join(", ")}`,
     ].join("\n"),

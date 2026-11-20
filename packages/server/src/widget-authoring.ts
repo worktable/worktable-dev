@@ -1,4 +1,5 @@
 import { documentFontPreloads, previewFontCss } from "./preview-fonts.ts"
+import type { McpSurface } from "./mcp/surface.ts"
 import {
   buildWidgetShareRuntimeScript,
   SHARE_FONT_CSS,
@@ -205,8 +206,20 @@ export const HTML_GUIDE_ICONS = `## Icons
 Where a word only labels, such as a status, a type, a direction or a step, use an icon instead: any Lucide icon, by its name on lucide.dev. Write an empty svg with the name, such as <svg data-icon="circle-check"></svg>, and Worktable draws it whenever the page is served, 1em square in the text color, so font-size sizes it and color colors it. Beside text in a flex row, use align-items:center for one line; for text that can wrap, use align-items:start and give the icon margin-top:calc((1lh - 1em) / 2) so it stays on the first line. Don't align icons to the baseline. Give an icon that stands alone an aria-label. Use these rather than emoji or SVG icons you draw yourself. A write warns about a name Lucide lacks. Icons page code adds are drawn too, such as row.innerHTML = '<svg data-icon="circle-check"></svg>', when the page writes the name out in its scripts, in a data-icon attribute or as a quoted name such as a status map's "circle-x"; a name built from pieces isn't found. Create an svg with innerHTML or createElementNS, not createElement.`
 
 
+export const HTML_GUIDE_SLIDES = `## Slides
+
+Make slides when someone will present to a room or send a deck. What goes on each slide, and how it looks and moves, follows the request: a few words, a chart, a diagram that builds step by step or answers a click, a live view of Records. Whatever a deck holds, these make it work in Worktable:
+- One slide at a time. Each slide is a 16:9 frame fitted to the pane and centered. The arrow keys, Page Up, Page Down and Space move between slides, so does a tap on a touch screen, and small controls sit in a corner. A slide that steps through its own build can take the arrow keys first and move on after its last step.
+- A slide scales as one piece. Make each slide a size container (container-type:inline-size) and size what is inside in cqw, so it looks the same in a small pane and on a projector.
+- The slide number lives in the address (#3). Set it with history.replaceState when the slide changes and read it when the page starts. Worktable keeps the address when an edit loads the page again, so the presenter stays on their slide. Don't keep it in worktable.state, which everyone shares.
+- On a phone held upright (narrow, portrait, touch only), show every slide in a numbered stack to scroll through.
+- Print gives one slide per page: an @page rule at 16:9 with no margin, and in print every slide shows, finished, and ends its page.
+- With scripts off, every slide still shows. Saved versions are shown that way.
+- Worktable has its own full screen. Don't add one.`
+
 export function getHtmlAuthoringGuide(
-  _profile: HtmlGuideProfile = "runtime"
+  _profile: HtmlGuideProfile = "runtime",
+  options: { surface?: McpSurface } = {}
 ): string {
   const intro = `${HTML_GUIDE_SHARED}\n\n${HTML_GUIDE_CHANGES}`
   // Space images follow the file features (htmlSpaceImagesEnabled).
@@ -214,7 +227,9 @@ export function getHtmlAuthoringGuide(
   const icons = `\n\n${HTML_GUIDE_ICONS}`
   // The served theme has its own section.
   const runtime = `${HTML_GUIDE_THEME}\n\n${htmlGuideRuntime("")}`
-  return `${intro}\n\n${HTML_GUIDE_DESIGN}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}${icons}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
+  // Slides are on the preview surface until they are released.
+  const slides = options.surface === "preview" ? `\n\n${HTML_GUIDE_SLIDES}` : ""
+  return `${intro}\n\n${HTML_GUIDE_DESIGN}\n\n${runtime}\n\n${HTML_GUIDE_SHARE_LINKS}${images}${icons}${slides}\n\n## Visual inspection\n\nUse worktable_files_render with the HTML Doc's path to receive a PNG of the saved document alongside revision, font/renderer versions, and diagnostics. HTML create/update can request an opt-in preview object; omit it to save without rendering. Preview controls are theme, width, height, fullPage, clip in document CSS pixels, and timeoutMs. Request a narrow and a wide viewport to inspect responsive layouts.\n\nPreviews run the same HTML runtime with read-only data authority: permitted state reads and Records query POSTs work, but persistent state/Records writes, navigation, and external network are blocked. Records reads require both caller records:read scope and document collection permissions, including related collections. State is frozen; Records are live observations during capture, not a historical database snapshot. An app that writes during initialization may produce a partial preview.\n\nA preview reports ready, partial, failed, or unavailable. Inspect diagnostics rather than treating an image as proof that every asynchronous task completed. A saved write remains successful even if its preview fails; retry worktable_files_render, not the write. The preview identifies the exact saved source revision, and state/data capture metadata explains why identical HTML can look different later.`
 }
 
 function hasRecordPermission(
@@ -725,6 +740,59 @@ const ui={
 };
 window.worktable={version:cfg.runtimeVersion,records,state,navigation,ui,diagnostics:{list:ui.getDiagnostics,report:ui.reportDiagnostic},toast:ui.notify};
 ${WIDGET_COMMENT_RUNTIME}
+// Where the reader is: the address fragment (#3) and the scroll position.
+// Worktable loads a page again for a new revision; it opens the new one at
+// the same fragment and sends the scroll position back.
+(function(){
+  let last='',timer=0;
+  function report(){
+    const hash=String(location.hash||'');
+    const place={hash:hash.length<=256?hash:'',x:Math.round(window.scrollX),y:Math.round(window.scrollY)};
+    const key=place.hash+' '+place.x+' '+place.y;
+    if(key===last) return;
+    last=key;
+    postToParent({type:'worktable.place',widgetId:cfg.widgetId,spaceId:cfg.spaceId,navigationToken:navigationToken,place:place},'*');
+  }
+  // At once, then at most every 100 ms while it keeps scrolling: a new
+  // version can arrive right after the reader stops.
+  function soon(){if(timer) return;report();timer=setTimeout(function(){timer=0;report()},100)}
+  window.addEventListener('scroll',soon,{passive:true});
+  window.addEventListener('hashchange',report);
+  for(const name of ['pushState','replaceState']){
+    const original=history[name];
+    if(typeof original!=='function') continue;
+    history[name]=function(){const result=original.apply(this,arguments);report();return result};
+  }
+  window.addEventListener('message',function(event){
+    if(event.source!==window.parent) return;
+    const d=event.data;
+    if(!d||d.type!=='worktable.place.restore'||!d.place) return;
+    const x=Number(d.place.x)||0,y=Number(d.place.y)||0;
+    // The page may still be laying out: try for a moment, and stop when the
+    // reader moves first.
+    let tries=0,stopped=false;
+    const stop=function(){stopped=true};
+    for(const type of ['wheel','touchstart','keydown','pointerdown']) window.addEventListener(type,stop,{once:true,passive:true});
+    function restore(){
+      if(stopped) return;
+      window.scrollTo(x,y);
+      if((Math.abs(window.scrollY-y)>2||Math.abs(window.scrollX-x)>2)&&tries++<40) setTimeout(restore,50);
+    }
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',restore,{once:true});
+    else restore();
+  });
+})();
+// Print prints this page, with its own page rules, not the app around it:
+// from Worktable's Print PDF, and from Ctrl or Cmd+P inside the page.
+window.addEventListener('message',function(event){
+  if(event.source!==window.parent) return;
+  if(event.data&&event.data.type==='worktable.print') window.print();
+});
+window.addEventListener('keydown',function(event){
+  if(!(event.ctrlKey||event.metaKey)||event.altKey||event.shiftKey||String(event.key).toLowerCase()!=='p') return;
+  event.preventDefault();
+  window.print();
+});
 // Interaction ping: user gestures inside the sandboxed frame never bubble to
 // the parent window, so inferred review ("reading = review" needs dwell AND an
 // interaction) would otherwise never fire for HTML docs. Post a throttled,

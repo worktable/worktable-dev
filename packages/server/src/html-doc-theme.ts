@@ -65,8 +65,11 @@ function declarations(tokens: Tokens): string {
 // smoothing match the app's body text (globals.css) and Docs; the title
 // matches the app's page titles (Fraunces, semibold, tracking-tight). Fills and lines mix from
 // the text color, so they suit a page that paints its own palette in only
-// one mode.
-const BASE = `:root{color:var(--foreground);font-family:var(--font-sans);font-weight:480;letter-spacing:0.02em;line-height:1.6;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;scrollbar-color:color-mix(in oklch,currentColor 22%,transparent) transparent}
+// one mode. The display font keeps one optical size, so large titles keep
+// sturdy strokes instead of thinning. Print puts the page on white paper with
+// the margins Docs print with, and keeps the backgrounds the page paints
+// itself; a page's own @page and body rules win.
+const BASE = `:root{color:var(--foreground);font-family:var(--font-sans);font-variation-settings:"opsz" 14;font-weight:480;letter-spacing:0.02em;line-height:1.6;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;scrollbar-color:color-mix(in oklch,currentColor 22%,transparent) transparent}
 body{background:var(--background);font-size:15px}
 h1,h2,h3,h4,h5,h6{font-weight:600;letter-spacing:-0.005em;text-wrap:balance}
 h1{font-family:var(--font-display);font-size:clamp(1.65rem,1.3rem + 1.2vw,2rem);letter-spacing:-0.025em;line-height:1.25}
@@ -84,7 +87,9 @@ th{text-align:start;color:color-mix(in oklch,currentColor 70%,transparent);font-
 button:not(:disabled):hover,select:not(:disabled):hover{background:color-mix(in oklch,currentColor 9%,transparent);border-color:color-mix(in oklch,currentColor 26%,transparent)}
 :disabled{color:color-mix(in oklch,currentColor 50%,transparent);cursor:default}
 input::placeholder,textarea::placeholder{color:color-mix(in oklch,currentColor 55%,transparent)}
-input,select,textarea,progress,meter{accent-color:var(--primary)}`
+input,select,textarea,progress,meter{accent-color:var(--primary)}
+@page{margin:18mm 16mm}
+@media print{:root{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{background:none}}`
 
 // While icons are drawn (html-icons.ts), one is 1em square even before it is
 // drawn, so a name the library lacks leaves an icon-sized gap, not an svg's

@@ -12,12 +12,16 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **Pinned pictures:** On Home and Space Home, a pinned image, PDF or drawing shows a picture of it instead of its icon.
+- **Agents (preview):** With preview tools on, agents asked for slides learn what makes a deck work in Worktable: one 16:9 slide at a time with keys and tap, a stack on a phone, one slide per page in print, and the slide kept in the address so an edit doesn't move the presenter. What the slides hold and how they look is left to the request.
 - **Agents (preview):** With preview tools on, an agent can look at one page of a PDF, including a scanned one, and at an image too large to read directly, through `worktable_files_render`.
 - **QR codes for share links:** Share shows a link's QR code beside Copy. Download it, copy it as an image, or show it full screen with the link written under it. Links under More links have QR Code in their menu.
 
 ### Changed
 
+- **HTML Docs:** When an agent saves a new version of a page you have open, it opens where you were: the same scroll position, and a deck on the same slide if it keeps the slide number in its address. The loading placeholder no longer covers the page while the new version loads, and a deck's arrow keys work as soon as it fills the screen.
+- **HTML Docs:** Print PDF in an HTML Doc's menu, and Ctrl or Cmd+P, print the page itself instead of the app around it. A page prints with its own page rules, so a deck can print one slide per page; other pages print on white paper with the margins Docs print with. Large titles in the display font keep sturdy strokes.
 - **Share links:** A link made under More links can take visitor comments, with its own Allow comments switch. Each link says when comments are on.
+- **Full Worktable:** Making room at the storage limit never removes the version your last change replaced, so that change can always be undone. A replace that would need it gone is refused instead. A drawing keeps saving a little past the limit, so you don't lose what you were drawing.
 
 ### Fixed
 

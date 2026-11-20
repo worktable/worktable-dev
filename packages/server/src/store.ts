@@ -3165,8 +3165,8 @@ export async function writeDoc(
     return writeDocWithRoom(spaceId, docPath, content, options);
   }
   // The Doc and its version: twice its bytes, less what goes because of
-  // it: the source it replaces, and the version it replaces when pruning can
-  // remove that afterwards (see reclaimableAfterReplacementV2).
+  // it: the source it replaces, and history pruning can remove once it is
+  // written (see reclaimableAfterReplacementV2).
   return withStorageRoom(
     {
       adds:

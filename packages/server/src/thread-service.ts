@@ -93,6 +93,7 @@ import {
   onPendingChange,
   pendingFor,
   pendingFrom,
+  pendingRevision,
 } from "./pending-list.ts"
 import { ownerIdentity } from "./auth.ts"
 import { readDocumentIdentities } from "./document-query.ts"
@@ -1709,7 +1710,9 @@ export async function reconcileParticipantDeliveries(
       })
     }
   }
-  // Comments sent to this participant join its deliveries.
+  // Comments sent to this participant join its deliveries. The revision is
+  // read first, so anything the list sees after it is newer than the snapshot.
+  const seenRevision = await pendingRevision(participantId)
   await reconcileCommentDeliveries(
     participantId,
     (await pendingFor(participantId)).flatMap((entry) =>
@@ -1722,10 +1725,12 @@ export async function reconcileParticipantDeliveries(
               page: entry.source.documentId ?? entry.source.path,
               authorId: entry.source.from.id,
               createdAt: entry.createdAt,
+              pendingRevision: entry.revision,
             },
           ]
         : []
-    )
+    ),
+    seenRevision
   )
   return reconcileThreadDeliveries(participantId, deliveries, {
     retireMissing: scan.complete,
@@ -2043,13 +2048,32 @@ async function commentClaim(
     [...(identities?.current.values() ?? [])].find(
       (document) => document.path === path
     )?.title ?? path
+  const lead = comments[0]!
+  let connectedBy: ConnectedBy
+  try {
+    connectedBy = await deliveryConnectedBy(
+      participantId,
+      lead.from.kind === "agent" ? lead.from.id : null
+    )
+  } catch (error) {
+    // Nothing reached the runtime: the page waits again, attempt returned.
+    await failThreadDelivery({
+      messageId: claim.messageId,
+      leaseId: claim.leaseId,
+      participantId,
+      retryable: true,
+      spendAttempt: false,
+      code: "COMMENT_UNAVAILABLE",
+      message: "A comment couldn't be read just now.",
+    })
+    throw error
+  }
   // Shown to the agent's runtime now: Delivered, as a notice would mark it.
   markPendingDelivered(
     comments.map((comment) => `cmt:${comment.annotationId}:${comment.requestId}`)
   )
   const rest: Omit<ClaimedDelivery, "comments"> = { ...claim }
   delete (rest as Partial<ClaimedDelivery>).comments
-  const lead = comments[0]!
   return {
     ...rest,
     // The lease is reported against the first comment still in the batch.
@@ -2058,10 +2082,7 @@ async function commentClaim(
     kind: "comments",
     page: { spaceId, path, title },
     comments,
-    connectedBy: await deliveryConnectedBy(
-      participantId,
-      lead.from.kind === "agent" ? lead.from.id : null
-    ),
+    connectedBy,
   }
 }
 
@@ -2183,6 +2204,17 @@ export async function replyToCommentBatch(
       { participantId: participant.id, ...input },
       async (waiting) => {
         for (const ref of waiting) {
+          // Answered already, by the agent itself or by an earlier try of
+          // this reply that failed partway: it gets no second answer.
+          if (
+            !(await commentRequestOpen(
+              ref.spaceId,
+              ref.annotationId,
+              ref.requestId,
+              participant.id
+            ))
+          )
+            continue
           const result = await replyAnnotation(
             ref.spaceId,
             ref.annotationId,

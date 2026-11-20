@@ -42,6 +42,8 @@ interface DeliveryRecord {
   comment?: CommentDeliveryRef
   /** The lease whose reply answered this comment, so a retry finds it done. */
   repliedUnder?: string
+  /** The comment's pending-list revision, so an older snapshot can't retire it. */
+  pendingRevision?: number
   receivedCharacters?: number
   error?: {
     code: string
@@ -1143,7 +1145,10 @@ export async function claimThreadDelivery(
         for (const record of expired) notify(record)
       }
       if ((options.authenticatedPrincipalId && options.authenticatedPrincipalId !== policy.principalId) || !policy.enabled || policy.error || file.deliveries.some((r) => r.participantId === participantId &&
-        (active(r) || r.error?.code === "REMOTE_EXECUTION_UNCONFIRMED"))) return null
+        (active(r) || r.error?.code === "REMOTE_EXECUTION_UNCONFIRMED"))) {
+        if (learned) await saveFile(file)
+        return null
+      }
     }
     const busyPages = busyCommentPages(file.deliveries, participantId, nowMs)
     for (const record of file.deliveries) {
@@ -1464,6 +1469,8 @@ export async function markThreadDeliveryReplied(input: {
 export interface CommentDeliveryInput extends CommentDeliveryRef {
   authorId: string
   createdAt: string
+  /** Its revision in the agent's pending list. */
+  pendingRevision: number
 }
 
 /**
@@ -1474,28 +1481,47 @@ export interface CommentDeliveryInput extends CommentDeliveryRef {
  */
 export async function reconcileCommentDeliveries(
   participantId: string,
-  inputs: readonly CommentDeliveryInput[]
+  inputs: readonly CommentDeliveryInput[],
+  /**
+   * The pending list's revision for this agent when `inputs` were read. A
+   * comment the list saw later isn't in them, and stays.
+   */
+  seenRevision: number
 ): Promise<void> {
+  const open = new Map(inputs.map((input) => [input.requestId, input]))
+  const retires = (record: DeliveryRecord) =>
+    !open.has(record.comment!.requestId) &&
+    record.state !== "replied" &&
+    record.state !== "failed" &&
+    (record.pendingRevision ?? 0) <= seenRevision
+  // A page renamed under the same comment moves its delivery with it.
+  const moved = (record: DeliveryRecord) => {
+    const input = open.get(record.comment!.requestId)
+    return input !== undefined && input.page !== record.comment!.page
+  }
   const mine = (await readDeliveryState()).deliveries.filter(
     (record) => record.comment && record.participantId === participantId
   )
-  const open = new Set(inputs.map((input) => input.requestId))
   const known = new Set(mine.map((record) => record.comment!.requestId))
-  const stale = mine.some(
-    (record) =>
-      !open.has(record.comment!.requestId) &&
-      record.state !== "replied" &&
-      record.state !== "failed"
+  if (
+    !mine.some((record) => retires(record) || moved(record)) &&
+    inputs.every((input) => known.has(input.requestId))
   )
-  if (!stale && inputs.every((input) => known.has(input.requestId))) return
+    return
   await serialized(async () => {
     const file = await loadFile()
     const changed: DeliveryRecord[] = []
     const now = new Date().toISOString()
     for (const record of file.deliveries) {
       if (!record.comment || record.participantId !== participantId) continue
-      if (open.has(record.comment.requestId)) continue
-      if (record.state === "replied" || record.state === "failed") continue
+      if (moved(record)) {
+        record.comment = { ...record.comment, page: open.get(record.comment.requestId)!.page }
+        record.revision += 1
+        record.updatedAt = now
+        changed.push(record)
+        continue
+      }
+      if (!retires(record)) continue
       retireComment(record, now)
       changed.push(record)
     }
@@ -1520,6 +1546,7 @@ export async function reconcileCommentDeliveries(
         attempts: 0,
         createdAt: input.createdAt,
         updatedAt: now,
+        pendingRevision: input.pendingRevision,
         comment: {
           spaceId: input.spaceId,
           annotationId: input.annotationId,

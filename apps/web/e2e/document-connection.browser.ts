@@ -229,3 +229,46 @@ test("a new version of an open HTML page opens where the reader was", async ({
     { timeout: 30_000 }
   )
 })
+test("Print PDF prints the open HTML page, not the app around it", async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  // Count print calls in every document instead of opening a print dialog.
+  await page.addInitScript(() => {
+    const count = window as unknown as { printed?: number }
+    count.printed = 0
+    window.print = () => {
+      count.printed = (count.printed ?? 0) + 1
+    }
+  })
+  await page.goto(url("report"))
+  const input = page
+    .frameLocator(frameSelector)
+    .getByRole("textbox", { name: "Unsaved input" })
+  await expect(input).toBeVisible({ timeout: 30_000 })
+  const printed = async () => {
+    const frame = await (
+      await page.locator(frameSelector).elementHandle()
+    )!.contentFrame()
+    return {
+      page: await frame!.evaluate(
+        () => (window as unknown as { printed?: number }).printed ?? 0
+      ),
+      app: await page.evaluate(
+        () => (window as unknown as { printed?: number }).printed ?? 0
+      ),
+    }
+  }
+
+  await page.getByRole("button", { name: "More actions", exact: true }).click()
+  await page.getByRole("menuitem", { name: "Print PDF", exact: true }).click()
+  await expect.poll(printed).toEqual({ page: 1, app: 0 })
+
+  // Ctrl+P prints the page from the app and from inside the page.
+  await page.keyboard.press("Control+p")
+  await expect.poll(printed).toEqual({ page: 2, app: 0 })
+  await input.click()
+  await input.press("Control+p")
+  await expect.poll(printed).toEqual({ page: 3, app: 0 })
+})
+

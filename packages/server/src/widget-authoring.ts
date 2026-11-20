@@ -767,6 +767,17 @@ ${WIDGET_COMMENT_RUNTIME}
     else restore();
   });
 })();
+// Print prints this page, with its own page rules, not the app around it:
+// from Worktable's Print PDF, and from Ctrl or Cmd+P inside the page.
+window.addEventListener('message',function(event){
+  if(event.source!==window.parent) return;
+  if(event.data&&event.data.type==='worktable.print') window.print();
+});
+window.addEventListener('keydown',function(event){
+  if(!(event.ctrlKey||event.metaKey)||event.altKey||event.shiftKey||String(event.key).toLowerCase()!=='p') return;
+  event.preventDefault();
+  window.print();
+});
 // Interaction ping: user gestures inside the sandboxed frame never bubble to
 // the parent window, so inferred review ("reading = review" needs dwell AND an
 // interaction) would otherwise never fire for HTML docs. Post a throttled,

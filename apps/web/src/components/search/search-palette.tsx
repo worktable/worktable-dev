@@ -655,7 +655,12 @@ function FilterMenu({
   returnFocus: RefObject<HTMLInputElement | null>
 }) {
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      // Once the menu has finished closing, the keys go back to the field.
+      onOpenChangeComplete={(open) => {
+        if (!open) returnFocus.current?.focus()
+      }}
+    >
       <DropdownMenuTrigger
         aria-label={label}
         className={cn(
@@ -670,7 +675,7 @@ function FilterMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         container={container}
-        finalFocus={returnFocus}
+        finalFocus={false}
         className="max-h-72 w-auto min-w-44"
       >
         <DropdownMenuRadioGroup

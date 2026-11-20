@@ -43,6 +43,7 @@ import {
 } from "@worktable/types";
 import { logError } from "./debug-log.ts";
 import {
+  closeSearchStore,
   entryKind,
   openVariantIndex,
   type DocEntry,
@@ -449,6 +450,9 @@ onWorkspaceChange((event) => {
     case "workspaceReset":
       resetEpoch += 1;
       for (const [key, variant] of [...variants]) retireVariant(key, variant);
+      // Another workspace's entries never answer: its file goes with its
+      // derived output, and an index in memory goes here.
+      closeSearchStore();
       recordBuildWatch = null;
       break;
   }

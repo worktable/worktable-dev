@@ -221,6 +221,12 @@ interface DeliveryReadState {
 }
 
 let readState: DeliveryReadState | undefined
+/**
+ * The agents whose runtimes asked for comments, as this process last read
+ * or wrote them. Only this process writes the file, so asking it costs no
+ * read on the request path.
+ */
+let commentTakers: ReadonlySet<string> | undefined
 
 /** WORKTABLE_MODEL=0 turns off reuse of state derived from the file. */
 function readStateTrusted(): boolean {
@@ -248,6 +254,7 @@ async function readDeliveryState(): Promise<DeliveryReadState> {
     return readState
   }
   const { deliveries, commentParticipants } = await loadFile()
+  commentTakers = new Set(commentParticipants)
   readState = {
     path,
     key,
@@ -266,6 +273,7 @@ async function saveFile(file: DeliveryFile): Promise<void> {
   await writeFile(tmp, `${JSON.stringify(file, null, 2)}\n`, "utf8")
   await chmod(tmp, 0o600)
   await rename(tmp, path)
+  commentTakers = new Set(file.commentParticipants ?? [])
 }
 
 function notify(record: DeliveryRecord): void {
@@ -1738,7 +1746,9 @@ export async function commentBatchReplied(
 
 /** Whether this agent's runtime has asked for comments. */
 export async function takesComments(participantId: string): Promise<boolean> {
-  return (await readDeliveryState()).commentParticipants.has(participantId)
+  if (!commentTakers || !readStateTrusted())
+    return (await readDeliveryState()).commentParticipants.has(participantId)
+  return commentTakers.has(participantId)
 }
 
 /** How far each of an agent's comment deliveries has got, by request. */

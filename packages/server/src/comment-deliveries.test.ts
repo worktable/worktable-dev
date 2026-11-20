@@ -21,6 +21,7 @@ import { startGrokBotRuntime } from "./grok-bot-runtime.ts"
 import {
   commentDeliveryStates,
   nextThreadDeliveryEligibleAt,
+  takesComments,
 } from "./thread-delivery-store.ts"
 import { claimNextDelivery, claimNextThreadDelivery } from "./thread-service.ts"
 import { writeDoc, writeSpace } from "./store.ts"
@@ -132,6 +133,15 @@ const claim = (call: Awaited<ReturnType<typeof runtime>>["call"], waitSeconds = 
     threadLocationVersion: 2,
     comments: true,
   }).then((result) => result.delivery as ClaimedPage | null)
+
+/** Let deliveries waiting out a retry backoff go now. */
+async function skipBackoff() {
+  const path = join(appDir, "thread-deliveries", `${workspaceCacheKey()}.json`)
+  const file = JSON.parse(await readFile(path, "utf8"))
+  for (const record of file.deliveries)
+    if (record.nextAttemptAt) record.nextAttemptAt = new Date(0).toISOString()
+  await writeFile(path, JSON.stringify(file))
+}
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "wt-comment-deliveries-"))
@@ -253,9 +263,9 @@ describe("comments delivered to an agent's runtime", () => {
       expect((await commentDeliveryStates()).get(elsewhere.requests![0]!.id)?.state).toBe("queued")
 
       // While a page is being worked on, its new comments wait for that
-      // batch to end and then come together. (The failed page waits out
-      // its retry backoff first.)
-      await new Promise((r) => setTimeout(r, 2_100))
+      // batch to end and then come together. (The failed page skips its
+      // retry backoff.)
+      await skipBackoff()
       const busy = (await claim(preview.call))!
       expect(busy.page.path).toBe("notes")
       await comment("notes", agentId, "Also add a summary.")
@@ -268,7 +278,6 @@ describe("comments delivered to an agent's runtime", () => {
       })
       expect(wakeAt).toBeGreaterThan(Date.now() + 30_000)
       const held = claim(preview.call, 10)
-      await new Promise((r) => setTimeout(r, 200))
       await preview.call("worktable_thread_delivery", {
         action: "reply",
         messageId: busy.messageId,
@@ -303,9 +312,8 @@ describe("comments delivered to an agent's runtime", () => {
         ).toEqual(["Answered directly."])
 
       // A comment that arrives while the runtime waits wakes it at once.
-      await new Promise((r) => setTimeout(r, 2_100))
+      await skipBackoff()
       const waiting = claim(preview.call, 10)
-      await new Promise((r) => setTimeout(r, 200))
       const started = Date.now()
       await comment("deck", agentId, "One more thing.")
       const woken = await waiting
@@ -421,21 +429,21 @@ describe("comments delivered to an agent's runtime", () => {
     await updateGrokBot((await readGrokBots())[0]!, {
       verifiedAt: new Date().toISOString(),
     })
-    let rings = 0
+    let rang: () => void = () => {}
     const ring = () => {
       stop = startGrokBotRuntime({
         fetch: (async () => {
-          rings += 1
+          rang()
           return new Response(null, { status: 200 })
         }) as unknown as typeof fetch,
       })
     }
     ring()
     // An older routine claims only thread messages: a comment must not ring
-    // it for work it would never find.
+    // it for work it would never find. The runtime rings for comments only
+    // once the routine has asked for them.
     await comment("deck", grokId, "For an older routine.")
-    await new Promise((r) => setTimeout(r, 1_000))
-    expect(rings).toBe(0)
+    expect(await takesComments(grokId)).toBe(false)
 
     // The routine asks for comments once; from then on a comment rings it.
     const page = (await claimNextDelivery(grok, 0, 2, { comments: true }))!
@@ -453,15 +461,11 @@ describe("comments delivered to an agent's runtime", () => {
     })
     await close()
     await stop!()
-    rings = 0
+    expect(await takesComments(grokId)).toBe(true)
     ring()
-    await new Promise((r) => setTimeout(r, 300))
-    rings = 0
+    const rung = new Promise<void>((resolve) => (rang = resolve))
     await comment("deck", grokId, "For the new routine.")
-    const deadline = Date.now() + 5_000
-    while (rings === 0 && Date.now() < deadline)
-      await new Promise((r) => setTimeout(r, 50))
-    expect(rings).toBeGreaterThan(0)
+    await rung
 
     // A page Grok's run failed on can be retried from its connection, whole.
     await comment("deck", grokId, "And this one.")

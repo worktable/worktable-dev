@@ -57,6 +57,7 @@ import {
   reconcileCommentDeliveries,
   reconcileThreadDeliveries,
   requireThreadDeliveryLease,
+  takesComments,
   requiresManagedDeliveryLease,
   ThreadDeliveryError,
   type ReconcileThreadDeliveryInput,
@@ -1684,7 +1685,9 @@ export async function waitForThreadReply(
  */
 export async function reconcileParticipantDeliveries(
   participantId: string,
-  knownScan?: ThreadDigestScan
+  knownScan?: ThreadDigestScan,
+  /** This claim asks for comments, so they join even before it is recorded. */
+  options: { comments?: boolean } = {}
 ): Promise<ThreadActivityLookup> {
   const deliveries: ReconcileThreadDeliveryInput[] = []
   const scan = knownScan ?? (await scanAllThreadDigests())
@@ -1710,8 +1713,10 @@ export async function reconcileParticipantDeliveries(
       })
     }
   }
-  // Comments sent to this participant join its deliveries. The revision is
-  // read first, so anything the list sees after it is newer than the snapshot.
+  // Comments sent to an agent whose runtime takes them join its deliveries;
+  // nobody else claims them. The revision is read first, so anything the
+  // list sees after it is newer than the snapshot.
+  if (options.comments || (await takesComments(participantId))) {
   const seenRevision = await pendingRevision(participantId)
   await reconcileCommentDeliveries(
     participantId,
@@ -1732,6 +1737,7 @@ export async function reconcileParticipantDeliveries(
     ),
     seenRevision
   )
+  }
   return reconcileThreadDeliveries(participantId, deliveries, {
     retireMissing: scan.complete,
     scannedLocations: scan.locations,
@@ -1828,7 +1834,9 @@ export async function claimNextDelivery(
   // Read the signal revision before reconciling: a portable edit that lands
   // while reconciliation scans the old file must still wake this wait.
   let signalRevision = inboxSignalRevision(participant.id)
-  await reconcileParticipantDeliveries(participant.id)
+  await reconcileParticipantDeliveries(participant.id, undefined, {
+    comments: options.comments === true,
+  })
   const deadline = Date.now() + boundedWaitSeconds(waitSeconds) * 1000
   // Requests in threads this identity cannot currently reply in stay queued;
   // they arrive if access returns.
@@ -1973,7 +1981,9 @@ export async function claimNextDelivery(
     if (!changed && (waitMs >= remaining || isWorkspaceDraining())) return null
     if (changed) {
       signalRevision = inboxSignalRevision(participant.id)
-      await reconcileParticipantDeliveries(participant.id)
+      await reconcileParticipantDeliveries(participant.id, undefined, {
+        comments: options.comments === true,
+      })
     }
   }
 }

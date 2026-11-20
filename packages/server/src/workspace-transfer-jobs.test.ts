@@ -45,6 +45,7 @@ import {
 import {
   calculateWorkspaceContentCheckpoint,
   writeWorkspaceExportV2,
+  WorkspacePackageLimitError,
 } from "./workspace-transfer-v2.ts"
 import { createWorkspaceReplacementPaths } from "./workspace-replacement.ts"
 import {
@@ -271,10 +272,13 @@ describe("durable workspace transfer jobs", () => {
     })
 
     const created = await createWorkspaceExportJob({ mode: "none" })
-    await expect(waitForWorkspaceExportJob(created.id)).resolves.toMatchObject({
+    const failed = await waitForWorkspaceExportJob(created.id)
+    expect(failed).toMatchObject({
       state: "failed",
       error: expect.stringContaining("injected export failure"),
     })
+    // An error from inside isn't shown to people as the outcome.
+    expect(failed.errorForPeople).toBeUndefined()
     await expect(
       stat(
         join(
@@ -287,6 +291,29 @@ describe("durable workspace transfer jobs", () => {
         )
       )
     ).rejects.toThrow()
+
+    // A full disk, and a Worktable too large for a package, are said in
+    // words a person can act on.
+    for (const [thrown, said] of [
+      [
+        Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" }),
+        "There isn't enough free disk space to export this Worktable. Free some space, then export again.",
+      ],
+      [
+        new WorkspacePackageLimitError("This Worktable is too large to export with all its history. Export with less history."),
+        "This Worktable is too large to export with all its history. Export with less history.",
+      ],
+    ] as const) {
+      setWorkspaceExportRunHookForTests(async () => {
+        throw thrown
+      })
+      const again = await createWorkspaceExportJob({ mode: "none" })
+      await expect(waitForWorkspaceExportJob(again.id)).resolves.toMatchObject({
+        state: "failed",
+        error: said,
+        errorForPeople: true,
+      })
+    }
   })
 
   it("keeps export runner persistence failures handled and retryable", async () => {

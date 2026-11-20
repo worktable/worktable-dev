@@ -325,6 +325,28 @@ export function setWorkspaceExportCaptureRemovalHookForTests(
   captureRemovalHookForTests = hook
 }
 
+/**
+ * An export or import past what a package may hold, or past the free disk
+ * space, said so a person can act on it: Settings shows the message as is.
+ */
+export class WorkspacePackageLimitError extends Error {
+  readonly code = "PACKAGE_LIMIT"
+  constructor(message: string) {
+    super(message)
+    this.name = "WorkspacePackageLimitError"
+  }
+}
+
+const EXPORT_LESS_HISTORY =
+  "This Worktable is too large to export with all its history. Export with less history."
+const EXPORT_FILES_TOO_LARGE =
+  "This Worktable's files are too large to export together. Delete or move some, then export again."
+const EXPORT_TOO_MANY_ITEMS =
+  "This Worktable has more than 100,000 files, folders and versions, too many to export. Export with less history, or delete or move some files."
+const exportFileTooLarge = (path: string) =>
+  `${path} is larger than 2 GiB, too large to export. Move it out of the Worktable, then export again.`
+const IMPORT_TOO_LARGE = "This package holds more than Worktable can import."
+
 class WorkspaceChangedDuringExportError extends Error {
   constructor(path: string) {
     super(`workspace changed during export: ${path}; retry`)
@@ -667,7 +689,7 @@ async function listSourceEntries(
           options.paths !== "local" &&
           info.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES
         ) {
-          throw new Error(`workspace file exceeds the v2 limit: ${path}`)
+          throw new WorkspacePackageLimitError(exportFileTooLarge(path))
         }
         if (
           path === "worktable.workspace.json" &&
@@ -696,7 +718,7 @@ async function listSourceEntries(
         entries.length + leftOut.length >
         WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES
       ) {
-        throw new Error("workspace exceeds the v2 entry limit")
+        throw new WorkspacePackageLimitError(EXPORT_TOO_MANY_ITEMS)
       }
     }
   }
@@ -1542,11 +1564,11 @@ function assertSelectionWithinLimits(entries: SourceEntry[]): void {
     validateWorkspaceExportV2Path(entry.path)
     if (entry.kind !== "file") continue
     if (entry.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES)
-      throw new Error(`workspace file exceeds the v2 limit: ${entry.path}`)
+      throw new WorkspacePackageLimitError(exportFileTooLarge(entry.path))
     expandedBytes += entry.size
   }
   if (expandedBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES) {
-    throw new Error("workspace export exceeds the v2 expanded-size limit")
+    throw new WorkspacePackageLimitError(EXPORT_LESS_HISTORY)
   }
 }
 
@@ -1570,11 +1592,11 @@ function stagingCandidates(
   for (const file of files) {
     if (file.path.startsWith("versions/")) continue
     if (file.size > WORKSPACE_EXPORT_V2_MAX_FILE_BYTES)
-      throw new Error(`workspace file exceeds the v2 limit: ${file.path}`)
+      throw new WorkspacePackageLimitError(exportFileTooLarge(file.path))
     currentBytes += file.size
   }
   if (currentBytes > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES)
-    throw new Error("workspace export exceeds the v2 expanded-size limit")
+    throw new WorkspacePackageLimitError(EXPORT_FILES_TOO_LARGE)
   const candidates: SourceEntry[] = []
   const folded = new Set<string>()
   let budget = WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES
@@ -2892,7 +2914,7 @@ async function pipeZip(
     transform(chunk: Buffer, _encoding, callback) {
       bytes += chunk.byteLength
       if (bytes > maximumBytes) {
-        callback(new Error("workspace export exceeds the v2 archive limit"))
+        callback(new WorkspacePackageLimitError(EXPORT_LESS_HISTORY))
         return
       }
       callback(null, chunk)
@@ -3169,7 +3191,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
     await chmod(temporary, 0o600)
     const bytes = (await stat(temporary)).size
     if (bytes > archiveLimit) {
-      throw new Error("workspace export exceeds the v2 archive limit")
+      throw new WorkspacePackageLimitError(EXPORT_LESS_HISTORY)
     }
     const archiveSha256 = await hashFile(temporary)
     await beforePublishHookForTests?.()
@@ -3255,7 +3277,7 @@ async function collectArchiveEntries(
     zip.on("entry", (entry: yauzl.Entry) => {
       try {
         if (entries.length >= WORKSPACE_EXPORT_V2_MAX_ARCHIVE_ENTRIES) {
-          throw new Error("workspace package exceeds the archive entry limit")
+          throw new WorkspacePackageLimitError(IMPORT_TOO_LARGE)
         }
         const directory = entry.fileName.endsWith("/")
         const rawPath = directory ? entry.fileName.slice(0, -1) : entry.fileName
@@ -3272,9 +3294,7 @@ async function collectArchiveEntries(
         }
         expandedBytes += entry.uncompressedSize
         if (expandedBytes > WORKSPACE_EXPORT_V2_MAX_ARCHIVE_EXPANDED_BYTES) {
-          throw new Error(
-            "workspace package exceeds the total expanded-size limit"
-          )
+          throw new WorkspacePackageLimitError(IMPORT_TOO_LARGE)
         }
         entries.push({ entry, path, directory })
         zip.readEntry()
@@ -3445,13 +3465,13 @@ function parseManifest(value: unknown): WorkspaceExportV2Manifest {
     }
     expanded += file.size
     if (expanded > WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES) {
-      throw new Error("workspace package exceeds the expanded size limit")
+      throw new WorkspacePackageLimitError(IMPORT_TOO_LARGE)
     }
     paths.add(file.path)
     collisionPaths.add(file.path.toLocaleLowerCase("en-US"))
   }
   if (paths.size > WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES) {
-    throw new Error("workspace package exceeds the workspace entry limit")
+    throw new WorkspacePackageLimitError(IMPORT_TOO_LARGE)
   }
   const filePaths = new Set(manifest.integrity.files.map((file) => file.path))
   const directoryPaths = new Set(
@@ -3636,7 +3656,7 @@ async function openAndInspectArchive(sourceFile: string): Promise<{
     !archiveInfo.isFile() ||
     archiveInfo.size > WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES
   ) {
-    throw new Error("workspace package exceeds the archive size limit")
+    throw new WorkspacePackageLimitError(IMPORT_TOO_LARGE)
   }
   const zip = await openZip(archivePath, {
     autoClose: false,

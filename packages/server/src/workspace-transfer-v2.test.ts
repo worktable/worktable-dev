@@ -607,7 +607,7 @@ describe("workspace export v2", () => {
 
     await expect(
       writeWorkspaceExportV2(join(root, "bounded-archive"))
-    ).rejects.toThrow(/archive limit/)
+    ).rejects.toThrow("too large to export with all its history")
     await expect(stat(join(root, "bounded-archive.wtb"))).rejects.toThrow()
     expect(
       (await readdir(root)).some((name) => name.includes("bounded-archive"))
@@ -1098,7 +1098,7 @@ describe("workspace export v2", () => {
 
     await expect(
       writeWorkspaceExportV2(join(root, "too-expanded"))
-    ).rejects.toThrow(/expanded-size limit/)
+    ).rejects.toThrow("files are too large to export together")
   })
 
   it("revalidates the destination inode immediately before publication", async () => {

@@ -61,7 +61,10 @@ import {
   WORKSPACE_TRANSFER_CHUNK_BYTES,
   type WorkspaceTransferJob,
 } from "../workspace-transfer-jobs.ts"
-import type { WorkspaceExportHistoryPolicy } from "../workspace-transfer-v2.ts"
+import {
+  WorkspacePackageLimitError,
+  type WorkspaceExportHistoryPolicy,
+} from "../workspace-transfer-v2.ts"
 
 export const workspaceRouter = new Hono()
 
@@ -311,6 +314,9 @@ function workspaceExportReader(c: Context): Response | null {
 function transferError(c: Context, error: unknown): Response {
   if (error instanceof StorageLimitError) {
     return c.json(storageLimitBody(error), 507)
+  }
+  if (error instanceof WorkspacePackageLimitError) {
+    return c.json({ error: error.message, code: error.code }, 413)
   }
   const message = error instanceof Error ? error.message : String(error)
   const status = message.includes("not found")

@@ -477,7 +477,7 @@ it("shows each visitor only their own comments, on links and policies saved by e
   // A spike remains durable across unrelated edits, but only current comment
   // links offer an actionable pause in Pending. Retained comments still belong
   // to the document after their link is downgraded or revoked.
-  for (let index = 0; index < 31; index++) {
+  for (let index = 0; index < 301; index++) {
     try {
       receiveVisitorComment({
         worktableId: context.worktableId,

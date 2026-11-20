@@ -75,6 +75,11 @@ import { sideMenuFirstLine } from "./side-menu-position"
 import { usePaneWidth } from "@/hooks/use-pane-width"
 import { DataTooltips } from "@/components/document/data-tooltip"
 import { createRichCodeBlockSpec } from "./rich-code-block"
+import {
+  placedFor,
+  removePlaced,
+  type PlacedBlockEditor,
+} from "./placed-upload"
 import { TableExpandControl } from "./table-expand"
 import { ImageViewControl } from "@/components/viewer/image-view-control"
 
@@ -218,16 +223,10 @@ export interface EditorFiles {
   upload?: (file: File) => Promise<string>
 }
 
-/** What the file handlers need of the editor they were made for. */
-interface PlacedBlocks {
-  getBlock(id: string): { props?: unknown } | undefined
-  removeBlocks(ids: string[]): unknown
-}
-
 /** The file handlers an editor made once reads, always the latest given. */
 class LatestFiles {
   private files: EditorFiles | undefined
-  private editor: PlacedBlocks | null = null
+  private editor: PlacedBlockEditor | null = null
   constructor(files: EditorFiles | undefined) {
     this.files = files
   }
@@ -235,23 +234,16 @@ class LatestFiles {
     this.files = files
   }
   /** The editor, once it is made. */
-  attach(editor: PlacedBlocks): void {
+  attach(editor: PlacedBlockEditor): void {
     this.editor = editor
   }
-  /**
-   * Whether a paste or drop placed this block for the file: such a block is
-   * named after its file and has nothing to show until the upload ends.
-   */
+  /** Whether a paste or drop placed this block for the file. */
   placed(file: File, blockId: string | undefined): boolean {
-    if (!blockId) return false
-    const props = this.editor?.getBlock(blockId)?.props as
-      | { name?: unknown; url?: unknown }
-      | undefined
-    return props?.name === file.name && !props.url
+    return placedFor(this.editor, file, blockId)
   }
   /** Take out a placed block whose upload failed. */
-  removePlaced(blockId: string): void {
-    if (this.editor?.getBlock(blockId)) this.editor.removeBlocks([blockId])
+  removePlaced(file: File, blockId: string): void {
+    removePlaced(this.editor, file, blockId)
   }
   resolve(url: string): string {
     return this.files ? this.files.resolve(url) : url
@@ -374,7 +366,7 @@ function EditorInner({
                     // BlockNote leaves a pasted or dropped file's block
                     // loading for good when its upload fails. Let its update
                     // pass with nothing to set, then take the block out.
-                    setTimeout(() => currentFiles.removePlaced(blockId))
+                    setTimeout(() => currentFiles.removePlaced(file, blockId))
                     return {}
                   }
                 },

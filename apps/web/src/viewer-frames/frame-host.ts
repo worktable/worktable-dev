@@ -28,15 +28,22 @@ function randomId(): string {
 // The secret the page gave this frame in its address; see viewerFrameSecret.
 const token = location.hash.slice(1)
 
+// Everything after the handshake goes over this channel, whose other end
+// the handshake hands to the page: it belongs to this document alone.
+const channel = new MessageChannel()
+
 /** Tell the page something. */
 export function say(message: Outgoing): void {
-  window.parent.postMessage({ ...message, token }, "*")
+  if (message.type === "viewer.handshake") {
+    window.parent.postMessage({ ...message, token }, "*", [channel.port2])
+  } else {
+    channel.port1.postMessage({ ...message, token })
+  }
 }
 
-/** Hear the page, and nothing else that can post to this window. */
+/** Hear the page, over the channel only it holds the other end of. */
 export function hear(listener: (message: ViewerHostMessage) => void): void {
-  window.addEventListener("message", (event) => {
-    if (event.source !== window.parent) return
+  channel.port1.addEventListener("message", (event) => {
     const message = event.data as ViewerHostMessage | null
     if (
       typeof message?.type === "string" &&
@@ -45,6 +52,7 @@ export function hear(listener: (message: ViewerHostMessage) => void): void {
       listener(message)
     }
   })
+  channel.port1.start()
 }
 
 const assets = new Map<

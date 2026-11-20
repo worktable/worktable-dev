@@ -132,7 +132,10 @@ export function ViewerFrame({
     const element = frame.current
     if (!element) return
     setSettled(false)
-    let greeted = false
+    // The channel the frame document handed over with its handshake. Only
+    // that document holds the other end, and it closes with it: whatever the
+    // frame is navigated to later can't hear a word.
+    let port: MessagePort | null = null
     let over = false
     let etag: string | null = null
     const whole = byteLength <= VIEWER_WHOLE_FILE_BYTES
@@ -142,7 +145,7 @@ export function ViewerFrame({
       message: ViewerHostMessage,
       transfer: Transferable[] = []
     ) => {
-      if (!over) element.contentWindow?.postMessage(message, "*", transfer)
+      if (!over) port?.postMessage(message, transfer)
     }
     post.current = send
     const refuse = (reason: ViewerRefusal) => {
@@ -186,32 +189,41 @@ export function ViewerFrame({
       send({ type: "viewer.password", password })
     }
 
-    const onMessage = async (event: MessageEvent) => {
-      // Only this frame, and only while it is the document with no origin
-      // that was served to it.
+    // The handshake comes on the window, from the frame's document with no
+    // origin, naming the secret only the document this page loaded knows, and
+    // carrying the channel everything else goes over. Anything else in the
+    // frame's place ends the open.
+    const onHandshake = (event: MessageEvent) => {
       if (event.source !== element.contentWindow || event.origin !== "null")
         return
       const message = viewerFrameMessage(event.data)
-      if (!message || over) return
-      if (message.type === "viewer.handshake") {
-        // Only the document this page loaded knows the secret.
-        if (greeted || message.token !== secret) return
-        greeted = true
-        const data = await start
-        if (!data) return refuse("failed")
-        send(
-          {
-            type: "viewer.open",
-            byteLength,
-            start: data,
-            whole,
-            ...(startPage ? { page: startPage } : {}),
-          },
-          [data]
-        )
+      if (message?.type !== "viewer.handshake" || port !== null || over) return
+      const channel = event.ports[0]
+      if (message.token !== secret || !channel) {
+        refuse("failed")
         return
       }
-      if (!greeted || message.token !== secret) return
+      port = channel
+      port.onmessage = (portEvent) => void onMessage(portEvent)
+      void open()
+    }
+    const open = async () => {
+      const data = await start
+      if (!data) return refuse("failed")
+      send(
+        {
+          type: "viewer.open",
+          byteLength,
+          start: data,
+          whole,
+          ...(startPage ? { page: startPage } : {}),
+        },
+        [data]
+      )
+    }
+    const onMessage = async (event: MessageEvent) => {
+      const message = viewerFrameMessage(event.data)
+      if (!message || over || message.token !== secret) return
       switch (message.type) {
         case "viewer.read": {
           const range = clampViewerRead(message.begin, message.end, byteLength)
@@ -288,7 +300,7 @@ export function ViewerFrame({
       loads += 1
       if (loads > 1) refuse("failed")
     }
-    window.addEventListener("message", onMessage)
+    window.addEventListener("message", onHandshake)
     element.addEventListener("load", onLoad)
     return () => {
       over = true
@@ -296,7 +308,8 @@ export function ViewerFrame({
       answerPassword.current = () => {}
       abort.abort()
       window.clearTimeout(deadline)
-      window.removeEventListener("message", onMessage)
+      window.removeEventListener("message", onHandshake)
+      port?.close()
       element.removeEventListener("load", onLoad)
     }
   }, [byteLength, fileUrl, secret, src, startPage, viewer])

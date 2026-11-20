@@ -529,7 +529,10 @@ origin, and a policy that lets it fetch, frame, submit and navigate to
 nothing. The frame is one self-contained document, with its code allowed by
 hash (`apps/web/viewer-frames.ts` builds it, `viewer-frames.ts` serves it).
 The app's page fetches the file at one version and hands the frame the bytes
-it asks for, inside that file only, and the viewer's own fonts and decoders by
+it asks for, inside that file only, over a channel the frame document opens in
+its handshake. The handshake names a one-time secret the page put in the frame
+address's fragment, so only the document the page loaded there gets the file,
+and nothing reaches a document the frame is navigated to later; and the viewer's own fonts and decoders by
 plain name (`apps/web/src/components/viewer/viewer-frame.tsx`). Scripts inside
 a PDF never run, forms can't be filled in, and a link out is opened by the
 app's page, to the web or mail only. A password is asked for in the app's

@@ -287,14 +287,11 @@ test("a document put in the viewer's place is never handed the file", async ({
       </script>`,
     })
   )
-  const opened: string[] = []
-  page.on("request", (request) => {
-    if (request.url().includes("/documents/file")) opened.push(request.url())
-  })
   await page.goto(`${harness.webUrl}/spaces/papers/documents/report.pdf`)
-  const frame = page.frameLocator('iframe[data-viewer-frame="pdf"]')
-  await expect(frame.locator("script")).toHaveCount(1)
-  await page.waitForTimeout(3_000)
+  // A handshake without the secret ends the open: the card, at once.
+  await expect(page.getByText("Couldn’t load preview")).toBeVisible({
+    timeout: 15_000,
+  })
   const inside = page
     .frames()
     .find((each) => each.url().includes("/api/viewers/pdf"))!

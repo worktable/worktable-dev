@@ -505,8 +505,10 @@ describe("comments delivered to an agent's runtime", () => {
       { method: "POST" }
     )
     expect(resolved.status).toBe(200)
-    const next = (await claimNextDelivery(grok, 0, 2, { comments: true }))!
-    expect(next.kind).toBe("comments")
-    expect((next as { page: { path: string } }).page.path).toBe("notes")
+    const next = (await claimNextDelivery(grok, 0, 2, { comments: true })) as {
+      kind?: string
+      page?: { path: string }
+    } | null
+    expect(next).toMatchObject({ kind: "comments", page: { path: "notes" } })
   }, 30_000)
 })

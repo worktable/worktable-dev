@@ -53,14 +53,13 @@ export async function createRail({
   // A button per page, sized like the page before its picture is drawn.
   const first = await pdf.getPage(1)
   const firstSize = first.getViewport({ scale: 1 })
-  const labels = await pdf.getPageLabels().catch(() => null)
   const buttons: HTMLButtonElement[] = []
   for (let page = 1; page <= pdf.numPages; page++) {
     const button = document.createElement("button")
     button.type = "button"
     button.className = "rail-page"
     button.dataset.page = String(page)
-    const label = labels?.[page - 1] || String(page)
+    const label = String(page)
     button.setAttribute("aria-label", `Page ${label}`)
     const frame = document.createElement("span")
     frame.className = "rail-picture"
@@ -134,11 +133,28 @@ export async function createRail({
   )
   for (const button of buttons) seen.observe(button)
 
-  // The file's own outline, when it has one.
-  const outline = await pdf.getOutline().catch(() => null)
-  let outlinePanel: HTMLElement | null = null
-  if (outline?.length) {
-    outlinePanel = document.createElement("div")
+  // The file's own page labels and outline, when it has them. A large file
+  // may have to fetch them, so the pages show first and these follow.
+  void pdf
+    .getPageLabels()
+    .then((labels) => {
+      labels?.forEach((label, index) => {
+        const button = buttons[index]
+        if (!button || !label) return
+        button.setAttribute("aria-label", `Page ${label}`)
+        button.lastElementChild!.textContent = label
+      })
+    })
+    .catch(() => {})
+  tabs.hidden = true
+  void pdf
+    .getOutline()
+    .then((outline) => {
+      if (outline?.length) addOutline(outline)
+    })
+    .catch(() => {})
+  const addOutline = (outline: OutlineItem[]) => {
+    const outlinePanel = document.createElement("div")
     outlinePanel.className = "rail-outline"
     outlinePanel.setAttribute("role", "tabpanel")
     outlinePanel.setAttribute("aria-label", "Outline")
@@ -165,7 +181,7 @@ export async function createRail({
           each.setAttribute("aria-selected", "false")
         button.setAttribute("aria-selected", "true")
         pagesPanel.hidden = panel !== pagesPanel
-        outlinePanel!.hidden = panel !== outlinePanel
+        outlinePanel.hidden = panel !== outlinePanel
         if (panel === pagesPanel) void drawNext()
       })
       return button
@@ -173,10 +189,8 @@ export async function createRail({
     const pagesTab = tab("Pages", pagesPanel)
     pagesTab.setAttribute("aria-selected", "true")
     tabs.append(pagesTab, tab("Outline", outlinePanel))
-  } else {
-    tabs.hidden = true
+    tabs.hidden = false
   }
-
   let current = 0
   const setPage = (page: number) => {
     buttons[current - 1]?.removeAttribute("aria-current")

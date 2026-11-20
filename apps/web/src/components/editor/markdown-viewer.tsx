@@ -342,6 +342,19 @@ export function MarkdownViewer({
                   },
                   img: ({ node, title, src, ...props }) => {
                     void node
+                    // A Space's file waits for its version, so an image loads once and
+                    // a PDF opens the version the Doc names.
+                    if (
+                      filesOn &&
+                      fileVersionsPending &&
+                      !filesAt &&
+                      typeof src === "string" &&
+                      resolveDocLink(docPath, src) !== null
+                    ) {
+                      return (
+                        <span aria-hidden className="worktable-image-pending" />
+                      )
+                    }
                     // A Space's PDF is a card that opens it full screen.
                     if (
                       filesOn &&
@@ -355,18 +368,6 @@ export function MarkdownViewer({
                           target={src}
                           href={renderDocLinkHref(spaceId, docPath, src)}
                         />
-                      )
-                    }
-                    // A Space's image waits for its version, so it loads once.
-                    if (
-                      filesOn &&
-                      fileVersionsPending &&
-                      !filesAt &&
-                      typeof src === "string" &&
-                      resolveDocLink(docPath, src) !== null
-                    ) {
-                      return (
-                        <span aria-hidden className="worktable-image-pending" />
                       )
                     }
                     const source =

@@ -38,7 +38,7 @@ export default function PdfViewerDialog({
               window.location.href = fileSourceUrl(
                 pdf.spaceId,
                 pdf.path,
-                pdf.version,
+                opened.version,
                 {
                   download: true,
                   ...at,

@@ -65,7 +65,15 @@ export function PdfViewControl({
       if (pdfOf(event.target as Element | null, resolve)) void loadViewer()
     }
     const click = (event: MouseEvent) => {
-      if (event.button === 0 && !event.metaKey && !event.ctrlKey) show(event)
+      // A modified click keeps what the browser does with a link.
+      if (
+        event.button === 0 &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        !event.altKey
+      )
+        show(event)
     }
     const key = (event: KeyboardEvent) => {
       if (event.key !== "Enter" && event.key !== " ") return

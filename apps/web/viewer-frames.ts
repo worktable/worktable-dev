@@ -106,7 +106,7 @@ body[data-rail="open"] #viewer-container { left: 169px; }
 .rail-tabs button { flex: 1; padding: 5px 6px; border: 0; border-radius: 6px; background: none; color: var(--viewer-muted); font: inherit; font-weight: 500; cursor: pointer; }
 .rail-tabs button:hover { background: var(--viewer-hover); }
 .rail-tabs button[aria-selected="true"] { background: var(--viewer-selected); color: var(--viewer-text); }
-.rail-pages, .rail-outline { flex: 1; min-height: 0; overflow: auto; padding: 10px 8px; }
+.rail-pages, .rail-outline { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 10px 8px; scrollbar-width: thin; overflow-wrap: anywhere; }
 .rail-page { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 100%; padding: 6px 0 10px; border: 0; background: none; color: var(--viewer-muted); font: inherit; font-size: 12px; cursor: pointer; }
 .rail-picture { display: block; width: 120px; overflow: hidden; border-radius: 2px; background: #fff; outline: 1px solid var(--viewer-line); }
 .rail-picture img { display: block; width: 100%; height: 100%; }

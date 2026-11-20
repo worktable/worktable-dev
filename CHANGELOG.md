@@ -34,6 +34,7 @@ infrastructure and personal context out of release notes.
 - **Export and import:** When a Worktable is too large to export with all its history, a package is too large to import, or the disk is full, Settings says so and what to do next, instead of "Export failed." with a technical reason.
 - **Export:** A Worktable at its 2 GiB limit always exports with all its history: packages can now be up to 2.25 GiB, room for the history, the offline viewer and a drawing saved a little past the limit. Before, a full Worktable of photos or PDFs could fail to export.
 - **Full Worktable:** When a Worktable is at its storage limit, or a file is larger than 64 MiB, uploads, new Docs and drawings, saved versions and pasted images now say so instead of asking you to try again. A drawing that can't save says why and saves once there is room, and a pasted image that can't be saved no longer leaves an empty block.
+- **PDFs:** A PDF opens on its page and reads in place: scroll, select and copy text, find, jump to a page and zoom, with a picture of each page and the file's outline beside it. A password-protected PDF asks for its password, and a link ending in `#page=12` opens at that page.
 
 ## [0.1.52] - 2026-11-19
 

@@ -280,22 +280,21 @@ test("a document put in the viewer's place is never handed the file", async ({
       headers: { "Content-Security-Policy": "sandbox allow-scripts" },
       body: `<!doctype html><script>
         addEventListener("message", (event) => {
-          if (event.data && event.data.type === "viewer.open") document.title = "handed the file"
+          if (event.data && event.data.type === "viewer.open") console.log("handed the file")
         })
         for (const token of ["", "guess"])
           parent.postMessage({ type: "viewer.handshake", token }, "*")
       </script>`,
     })
   )
+  const logged: string[] = []
+  page.on("console", (message) => logged.push(message.text()))
   await page.goto(`${harness.webUrl}/spaces/papers/documents/report.pdf`)
   // A handshake without the secret ends the open: the card, at once.
   await expect(page.getByText("Couldn’t load preview")).toBeVisible({
     timeout: 15_000,
   })
-  const inside = page
-    .frames()
-    .find((each) => each.url().includes("/api/viewers/pdf"))!
-  expect(await inside.title()).toBe("")
+  expect(logged).not.toContain("handed the file")
   await page.unroute("**/api/viewers/pdf?*")
 })
 

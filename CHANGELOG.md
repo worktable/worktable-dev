@@ -24,6 +24,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Export:** A Worktable at its 2 GiB limit always exports with all its history: packages can now be up to 2.25 GiB, room for the history, the offline viewer and a drawing saved a little past the limit. Before, a full Worktable of photos or PDFs could fail to export.
 - **Full Worktable:** When a Worktable is at its storage limit, or a file is larger than 64 MiB, uploads, new Docs and drawings, saved versions and pasted images now say so instead of asking you to try again. A drawing that can't save says why and saves once there is room, and a pasted image that can't be saved no longer leaves an empty block.
 
 ## [0.1.52] - 2026-11-19

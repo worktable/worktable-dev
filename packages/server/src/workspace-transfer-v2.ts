@@ -61,6 +61,7 @@ import {
 import { versionIdTimestamp } from "./version-store.ts"
 import { removeWorkspaceTree } from "./workspace-tree-cleanup.ts"
 import { noteStorageChange } from "./storage-usage.ts"
+import { EXPORT_HEADROOM_BYTES, PROVEN_WORKTABLE_BYTES } from "./worktable-size.ts"
 import {
   classifyWorkspaceTarget,
   getWorkspaceRoot,
@@ -79,7 +80,9 @@ export const WORKSPACE_EXPORT_V2_EXTENSION = ".wtb" as const
 // These are the supported product envelope, not theoretical ZIP ceilings.
 // They leave substantial headroom over a large daily workspace while bounding
 // upload time, replacement staging, manifest memory, and decompression work.
-export const WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
+// A Worktable within its limit always fits in a package (worktable-size.ts).
+export const WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES =
+  PROVEN_WORKTABLE_BYTES + EXPORT_HEADROOM_BYTES
 export const WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES = 8 * 1024 * 1024 * 1024
 export const WORKSPACE_EXPORT_V2_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024
 export const WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES = 100_000

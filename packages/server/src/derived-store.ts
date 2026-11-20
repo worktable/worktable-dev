@@ -142,6 +142,14 @@ export class DerivedStore {
     if (this.#db) return this.#db
     mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 })
     const db = new Database(this.path, { create: true })
+    // Space freed by removed output goes back to the disk (reclaim): the
+    // store counts toward the Worktable's storage. The mode is set before
+    // any table exists, or on an older file with one rewrite.
+    const vacuum = (db.query("PRAGMA auto_vacuum").get() as { auto_vacuum: number }).auto_vacuum
+    if (vacuum !== 2) {
+      db.run("PRAGMA auto_vacuum = INCREMENTAL")
+      db.run("VACUUM")
+    }
     db.run("PRAGMA journal_mode = WAL")
     db.run("PRAGMA synchronous = NORMAL")
     db.run("PRAGMA foreign_keys = ON")
@@ -183,6 +191,13 @@ export class DerivedStore {
   #noteWrite(): void {
     noteStorageChange(this.path)
     noteStorageChange(`${this.path}-wal`)
+  }
+
+  /** Gives the pages removed output held back to the disk. */
+  #reclaim(): void {
+    const db = this.#open()
+    db.run("PRAGMA incremental_vacuum")
+    db.run("PRAGMA wal_checkpoint(TRUNCATE)")
   }
 
   #outputId(key: DerivedKey): number | null {
@@ -455,6 +470,7 @@ export class DerivedStore {
       .query("DELETE FROM outputs WHERE space_id = ? AND document_id = ? AND version != ?")
       .run(spaceId, documentId, version).changes
     if (removed > 0) {
+      this.#reclaim()
       this.#noteWrite()
       announce({ spaceId, documentId, change: "removed" })
     }
@@ -475,6 +491,7 @@ export class DerivedStore {
     db.transaction(() => {
       for (const id of gone) remove.run(spaceId, id)
     })()
+    this.#reclaim()
     this.#noteWrite()
     for (const documentId of gone) announce({ spaceId, documentId, change: "removed" })
     return gone.length

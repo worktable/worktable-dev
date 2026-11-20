@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import type { SpaceFile } from "@worktable/types"
+import { statSync } from "node:fs"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -141,6 +142,23 @@ describe("the derived store", () => {
     ])
     stop()
     expect(changes.map((change) => change.change)).toEqual(["stored", "stored", "stored", "removed"])
+  })
+
+  it("gives the disk back the space of output it removes", () => {
+    const store = derivedStore()
+    const size = () =>
+      [store.path, `${store.path}-wal`].reduce((sum, path) => {
+        try {
+          return sum + statSync(path).size
+        } catch {
+          return sum
+        }
+      }, 0)
+    const picture = key({ kind: "picture", variant: "w480p1", maker: "pdf-page" })
+    store.putPicture(picture, { state: "ready", mimeType: "image/png", bytes: new Uint8Array(8 * 1024 * 1024).fill(7) })
+    expect(size()).toBeGreaterThan(8 * 1024 * 1024)
+    store.removeAllBut(spaceId)
+    expect(size()).toBeLessThan(1024 * 1024)
   })
 
   it("removes what was derived from a file once the file is gone, deleted on disk included", async () => {

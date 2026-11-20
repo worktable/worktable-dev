@@ -112,18 +112,33 @@ export class TextLinePage {
   }
 
   update(chunk: Uint8Array): void {
-    if (chunk.byteLength === 0) return
-    this.#size += chunk.byteLength
-    this.#lastByte = chunk[chunk.byteLength - 1]!
-    for (let start = 0; start < chunk.byteLength; ) {
-      const newline = chunk.indexOf(NEWLINE, start)
-      const end = newline === -1 ? chunk.byteLength : newline + 1
-      if (this.#onPage()) this.#hold(chunk.subarray(start, end))
-      if (newline !== -1) {
-        if (this.#onPage()) this.#settle()
+    const length = chunk.byteLength
+    if (length === 0) return
+    this.#size += length
+    this.#lastByte = chunk[length - 1]!
+    for (let at = 0; at < length; ) {
+      if (this.#onPage()) {
+        // On the page, line by line: at most `limit` lines.
+        const newline = chunk.indexOf(NEWLINE, at)
+        const end = newline === -1 ? length : newline + 1
+        this.#hold(chunk.subarray(at, end))
+        if (newline === -1) return
+        this.#settle()
         this.#line += 1
+        at = end
+      } else if (!this.#closed && this.#line < this.#offset) {
+        // Before the page, lines are only counted, a byte at a time, until
+        // the page's first line starts.
+        while (at < length) {
+          if (chunk[at++] === NEWLINE && ++this.#line === this.#offset) break
+        }
+      } else {
+        // After it, the rest is counted the same way: no work per line, so
+        // a file of nothing but line endings costs what hashing it does.
+        let lines = 0
+        for (; at < length; at += 1) if (chunk[at] === NEWLINE) lines += 1
+        this.#line += lines
       }
-      start = end
     }
   }
 

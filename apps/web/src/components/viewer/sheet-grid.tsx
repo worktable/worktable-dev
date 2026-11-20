@@ -51,18 +51,26 @@ type Sort = { column: number; direction: "asc" | "desc" } | null
 /**
  * A row's shading: every other row striped with the inset fill, and the
  * hovered row a step stronger than any stripe, the same on every row, so a
- * hovered row never reads as a stripe. The row paints both as plain fills
- * behind its cells; the hover's second layer is a gradient on that one row
- * only, since a gradient on every cell made scrolling slow to paint.
+ * hovered row never reads as a stripe. The row paints its fills behind its
+ * cells, chosen here rather than through style variables, which every cell
+ * would have to resolve again as rows scroll in. The hover's second layer is
+ * a gradient on the one hovered row.
  */
-const ROW_TINTS =
-  "group/row [--sheet-hover:transparent] [--sheet-stripe:transparent] data-[striped]:[--sheet-stripe:var(--surface-inset)] hover:[--sheet-hover:var(--surface-hover)] hover:[--sheet-stripe:var(--surface-inset)] bg-(--sheet-stripe) hover:bg-[image:linear-gradient(var(--surface-hover),var(--surface-hover))]"
+const HOVER =
+  "hover:bg-surface-inset hover:bg-[image:linear-gradient(var(--surface-hover),var(--surface-hover))]"
+const ROW_PLAIN = `group/row ${HOVER}`
+const ROW_STRIPED = `group/row bg-surface-inset ${HOVER}`
 /**
  * The row number stays opaque as cells scroll under it, so it lays the
- * row's two tints over the card as plain fills of its own.
+ * row's fills over the card as layers of its own.
  */
-const GUTTER_TINTS =
-  "bg-card before:pointer-events-none before:absolute before:inset-0 before:bg-(--sheet-stripe) before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:bg-(--sheet-hover) after:content-['']"
+const GUTTER =
+  "sticky left-0 z-10 border-r border-b border-border/60 bg-card pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums transition-colors select-none before:pointer-events-none before:absolute before:inset-0 before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:content-[''] group-hover/row:text-foreground group-hover/row:before:bg-surface-inset group-hover/row:after:bg-surface-hover"
+const GUTTER_PLAIN = GUTTER
+const GUTTER_STRIPED = `${GUTTER} before:bg-surface-inset`
+const CELL =
+  "truncate border-r border-b border-r-border/40 border-b-border/60 px-3 whitespace-nowrap"
+const CELL_NUMBER = `${CELL} text-right tabular-nums`
 
 /**
  * A grid of text cells that fills its container and scrolls both ways, in
@@ -173,9 +181,7 @@ export function SheetGrid({
       // Arrow keys and Page Down scroll the grid once it has focus.
       tabIndex={0}
       aria-label={label}
-      // Opaque, so the browser can scroll what it already painted instead
-      // of painting the grid again on every frame.
-      className="h-full min-h-0 overflow-auto overscroll-contain bg-card outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset"
+      className="h-full min-h-0 overflow-auto overscroll-contain outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset"
     >
       <table
         aria-rowcount={order.length + 1}
@@ -335,29 +341,22 @@ const SheetRow = memo(function SheetRow({
       <td
         key={index}
         title={value || undefined}
-        className={
-          numeric[index]
-            ? "truncate border-r border-b border-r-border/40 border-b-border/60 px-3 text-right whitespace-nowrap tabular-nums"
-            : "truncate border-r border-b border-r-border/40 border-b-border/60 px-3 whitespace-nowrap"
-        }
+        className={numeric[index] ? CELL_NUMBER : CELL}
       >
         {value}
       </td>
     )
   }
+  // Every other row as shown is striped, so stripes stay even after
+  // sorting or searching.
+  const striped = position % 2 === 1
   return (
     <tr
       aria-rowindex={position + 2}
-      // Every other row as shown is striped, so stripes stay even after
-      // sorting or searching.
-      data-striped={position % 2 === 1 ? "" : undefined}
-      className={ROW_TINTS}
+      className={striped ? ROW_STRIPED : ROW_PLAIN}
     >
       <td
-        className={cn(
-          GUTTER_TINTS,
-          "sticky left-0 z-10 border-r border-b border-border/60 pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums transition-colors select-none group-hover/row:text-foreground"
-        )}
+        className={striped ? GUTTER_STRIPED : GUTTER_PLAIN}
         style={{ height: ROW_HEIGHT }}
       >
         {number}

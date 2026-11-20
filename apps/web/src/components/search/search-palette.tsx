@@ -468,7 +468,10 @@ function PaletteBody({
         ...(index === 0 ? { heading: "Recent" } : {}),
       }))
     }
-    const found: Row[] = matchPlaces(places, typed).map((place) => ({
+    // A filter narrows to content, so places only show without one.
+    const placeRows =
+      kind === null && spaceId === null ? matchPlaces(places, typed) : []
+    const found: Row[] = placeRows.map((place) => ({
       key: `place:${place.id}`,
       title: place.name,
       icon: place.icon,
@@ -496,6 +499,8 @@ function PaletteBody({
     spacesById,
     worktableName,
     isError,
+    kind,
+    spaceId,
   ])
 
   // The row the keys act on: the one last pointed at or moved to, or the

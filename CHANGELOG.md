@@ -21,6 +21,7 @@ infrastructure and personal context out of release notes.
 - **HTML Docs:** When an agent saves a new version of a page you have open, it opens where you were: the same scroll position, and a deck on the same slide if it keeps the slide number in its address. The loading placeholder no longer covers the page while the new version loads, and a deck's arrow keys work as soon as it fills the screen.
 - **HTML Docs:** Print PDF in an HTML Doc's menu, and Ctrl or Cmd+P, print the page itself instead of the app around it. A page prints with its own page rules, so a deck can print one slide per page; other pages print on white paper with the margins Docs print with. Large titles in the display font keep sturdy strokes.
 - **Share links:** A link made under More links can take visitor comments, with its own Allow comments switch. Each link says when comments are on.
+- **CSV and TSV files:** A table file fills its page as a grid. Every row shows, not only the first 1,000, with the header and row numbers kept in view as you scroll, and each column sized to its values.
 - **Full Worktable:** Making room at the storage limit never removes the version your last change replaced, so that change can always be undone. A replace that would need it gone is refused instead. A drawing keeps saving a little past the limit, so you don't lose what you were drawing.
 
 ### Fixed

@@ -172,12 +172,11 @@ function resultRow(
         params: { _splat: skillSplat(result.skill) },
       },
       ...(result.excerpt ? { excerpt: result.excerpt } : {}),
-      location: (
-        <span className="truncate text-xs text-muted-foreground">
-          {result.skill.library.kind === "worktable"
-            ? worktableName
-            : (result.skill.libraryName ?? "Library")}
-        </span>
+      location: place(
+        result.skill.library.kind === "worktable"
+          ? worktableName
+          : (result.skill.libraryName ?? "Library"),
+        undefined
       ),
     }
   }
@@ -367,7 +366,11 @@ function PaletteBody({
     return () => window.clearTimeout(timeout)
   }, [typed])
 
-  const { data: results, isPlaceholderData } = useQuery({
+  const {
+    data: results,
+    isPlaceholderData,
+    isError,
+  } = useQuery({
     ...searchQueryOptions({
       query: searched,
       maxResults: 50,
@@ -432,15 +435,18 @@ function PaletteBody({
         icon: <Settings className={ICON} />,
         action: () => openSettings(),
       },
-      ...(spaces ?? []).map((space) => ({
-        id: `space:${space.id}`,
-        name: space.name,
-        icon: <SpaceIcon space={space} size="xs" variant="glyph" />,
-        target: {
-          to: "/spaces/$spaceId",
-          params: { spaceId: space.id },
-        } satisfies LinkTarget,
-      })),
+      // Archived Spaces are found by what's in them, under Archived.
+      ...(spaces ?? [])
+        .filter((space) => !getSpaceArchiveInfo(space))
+        .map((space) => ({
+          id: `space:${space.id}`,
+          name: space.name,
+          icon: <SpaceIcon space={space} size="xs" variant="glyph" />,
+          target: {
+            to: "/spaces/$spaceId",
+            params: { spaceId: space.id },
+          } satisfies LinkTarget,
+        })),
     ],
     [skillLibraries, spaces]
   )
@@ -470,7 +476,8 @@ function PaletteBody({
       ...("action" in place ? { action: place.action } : {}),
     }))
     let archived = false
-    for (const result of searched ? (results ?? []) : []) {
+    // A search that failed shows none of an earlier query's results.
+    for (const result of searched && !isError ? (results ?? []) : []) {
       const row = resultRow(result, spacesById, worktableName)
       if (result.archived && !archived) {
         archived = true
@@ -488,6 +495,7 @@ function PaletteBody({
     spaces,
     spacesById,
     worktableName,
+    isError,
   ])
 
   // The row the keys act on: the one last pointed at or moved to, or the
@@ -553,6 +561,8 @@ function PaletteBody({
   const spaceName = spaceId ? spacesById.get(spaceId)?.name : undefined
   const noMatches =
     typed !== "" && settled && results !== undefined && rows.length === 0
+  // Places still match without the server; results can't.
+  const failed = typed !== "" && searched === typed && isError
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -641,10 +651,16 @@ function PaletteBody({
             }}
           />
         ))}
-        {noMatches && (
+        {failed ? (
           <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-            No matches
+            Couldn't search. Try again.
           </p>
+        ) : (
+          noMatches && (
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+              No matches
+            </p>
+          )
         )}
       </div>
     </div>
@@ -694,7 +710,8 @@ function FilterMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         finalFocus={false}
-        className="max-h-72 w-auto min-w-44"
+        // Never taller than the room the screen leaves.
+        className="max-h-[min(18rem,var(--available-height))] w-auto min-w-44"
       >
         <DropdownMenuRadioGroup
           aria-label={label}

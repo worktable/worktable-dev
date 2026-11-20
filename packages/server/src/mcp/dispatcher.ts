@@ -209,6 +209,7 @@ import {
 } from "./file-links.ts"
 import type { HtmlUploadCall } from "../file-tickets.ts"
 import { readCurrentFileSource } from "../current-file-source.ts"
+import { readFileContents } from "../file-contents.ts"
 import {
   FILE_UPLOAD_MAX_BYTES,
   FileReplaceRefused,
@@ -1517,6 +1518,39 @@ async function _dispatchOperationInner(
           encoding: "download" as const,
           ...link,
           noHistory: large.noHistory,
+        }
+      }
+      // On the preview surface a file with contents reads as a page of
+      // them, at one revision, whatever its size. Held there until agent
+      // directories review it.
+      if (
+        context.surface === "preview" &&
+        !context.legacyFileRead &&
+        namesAFile(args["path"] as string)
+      ) {
+        const read = await readFileContents({
+          spaceId: args["spaceId"] as string,
+          path: args["path"] as string,
+          ...(args["offset"] !== undefined ? { offset: args["offset"] as number } : {}),
+          ...(args["limit"] !== undefined ? { limit: args["limit"] as number } : {}),
+        })
+        if (read) {
+          return {
+            documentId: read.current.documentId,
+            path: read.current.path,
+            format: read.current.format,
+            byteLength: read.current.pinned.size,
+            sourceRevision: read.sourceRevision,
+            encoding: "contents" as const,
+            contents: read.contents,
+            ...fileDownloadLink(
+              context.fileLinkOrigin,
+              principal,
+              args["spaceId"] as string,
+              read.current.path,
+              read.current.pinned.revision
+            ),
+          }
         }
       }
       // A plain file's bytes are read once the Space's lock is released,

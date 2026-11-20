@@ -91,6 +91,10 @@ export const FILE_SURFACE_NOTES: {
     where: "packages/server/src/file-pictures.ts",
     note: "Pictures are made in the sandboxed preview browser, within limits on bytes, pixels and time that stay with the surface. A file past one has no picture and says why.",
   },
+  contents: {
+    where: "packages/server/src/file-contents.ts",
+    note: "Contents come to agents by line, a page at a time, within a byte limit per page that stays with the surface. A line past it is cut and the read says so; text that isn't UTF-8 has no contents and says why.",
+  },
   diff: {
     where: "packages/server/src/document-diff.ts",
     note: "Diffs compare a Doc's text projection; a plain file keeps versions but has no projection yet, even text agents read as text. Offering one needs that projection first.",
@@ -135,6 +139,11 @@ export const FILE_SURFACE_RULES: readonly {
     name: "A picture is made of every image the page shows",
     surfaces: ["picture", "page"],
     holds: ({ picture, page }) => (picture === "image") === (page === "image"),
+  },
+  {
+    name: "Text agents read as text has text contents",
+    surfaces: ["contents", "agent"],
+    holds: ({ contents, agent }) => (contents === "text") === (agent === "text"),
   },
   {
     name: "A paste is named for image types only",

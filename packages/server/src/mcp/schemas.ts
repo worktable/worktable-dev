@@ -1,3 +1,8 @@
+import {
+  CONTENTS_DEFAULT_LINES,
+  CONTENTS_MAX_LINES,
+  CONTENTS_PAGE_MAX_BYTES,
+} from "../file-contents-limits.ts"
 import { WORKFLOW_GUIDE_NAMES } from "./workflow-guides.generated.ts"
 import { DrawingsReadInput, DrawingsWriteInput } from "@worktable/types"
 export { DrawingsReadInput, DrawingsWriteInput }
@@ -1039,6 +1044,22 @@ export const DocumentsReadInput = z.strictObject({
     actionSchema("read_source", {
       spaceId: ReadDocInput.shape.spaceId,
       path: z.string().min(1).max(4096),
+      // Taken from any caller; honoured on the preview surface only.
+      offset: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("With source: the first line of the file's contents to return, from 1 (default 1)."),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(CONTENTS_MAX_LINES)
+        .optional()
+        .describe(
+          `With source: how many lines of the file's contents to return (default ${CONTENTS_DEFAULT_LINES}). A page also stops at ${CONTENTS_PAGE_MAX_BYTES / 1024} KiB of text; nextOffset says where the next one starts.`
+        ),
     }),
     actionSchema("versions", {
       spaceId: ReadDocInput.shape.spaceId,

@@ -545,6 +545,9 @@ lock, hashes kept per revision), `staged-file.ts` and `file-uploads.ts`
 - `mcp-documents.test.ts` "sends a file to a one-time upload link and reads it
   back from a download link": a 1.5 MB binary read comes by link with the
   revision a replace is based on.
+- `mcp-documents.test.ts` "reads a text file of any size a page of lines at a
+  time, on the preview surface": a 2.8 MB log pages from its first line to its
+  last.
 - `workspace-snapshot.test.ts` "hashes only files whose identity changed since
   the last capture".
 - `perf-smoke` file reads and stats per request, in
@@ -552,7 +555,11 @@ lock, hashes kept per revision), `staged-file.ts` and `file-uploads.ts`
 
 An agent's read of a file that comes by link alone, a binary file over 1 MiB,
 is decided from its name and size and hashed a chunk at a time for its
-revision, never held whole (`mcp/file-results.ts` `fileReadsAs`). Moving a
+revision, never held whole (`mcp/file-results.ts` `fileReadsAs`). On the MCP
+preview surface, a text, code or table file reads as its contents, a page of
+lines at a time, at any size up to 64 MiB: the file is read at one revision a
+chunk at a time, and only the page's lines are kept, at most 32 KiB of them
+(`file-contents.ts`). Moving a
 plain file names its new revision from a chunked hash after the Space's lock
 is released, and a file past 64 MiB moves without being read. Restoring a
 plain file's version copies it from where it is kept to a staged file, a chunk
@@ -665,6 +672,9 @@ reason for both), `mcp/file-results.ts`.
   unavailable and fences standalone captures to the source revision".
 - `mcp-documents.test.ts` "reads code the type table doesn't list and a
   Dockerfile as text, and an AVIF as an image".
+- `file-contents.test.ts` "pages lines exactly as stored, however the bytes
+  arrive" and "stops a page at its byte limit, and cuts only a line too long
+  for any page".
 - `mcp-document-previews.test.ts` "shows agents a PDF's page and an image
   scaled down, on the preview surface, and says why a file has no preview":
   the picture names the revision it is of, and the released surface is as it
@@ -675,8 +685,12 @@ as agents read them. Plain text and logs are text to both; CSV and TSV are a
 table to people and text to agents, which carries the same content. Source
 code the table doesn't list (such as `.py` or `.go`) and a `Dockerfile` read
 as text to agents, and an AVIF as a PNG they can see (`mcp/file-results.ts`).
-On the MCP preview surface, `worktable_files_render` gives an agent a
-picture of a plain file: one page of a PDF, with its page count, or an image
+On the MCP preview surface, a text, code or table file reads as contents: a
+page of its lines, exactly as stored, with the lines it covers, how many the
+file has, where the next page starts, and what it leaves out, such as a line
+longer than a page, which is cut, or text that isn't UTF-8, which has no
+contents. The file type table's contents surface names each type's reader.
+Also there, `worktable_files_render` gives an agent a picture of a plain file: one page of a PDF, with its page count, or an image
 scaled down, which shows it an image too large to read as one. People see no
 pictures of files yet.
 

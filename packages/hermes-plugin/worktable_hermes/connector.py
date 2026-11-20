@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from typing import Awaitable, Callable, Optional, Protocol
 
 from . import delivery as deliveries
-from .access import Access, resolve_ownership
+from .access import Access, Ownership, Refusal, member_id, resolve_ownership
 from .client import WorktableError, WorktableTools
 from .store import DeliveryStore
 
@@ -58,6 +58,21 @@ def _code(error: BaseException) -> str:
 
 async def _unknown() -> bool:
     return False
+
+
+def _refusal(access: Access, ownership: Ownership, authors: list[dict], name: str) -> Optional[Refusal]:
+    """The first author this turn may not run for. A page of comments is one
+    turn, so a refused author's words would reach it alongside the rest."""
+    for author in authors:
+        judged = (
+            replace(ownership, author_owner=member_id(author["connectedBy"]))
+            if "connectedBy" in author
+            else ownership
+        )
+        refusal = access.refusal(judged, author, name)
+        if refusal:
+            return refusal
+    return None
 
 
 def _public_message(code: str) -> str:
@@ -158,14 +173,14 @@ class Connector:
         try:
             # Before anything reaches Hermes: a refused author's words never
             # start a turn, and the refusal shows on their message.
-            author = deliveries.sender(claimed)
+            authors = deliveries.authors(claimed)
             access = self._access()
             ownership = await resolve_ownership(
                 claimed.get("connectedBy"), access.owner_id, self._is_one_person_worktable
             )
-            refusal = access.refusal(ownership, author, self._name)
+            refusal = _refusal(access, ownership, authors, self._name)
             if refusal:
-                logger.warning("Refused Worktable message %s from %s (%s)", message_id, author["id"], refusal.code)
+                logger.warning("Refused Worktable message %s from %s (%s)", message_id, authors[0]["id"], refusal.code)
                 await self._fail(claimed, False, refusal.code, refusal.message)
                 return
             await self._tools.accept(message_id, lease_id)
@@ -184,7 +199,7 @@ class Connector:
                 if reply is None:
                     # The turn may have waited behind another in its thread.
                     # The rule it meets is the one saved now.
-                    refusal = self._access().refusal(ownership, author, self._name)
+                    refusal = _refusal(self._access(), ownership, authors, self._name)
                     if refusal:
                         logger.warning("Refused Worktable message %s after its wait (%s)", message_id, refusal.code)
                         await self._fail(claimed, False, refusal.code, refusal.message)
@@ -194,9 +209,12 @@ class Connector:
                     return
                 if lost_lease is not None:
                     return
-                if claimed.get("thread", {}).get("version") == 3:
-                    reply = {**reply, "deliveryLeaseId": lease_id}
-                await self._tools.reply(reply)
+                if reply.get("comments"):
+                    await self._tools.reply_to_comments(message_id, lease_id, reply["body"])
+                else:
+                    if claimed.get("thread", {}).get("version") == 3:
+                        reply = {**reply, "deliveryLeaseId": lease_id}
+                    await self._tools.reply(reply)
                 self._store.complete(conversation, event)
             logger.info("Completed Worktable message %s in %s", message_id, claimed["threadId"])
         except TurnError as error:
@@ -224,15 +242,28 @@ class Connector:
                 beating.cancel()
 
     async def _produce(self, claimed: dict, conversation: str, event: str) -> dict:
-        turn = Turn(
-            conversation_id=conversation,
-            message_id=claimed["messageId"],
-            thread_id=claimed["threadId"],
-            thread_title=(claimed.get("thread") or {}).get("title") or "Worktable thread",
-            body=(claimed.get("message") or {}).get("body") or "",
-            sender=deliveries.sender(claimed),
-            group=len((claimed.get("thread") or {}).get("members") or []) > 2,
-        )
+        if deliveries.is_comments(claimed):
+            authors = deliveries.authors(claimed)
+            first = authors[0]
+            turn = Turn(
+                conversation_id=conversation,
+                message_id=claimed["messageId"],
+                thread_id=f"comments:{claimed['page']['path']}",
+                thread_title=claimed["page"].get("title") or claimed["page"]["path"],
+                body=deliveries.comments_text(claimed),
+                sender={"id": first["id"], "kind": first["kind"], "name": first["name"]},
+                group=len({author["id"] for author in authors}) > 1,
+            )
+        else:
+            turn = Turn(
+                conversation_id=conversation,
+                message_id=claimed["messageId"],
+                thread_id=claimed["threadId"],
+                thread_title=(claimed.get("thread") or {}).get("title") or "Worktable thread",
+                body=(claimed.get("message") or {}).get("body") or "",
+                sender=deliveries.sender(claimed),
+                group=len((claimed.get("thread") or {}).get("members") or []) > 2,
+            )
         body: Optional[str] = None
         pending = self._store.pending(conversation)
         if pending and pending.get("event") == event:
@@ -253,6 +284,12 @@ class Connector:
     @staticmethod
     def _reply_shape(claimed: dict) -> dict:
         """What a retained reply needs, kept with the pending turn."""
+        if deliveries.is_comments(claimed):
+            return {
+                "comments": True,
+                "messageId": claimed["messageId"],
+                "location": {"kind": "space", "spaceId": claimed["page"]["spaceId"]},
+            }
         return {
             "messageId": claimed["messageId"],
             "threadId": claimed["threadId"],
@@ -265,6 +302,9 @@ class Connector:
         portable = deliveries.portable_doc_links(
             body, where.get("spaceId", "") if where.get("kind") == "space" else "", self._origin
         )
+        if shape.get("comments"):
+            # Posted on the page's waiting comments under the lease it comes back with.
+            return {"comments": True, "body": portable}
         return deliveries.reply_for(
             shape,
             portable,

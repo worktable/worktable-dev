@@ -53,6 +53,7 @@ class FakeTools:
         self.replies = []
         self.failures = []
         self.messages = []
+        self.comment_replies = []
         self.lose_lease = False
 
     async def participants(self):
@@ -73,6 +74,9 @@ class FakeTools:
     async def reply(self, reply):
         self.replies.append(reply)
         return {"messageId": "msg_reply"}
+
+    async def reply_to_comments(self, message_id, lease_id, body):
+        self.comment_replies.append({"messageId": message_id, "leaseId": lease_id, "body": body})
 
 
 class FakeDispatcher:
@@ -402,3 +406,94 @@ async def test_a_turn_waiting_behind_another_does_not_start_once_hermes_stops():
     # Only the first turn ran, so Hermes' resumed reply still belongs to it.
     assert [turn.message_id for turn in first.turns] == ["msg_1"]
     assert store.pending("atlas/thr_1")["event"] == "atlas/thr_1/msg_1"
+
+
+def page(path, comments, lease_id="lease_page", batch_id="bat_page"):
+    """A page of comments as a runtime claims it; each item is (body, author, connected_by)."""
+    items = [
+        {
+            "annotationId": f"ann_{path}_{index}",
+            "requestId": f"req_{path}_{index}",
+            "body": body,
+            "from": {
+                "id": author,
+                "kind": MEMBERS.get(author, ("agent", author))[0],
+                "name": MEMBERS.get(author, ("agent", author))[1],
+                **({"connectedBy": connected_by} if connected_by is not ... else {}),
+            },
+            "replies": [],
+        }
+        for index, (body, author, connected_by) in enumerate(comments)
+    ]
+    return {
+        "kind": "comments",
+        "batchId": batch_id,
+        "messageId": items[0]["requestId"],
+        "threadId": items[0]["annotationId"],
+        "location": {"kind": "space", "spaceId": "atlas"},
+        "leaseId": lease_id,
+        "leaseExpiresAt": "2026-10-07T00:00:00Z",
+        "identityId": "idt_hermes",
+        "page": {"spaceId": "atlas", "path": path, "title": f"Page {path}"},
+        "comments": items,
+        "connectedBy": said(),
+    }
+
+
+OTHER_AGENT = "ptc_rook_agent_01"
+
+
+async def test_answers_a_page_of_comments_in_one_turn_and_runs_none_of_a_page_with_an_author_it_refuses():
+    tools, dispatcher = FakeTools(), FakeDispatcher(["Shortened slide one and fixed the title."])
+    subject = connector(tools, dispatcher)
+
+    await subject.handle(page("deck", [("Shorten slide one.", OWNER, ...), ("Fix the title.", OWNER, ...)]))
+    # The owner's agent leads; another member's agent follows it.
+    await subject.handle(
+        page(
+            "plan",
+            [("Check the totals.", ATLAS, OWNER), ("Rewrite it all.", OTHER_AGENT, "ptc_other_member1")],
+            lease_id="lease_plan",
+            batch_id="bat_plan",
+        )
+    )
+
+    # One turn for the page, reading every comment, in the page's own chat.
+    assert len(dispatcher.turns) == 1
+    turn = dispatcher.turns[0]
+    assert turn.conversation_id == "atlas/comments/deck"
+    assert "Shorten slide one." in turn.body and "Fix the title." in turn.body
+    assert turn.sender["id"] == OWNER
+    assert tools.comment_replies == [
+        {"messageId": "req_deck_0", "leaseId": "lease_page", "body": "Shortened slide one and fixed the title."}
+    ]
+    assert tools.replies == []
+    assert tools.failures == [{"messageId": "req_plan_0", "retryable": False, "code": "AGENT_NOT_TRUSTED"}]
+
+
+async def test_a_page_whose_lease_ran_out_posts_its_kept_answer_when_it_comes_back_smaller():
+    tools = FakeTools()
+    store = DeliveryStore(MemoryState())
+    slow = FakeDispatcher(["Done: both."])
+    slow.gate = asyncio.Event()
+    running = asyncio.create_task(
+        connector(tools, slow, store, heartbeat_seconds=0.01).handle(
+            page("deck", [("Shorten slide one.", OWNER, ...), ("Fix the title.", OWNER, ...)])
+        )
+    )
+    await asyncio.sleep(0.005)
+    tools.lose_lease = True
+    await asyncio.sleep(0.05)
+    slow.gate.set()
+    await running
+    assert tools.comment_replies == [] and tools.failures == []
+
+    # The agent answered the second comment itself; the batch comes back
+    # with the first alone, under a new lease.
+    tools.lose_lease = False
+    again = FakeDispatcher()
+    await connector(tools, again, store).handle(
+        page("deck", [("Shorten slide one.", OWNER, ...)], lease_id="lease_again")
+    )
+    assert again.turns == []
+    assert tools.comment_replies == [{"messageId": "req_deck_0", "leaseId": "lease_again", "body": "Done: both."}]

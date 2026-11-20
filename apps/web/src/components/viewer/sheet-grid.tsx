@@ -1,7 +1,9 @@
 import {
+  memo,
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type PointerEvent,
 } from "react"
@@ -20,7 +22,12 @@ const LETTER_HEIGHT = 28
 /** The column names' row. */
 const NAME_HEIGHT = 36
 /** Rows drawn beyond each edge of the view, so a quick scroll shows no gap. */
-const OVERSCAN = 12
+const OVERSCAN = 8
+/**
+ * The drawn rows move in blocks of this many, so scrolling redraws the grid
+ * once a block, not on every frame.
+ */
+const BLOCK_ROWS = 8
 /** Rows measured to size the columns; enough to see a column's usual width. */
 const SAMPLE_ROWS = 200
 /** Cells measured at most, so a very wide file sizes quickly. */
@@ -44,13 +51,18 @@ type Sort = { column: number; direction: "asc" | "desc" } | null
 /**
  * A row's shading: every other row striped with the inset fill, and the
  * hovered row a step stronger than any stripe, the same on every row, so a
- * hovered row never reads as a stripe. The row sets the two tints; each
- * cell lays them over whatever is under it.
+ * hovered row never reads as a stripe. The row paints both as plain fills
+ * behind its cells; the hover's second layer is a gradient on that one row
+ * only, since a gradient on every cell made scrolling slow to paint.
  */
 const ROW_TINTS =
-  "group/row [--sheet-hover:transparent] [--sheet-stripe:transparent] data-[striped]:[--sheet-stripe:var(--surface-inset)] hover:[--sheet-hover:var(--surface-hover)] hover:[--sheet-stripe:var(--surface-inset)]"
-const TINTED =
-  "bg-[image:linear-gradient(var(--sheet-hover),var(--sheet-hover)),linear-gradient(var(--sheet-stripe),var(--sheet-stripe))]"
+  "group/row [--sheet-hover:transparent] [--sheet-stripe:transparent] data-[striped]:[--sheet-stripe:var(--surface-inset)] hover:[--sheet-hover:var(--surface-hover)] hover:[--sheet-stripe:var(--surface-inset)] bg-(--sheet-stripe) hover:bg-[image:linear-gradient(var(--surface-hover),var(--surface-hover))]"
+/**
+ * The row number stays opaque as cells scroll under it, so it lays the
+ * row's two tints over the card as plain fills of its own.
+ */
+const GUTTER_TINTS =
+  "bg-card before:pointer-events-none before:absolute before:inset-0 before:bg-(--sheet-stripe) before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:bg-(--sheet-hover) after:content-['']"
 
 /**
  * A grid of text cells that fills its container and scrolls both ways, in
@@ -100,10 +112,22 @@ export function SheetGrid({
     [rows, columnCount]
   )
   const [sort, setSort] = useState<Sort>(null)
-  const order = useMemo(
-    () => sortedRows(rows, shownRows, sort, numeric),
-    [rows, shownRows, sort, numeric]
-  )
+  // Each column's sort keys, made once per file the first time it sorts.
+  const keys = useRef(new Map<number, SortKeys>())
+  const keysOf = useRef(rows)
+  if (keysOf.current !== rows) {
+    keysOf.current = rows
+    keys.current = new Map()
+  }
+  const order = useMemo(() => {
+    if (!sort) return shownRows
+    let column = keys.current.get(sort.column)
+    if (!column) {
+      column = sortKeys(rows, sort.column, numeric[sort.column] === true)
+      keys.current.set(sort.column, column)
+    }
+    return sortedRows(shownRows, column, sort.direction)
+  }, [rows, shownRows, sort, numeric])
 
   const numberWidth = 20 + String(rows.length).length * 8
   const headerHeight = LETTER_HEIGHT + NAME_HEIGHT
@@ -118,13 +142,14 @@ export function SheetGrid({
     view.top,
     Math.max(0, headerHeight + order.length * ROW_HEIGHT - view.height)
   )
+  // The view's top is snapped to a block, so draw a block further down too.
   const first = Math.max(
     0,
     Math.floor((top - headerHeight) / ROW_HEIGHT) - OVERSCAN
   )
   const end = Math.min(
     order.length,
-    Math.ceil((top + view.height) / ROW_HEIGHT) + OVERSCAN
+    Math.ceil((top + view.height) / ROW_HEIGHT) + BLOCK_ROWS + OVERSCAN
   )
   const before = first * ROW_HEIGHT
   const after = Math.max(0, order.length - end) * ROW_HEIGHT
@@ -148,7 +173,9 @@ export function SheetGrid({
       // Arrow keys and Page Down scroll the grid once it has focus.
       tabIndex={0}
       aria-label={label}
-      className="h-full min-h-0 overflow-auto overscroll-contain outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset"
+      // Opaque, so the browser can scroll what it already painted instead
+      // of painting the grid again on every frame.
+      className="h-full min-h-0 overflow-auto overscroll-contain bg-card outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset"
     >
       <table
         aria-rowcount={order.length + 1}
@@ -261,46 +288,16 @@ export function SheetGrid({
               <td style={{ height: before }} colSpan={columnCount + 1} />
             </tr>
           )}
-          {order.slice(first, end).map((rowIndex, offset) => {
-            const row = rows[rowIndex]!
-            return (
-              <tr
-                key={rowIndex}
-                aria-rowindex={first + offset + 2}
-                // Every other row as shown is striped, so stripes stay even
-                // after sorting or searching.
-                data-striped={(first + offset) % 2 === 1 ? "" : undefined}
-                className={ROW_TINTS}
-              >
-                <td
-                  // The row numbers stay opaque as cells scroll under them.
-                  className={cn(
-                    TINTED,
-                    "sticky left-0 z-10 border-r border-b border-border/60 bg-card pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums transition-colors select-none group-hover/row:text-foreground"
-                  )}
-                  style={{ height: ROW_HEIGHT }}
-                >
-                  {rowIndex + 1}
-                </td>
-                {columns.map((index) => {
-                  const value = row[index] ?? ""
-                  return (
-                    <td
-                      key={index}
-                      title={value || undefined}
-                      className={cn(
-                        TINTED,
-                        "truncate border-r border-b border-r-border/40 border-b-border/60 px-3 whitespace-nowrap",
-                        numeric[index] && "text-right tabular-nums"
-                      )}
-                    >
-                      {value}
-                    </td>
-                  )
-                })}
-              </tr>
-            )
-          })}
+          {order.slice(first, end).map((rowIndex, offset) => (
+            <SheetRow
+              key={rowIndex}
+              row={rows[rowIndex]!}
+              number={rowIndex + 1}
+              position={first + offset}
+              columnCount={columnCount}
+              numeric={numeric}
+            />
+          ))}
           {after > 0 && (
             <tr aria-hidden>
               <td style={{ height: after }} colSpan={columnCount + 1} />
@@ -311,6 +308,64 @@ export function SheetGrid({
     </div>
   )
 }
+
+/**
+ * One row of the grid. A row already drawn isn't drawn again as the grid
+ * scrolls; only rows coming into view are.
+ */
+const SheetRow = memo(function SheetRow({
+  row,
+  number,
+  position,
+  columnCount,
+  numeric,
+}: {
+  row: readonly string[]
+  /** The row's number in the file, whatever order it shows in. */
+  number: number
+  /** Where it shows, which sets its stripe. */
+  position: number
+  columnCount: number
+  numeric: readonly boolean[]
+}) {
+  const cells = []
+  for (let index = 0; index < columnCount; index += 1) {
+    const value = row[index] ?? ""
+    cells.push(
+      <td
+        key={index}
+        title={value || undefined}
+        className={
+          numeric[index]
+            ? "truncate border-r border-b border-r-border/40 border-b-border/60 px-3 text-right whitespace-nowrap tabular-nums"
+            : "truncate border-r border-b border-r-border/40 border-b-border/60 px-3 whitespace-nowrap"
+        }
+      >
+        {value}
+      </td>
+    )
+  }
+  return (
+    <tr
+      aria-rowindex={position + 2}
+      // Every other row as shown is striped, so stripes stay even after
+      // sorting or searching.
+      data-striped={position % 2 === 1 ? "" : undefined}
+      className={ROW_TINTS}
+    >
+      <td
+        className={cn(
+          GUTTER_TINTS,
+          "sticky left-0 z-10 border-r border-b border-border/60 pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums transition-colors select-none group-hover/row:text-foreground"
+        )}
+        style={{ height: ROW_HEIGHT }}
+      >
+        {number}
+      </td>
+      {cells}
+    </tr>
+  )
+})
 
 /** A column's letters, as a spreadsheet names it: A to Z, then AA, AB… */
 function columnLetter(index: number): string {
@@ -351,44 +406,107 @@ const COLLATOR = new Intl.Collator(undefined, {
 })
 
 /**
- * The shown rows in the chosen order. In a number column, numbers compare
- * as numbers and come before any text further down that isn't one, such
- * as "N/A". Other text compares as a person reads it, so "Item 9" comes
- * before "Item 10" and dates written year first sort by date. Blank cells
- * go last either way, and rows that compare equal keep the file's order.
+ * A column's values made ready to compare, once per column: numbers by
+ * value, text by rank. Comparing two cells is then a subtraction, so a
+ * sort of tens of thousands of rows takes a moment, not a second.
  */
-function sortedRows(
-  rows: readonly (readonly string[])[],
-  shown: readonly number[],
-  sort: Sort,
-  numeric: readonly boolean[]
-): readonly number[] {
-  if (!sort) return shown
-  const { column, direction } = sort
-  const sign = direction === "asc" ? 1 : -1
-  const asNumber = numeric[column] === true
-  return [...shown].sort((left, right) => {
-    const a = rows[left]![column]?.trim() ?? ""
-    const b = rows[right]![column]?.trim() ?? ""
-    if (!a || !b) return a === b ? left - right : a ? -1 : 1
-    const compared = asNumber ? compareNumbers(a, b) : COLLATOR.compare(a, b)
-    return compared === 0 ? left - right : compared * sign
-  })
+interface SortKeys {
+  /** A number column's values; NaN where a cell isn't a number. */
+  numbers?: Float64Array
+  /** Each cell's place among the column's text, as a person reads it. */
+  ranks: Int32Array
+  /** Cells left blank. */
+  blank: Uint8Array
 }
 
 /**
- * Two cells of a number column: numbers by value, a number before text,
- * and text against text as a person reads it. Which columns hold numbers
- * is judged from the first rows, so a later cell may not be one.
+ * Ranks a column's text: "Item 9" before "Item 10", year-first dates by
+ * date, case ignored. Plain ASCII text is ranked by a key compared code
+ * point by code point, with each run of digits padded so numbers compare
+ * by value; other text is ranked by the locale's collation.
  */
-function compareNumbers(a: string, b: string): number {
-  const x = NUMBER.test(a) ? Number(a) : Number.NaN
-  const y = NUMBER.test(b) ? Number(b) : Number.NaN
-  const xNumber = Number.isFinite(x)
-  const yNumber = Number.isFinite(y)
-  if (xNumber && yNumber) return x - y
-  if (xNumber !== yNumber) return xNumber ? -1 : 1
-  return COLLATOR.compare(a, b)
+function sortKeys(
+  rows: readonly (readonly string[])[],
+  column: number,
+  asNumber: boolean
+): SortKeys {
+  const values = rows.map((row) => row[column]?.trim() ?? "")
+  const blank = Uint8Array.from(values, (value) => (value ? 0 : 1))
+  const numbers = asNumber
+    ? Float64Array.from(values, (value) =>
+        NUMBER.test(value) ? Number(value) : Number.NaN
+      )
+    : undefined
+  const distinct = [...new Set(values)]
+  const ascii = distinct.every((value) => /^[\x20-\x7e]*$/.test(value))
+  if (ascii) {
+    const keyed = distinct.map((value) => ({
+      value,
+      key: value
+        .toLowerCase()
+        .replace(/\d+/g, (digits) =>
+          digits.replace(/^0+(?=\d)/, "").padStart(24, "0")
+        ),
+    }))
+    keyed.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+    distinct.splice(0, distinct.length, ...keyed.map((entry) => entry.value))
+  } else {
+    distinct.sort(COLLATOR.compare)
+  }
+  const rank = new Map<string, number>()
+  let place = 0
+  for (let index = 0; index < distinct.length; index += 1) {
+    // Values a person reads as the same share a place.
+    if (
+      index > 0 &&
+      COLLATOR.compare(distinct[index - 1]!, distinct[index]!) !== 0
+    ) {
+      place += 1
+    }
+    rank.set(distinct[index]!, place)
+  }
+  const ranks = Int32Array.from(values, (value) => rank.get(value) ?? 0)
+  return numbers ? { numbers, ranks, blank } : { ranks, blank }
+}
+
+/**
+ * The shown rows in the chosen order. In a number column, numbers compare
+ * by value and come before any text that isn't one, such as "N/A". Blank
+ * cells go last either way, and rows that compare equal keep the file's
+ * order.
+ */
+function sortedRows(
+  shown: readonly number[],
+  keys: SortKeys,
+  direction: "asc" | "desc"
+): readonly number[] {
+  const sign = direction === "asc" ? 1 : -1
+  const { numbers, ranks, blank } = keys
+  return [...shown].sort((left, right) => {
+    const leftBlank = blank[left]!
+    const rightBlank = blank[right]!
+    if (leftBlank || rightBlank) {
+      return leftBlank === rightBlank ? left - right : leftBlank - rightBlank
+    }
+    let compared = 0
+    if (numbers) {
+      const x = numbers[left]!
+      const y = numbers[right]!
+      const xNumber = x === x
+      const yNumber = y === y
+      compared =
+        xNumber && yNumber
+          ? x - y
+          : xNumber !== yNumber
+            ? xNumber
+              ? -1
+              : 1
+            : ranks[left]! - ranks[right]!
+    } else {
+      compared = ranks[left]! - ranks[right]!
+    }
+    return compared === 0 ? left - right : compared * sign
+  })
 }
 
 /**
@@ -460,13 +578,16 @@ function useScrollView(element: HTMLElement | null): {
   useLayoutEffect(() => {
     if (!element) return
     let frame = 0
+    const block = BLOCK_ROWS * ROW_HEIGHT
     const read = () => {
       frame = 0
+      // Snapped to blocks of rows, so the grid redraws once a block.
+      const top = Math.floor(element.scrollTop / block) * block
+      const height = Math.ceil(element.clientHeight / block) * block
       setView((current) =>
-        current.top === element.scrollTop &&
-        current.height === element.clientHeight
+        current.top === top && current.height === height
           ? current
-          : { top: element.scrollTop, height: element.clientHeight }
+          : { top, height }
       )
     }
     const schedule = () => {

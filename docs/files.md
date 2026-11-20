@@ -586,7 +586,10 @@ and count toward neither, so disk use can briefly exceed both. Writes through
 Worktable can't pass either; each says how many of its bytes are people's
 files. Writes on disk are counted. A write past the limit for files is refused
 at once, since removing history can't make room for files. At the total limit
-the oldest history is pruned first, visibly. Pruning never removes
+the oldest history is pruned first, visibly. With the files past about 83% of
+the limit and most of them replaced, the versions replaces must keep can fill
+the history allowance; a replace is then refused as "close to" the limit,
+where Settings already says so. Pruning never removes
 an item's current version or the version that one replaced, so the last
 change to anything can be undone; a replace that would need the version it
 replaces gone is refused instead. A write is refused (507 `STORAGE_LIMIT`)

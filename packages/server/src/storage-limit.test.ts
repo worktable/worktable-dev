@@ -358,7 +358,8 @@ describe("storage limit", () => {
     expect(refused).toBeInstanceOf(StorageLimitError)
     expect(refused.code).toBe("STORAGE_LIMIT")
     expect(refused.message).toBe(
-      `This Worktable is at its ${formatStorageBytes(storageLimitBytes())} limit. Delete something to make room.`
+      // The files fit; what Worktable keeps with them doesn't.
+      `This Worktable is close to its ${formatStorageBytes(storageLimitBytes())} limit. Delete something to make room.`
     )
     // Over REST, the server answers it with 507, the limit and what is used.
     const api = new Hono()
@@ -723,6 +724,7 @@ describe("storage limit", () => {
     const before = await generations(kept)
     const refused = await createDoc("too-much", 16 * KB).catch((error) => error)
     expect(refused).toBeInstanceOf(StorageLimitError)
+    expect(refused.message).toContain("is at its")
     expect(refused.details.limitBytes).toBe(storageLimitBytes())
     expect(await generations(kept)).toEqual(before)
     expect(storageSummary()!.pruned).toBeNull()

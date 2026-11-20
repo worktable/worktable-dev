@@ -163,11 +163,14 @@ export class StorageLimitError extends Error {
   }
 }
 
-export function storageLimitMessage(limitBytes = storageLimitBytes()): string {
+export function storageLimitMessage(
+  limitBytes = storageLimitBytes(),
+  where: "at" | "close to" = "at"
+): string {
   const limit = formatStorageBytes(limitBytes)
   return isHosted()
-    ? `This Worktable is at its ${limit} limit. Delete something, or ask the owner to raise the limit.`
-    : `This Worktable is at its ${limit} limit. Delete something to make room.`
+    ? `This Worktable is ${where} its ${limit} limit. Delete something, or ask the owner to raise the limit.`
+    : `This Worktable is ${where} its ${limit} limit. Delete something to make room.`
 }
 
 /** The REST body for a refusal. */
@@ -285,7 +288,18 @@ export function admitStorageWrite(
   }
   const ceiling = storageTotalLimitBytes(limit) + grace
   if (bytes > 0 && now.bytes + bytes > ceiling) {
-    throw new StorageLimitError(limit, now.files, undefined, bytes, ceiling)
+    // The files fit, but what Worktable keeps with them doesn't, even after
+    // pruning: the versions replaces must keep fill the history allowance.
+    // That happens only with the files past about 83% of the limit (three
+    // times the files, with their current and replaced versions, passes 2.5
+    // times the limit), where Settings already says the Worktable is close.
+    throw new StorageLimitError(
+      limit,
+      now.files,
+      storageLimitMessage(limit, "close to"),
+      bytes,
+      ceiling
+    )
   }
   return reserve(Math.max(0, bytes), Math.max(0, files))
 }

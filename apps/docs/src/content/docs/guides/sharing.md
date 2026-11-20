@@ -17,6 +17,10 @@ To change it, open the link's menu and choose **Edit Link**.
 
 - **More links → New Link** gives an audience its own link, label and expiry.
   Revoking one does not affect the others.
+- **QR Code**, beside **Copy**, shows the link as a QR code. Download it, copy
+  it as an image, or choose **Full Screen** to show it to a room with the link
+  written under it. Other links have **QR Code** in their menu. Copy Image
+  needs Worktable on an `https` address, and iPhones don't offer Full Screen.
 - **Password** makes readers enter a password first. Changing it asks readers
   who already unlocked the link for the new one.
 - Renaming or moving a document keeps its links working.

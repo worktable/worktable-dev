@@ -451,6 +451,17 @@ test("creates, copies, edits and revokes Doc links from the header action", asyn
   await page.getByRole("menuitem", { name: "Copy Link" }).click()
   await expect.poll(clipboard).toBe(SHARED_URL)
 
+  // Its QR code opens under it, to save as a picture named for the Doc.
+  await dialog.getByRole("button", { name: "QR Code", exact: true }).click()
+  await expect(
+    dialog.getByRole("img", { name: "QR code for this link" })
+  ).toBeVisible()
+  const picture = page.waitForEvent("download")
+  await dialog.getByRole("button", { name: "Download PNG" }).click()
+  expect((await picture).suggestedFilename()).toBe("Launch-plan-qr.png")
+  await dialog.getByRole("button", { name: "QR Code", exact: true }).click()
+  await expect(dialog.getByRole("img")).toHaveCount(0)
+
   // Its settings change it in place.
   await expires.click()
   await dialog.getByRole("combobox", { name: "Expires", exact: true }).click()

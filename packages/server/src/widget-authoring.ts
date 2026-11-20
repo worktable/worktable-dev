@@ -725,6 +725,48 @@ const ui={
 };
 window.worktable={version:cfg.runtimeVersion,records,state,navigation,ui,diagnostics:{list:ui.getDiagnostics,report:ui.reportDiagnostic},toast:ui.notify};
 ${WIDGET_COMMENT_RUNTIME}
+// Where the reader is: the address fragment (#3) and the scroll position.
+// Worktable loads a page again for a new revision; it opens the new one at
+// the same fragment and sends the scroll position back.
+(function(){
+  let last='',timer=0;
+  function report(){
+    const hash=String(location.hash||'');
+    const place={hash:hash.length<=256?hash:'',x:Math.round(window.scrollX),y:Math.round(window.scrollY)};
+    const key=place.hash+' '+place.x+' '+place.y;
+    if(key===last) return;
+    last=key;
+    postToParent({type:'worktable.place',widgetId:cfg.widgetId,spaceId:cfg.spaceId,navigationToken:navigationToken,place:place},'*');
+  }
+  // At once, then at most every 100 ms while it keeps scrolling: a new
+  // version can arrive right after the reader stops.
+  function soon(){if(timer) return;report();timer=setTimeout(function(){timer=0;report()},100)}
+  window.addEventListener('scroll',soon,{passive:true});
+  window.addEventListener('hashchange',report);
+  for(const name of ['pushState','replaceState']){
+    const original=history[name];
+    if(typeof original!=='function') continue;
+    history[name]=function(){const result=original.apply(this,arguments);report();return result};
+  }
+  window.addEventListener('message',function(event){
+    if(event.source!==window.parent) return;
+    const d=event.data;
+    if(!d||d.type!=='worktable.place.restore'||!d.place) return;
+    const x=Number(d.place.x)||0,y=Number(d.place.y)||0;
+    // The page may still be laying out: try for a moment, and stop when the
+    // reader moves first.
+    let tries=0,stopped=false;
+    const stop=function(){stopped=true};
+    for(const type of ['wheel','touchstart','keydown','pointerdown']) window.addEventListener(type,stop,{once:true,passive:true});
+    function restore(){
+      if(stopped) return;
+      window.scrollTo(x,y);
+      if((Math.abs(window.scrollY-y)>2||Math.abs(window.scrollX-x)>2)&&tries++<40) setTimeout(restore,50);
+    }
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',restore,{once:true});
+    else restore();
+  });
+})();
 // Interaction ping: user gestures inside the sandboxed frame never bubble to
 // the parent window, so inferred review ("reading = review" needs dwell AND an
 // interaction) would otherwise never fire for HTML docs. Post a throttled,

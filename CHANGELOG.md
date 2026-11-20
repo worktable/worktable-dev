@@ -16,6 +16,7 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
+- **HTML Docs:** When an agent saves a new version of a page you have open, it opens where you were: the same scroll position, and a deck on the same slide if it keeps the slide number in its address. The loading placeholder no longer covers the page while the new version loads, and a deck's arrow keys work as soon as it fills the screen.
 - **Share links:** A link made under More links can take visitor comments, with its own Allow comments switch. Each link says when comments are on.
 
 ### Fixed

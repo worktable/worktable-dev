@@ -75,6 +75,7 @@ export default function PdfFileView({
   fileUrl,
   byteLength,
   leading,
+  onDismiss,
 }: {
   spaceId: string
   path: string
@@ -84,6 +85,8 @@ export default function PdfFileView({
   byteLength?: number | undefined
   /** What the page says about the file, before the viewer's tools. */
   leading?: ReactNode
+  /** Escape while reading, when nothing else in the viewer is open. */
+  onDismiss?: () => void
 }) {
   const queryClient = useQueryClient()
   const frame = useRef<ViewerFrameHandle>(null)
@@ -418,7 +421,10 @@ export default function PdfFileView({
             onRail={setRail}
             onKey={(key) => {
               if (key === "find") openFind()
-              else if (key === "Escape" && find !== null) closeFind()
+              else if (key === "Escape") {
+                if (find !== null) closeFind()
+                else onDismiss?.()
+              }
             }}
           />
         </div>

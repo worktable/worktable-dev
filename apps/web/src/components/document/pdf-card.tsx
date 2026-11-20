@@ -5,7 +5,13 @@ import { FileText } from "lucide-react"
  * full screen (PdfViewControl), and a link to its page without script.
  */
 export function PdfCard({ target, href }: { target: string; href: string }) {
-  const name = decodeURIComponent(target.slice(target.lastIndexOf("/") + 1))
+  const authored = target.slice(target.lastIndexOf("/") + 1)
+  let name = authored
+  try {
+    name = decodeURIComponent(authored)
+  } catch {
+    // A name that isn't validly encoded shows as written.
+  }
   return (
     <a
       href={href}

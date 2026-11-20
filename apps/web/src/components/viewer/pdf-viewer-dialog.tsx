@@ -68,6 +68,7 @@ export default function PdfViewerDialog({
             path={pdf.path}
             name={name}
             fileUrl={fileSourceUrl(pdf.spaceId, pdf.path, pdf.version, at)}
+            onDismiss={() => onOpenChange(false)}
           />
         </div>
       </div>

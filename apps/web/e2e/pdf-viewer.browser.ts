@@ -294,6 +294,15 @@ test("a PDF in a Doc opens full screen, and on to its page", async ({
       .getByText("First page of the report")
   ).toBeVisible({ timeout: 60_000 })
   await expect(viewer.getByText("of 3")).toBeVisible()
+
+  // Escape while reading, with focus inside the PDF, goes back to the Doc.
+  const reading = viewer.frameLocator('iframe[data-viewer-frame="pdf"]')
+  await reading.getByText("First page of the report").click()
+  await page.keyboard.press("Escape")
+  await expect(viewer).toBeHidden()
+
+  await page.getByText("report.pdf", { exact: true }).click()
+  await expect(viewer.getByText("of 3")).toBeVisible({ timeout: 60_000 })
   await viewer.getByLabel("Open file page").click()
   await expect(page).toHaveURL(/\/documents\/report\.pdf$/)
   await expect(page.getByRole("dialog")).toBeHidden()

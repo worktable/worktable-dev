@@ -1,6 +1,7 @@
 import { lazy, useEffect, useState, type RefObject } from "react"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { filePolicy } from "@worktable/types"
+import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { sourceFileOf } from "@/lib/file-embeds"
 import type { ViewerPdf } from "./pdf-viewer-dialog"
 
@@ -44,12 +45,14 @@ export function PdfViewControl({
   /** Where a file the Doc names loads from, at the version its page gives. */
   resolve: (ref: string) => string
 }) {
+  // Where the viewer is off, a card stays a link to the file's page.
+  const viewerOn = useDeploymentInfo().data?.capabilities.pdfViewer === true
   const [pdf, setPdf] = useState<ViewerPdf | null>(null)
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
     const frame = frameRef.current
-    if (!frame) return
+    if (!frame || !viewerOn) return
     const show = (event: Event) => {
       const found = pdfOf(event.target as Element | null, resolve)
       if (!found) return
@@ -77,7 +80,7 @@ export function PdfViewControl({
       frame.removeEventListener("click", click, true)
       frame.removeEventListener("keydown", key)
     }
-  }, [frameRef, resolve])
+  }, [frameRef, resolve, viewerOn])
 
   return (
     <DeferredMount active={open}>

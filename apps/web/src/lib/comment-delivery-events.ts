@@ -15,10 +15,16 @@ export function refreshCommentDelivery(
     queryClient
       .getQueryCache()
       .findAll({ queryKey: ["annotations"] })
-      .filter((query) =>
-        (query.state.data as { annotations?: Annotation[] } | undefined)
-          ?.annotations?.some((annotation) => annotation.id === annotationId)
-      )
+      .filter((query) => {
+        const data = query.state.data as
+          | { annotations?: Annotation[] }
+          | undefined
+        // A list still on its first read may answer with the old state.
+        if (!data) return query.state.fetchStatus === "fetching"
+        return data.annotations?.some(
+          (annotation) => annotation.id === annotationId
+        )
+      })
       .map((query) => ({ queryKey: query.queryKey, exact: true }))
   )
 }

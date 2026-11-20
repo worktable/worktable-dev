@@ -16,6 +16,7 @@ import { recordIndex } from "./record-index.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import { closePreviewBrowsers } from "./document-preview-browser.ts"
 import { OpenFileRevision } from "./file-revision.ts"
+import { MAX_DOCUMENT_PREVIEW_PIXELS } from "@worktable/types"
 import type { McpSurface } from "./mcp/surface.ts"
 import { withSyntheticPreview } from "./test-support/synthetic-preview.ts"
 import { noteSpaceChanged } from "./workspace-read-model.ts"
@@ -223,6 +224,14 @@ it("shows agents a PDF's page and an image scaled down, on the preview surface, 
       .png()
       .toBuffer()
   )
+  await writeFile(
+    join(docs, "tall.png"),
+    await sharp({
+      create: { width: 1000, height: 8000, channels: 3, background: { r: 30, g: 30, b: 30 } },
+    })
+      .png()
+      .toBuffer()
+  )
   await writeFile(join(docs, "bundle.zip"), new Uint8Array([80, 75, 5, 6, ...new Array(18).fill(0)]))
   noteSpaceChanged("preview")
 
@@ -296,6 +305,14 @@ it("shows agents a PDF's page and an image scaled down, on the preview surface, 
   expect(
     preview(await render({ path: "files/photo.png", preview: { width: 2048 } }))
   ).toMatchObject({ width: 2000, height: 1000 })
+  // A tall one is drawn smaller than asked, to stay within a picture's
+  // pixel limit, and says so.
+  const tall = preview(await render({ path: "files/tall.png" }))
+  expect(tall).toMatchObject({ status: "ready", warnings: [expect.stringContaining("limit")] })
+  expect((tall["width"] as number) * (tall["height"] as number)).toBeLessThanOrEqual(
+    MAX_DOCUMENT_PREVIEW_PIXELS
+  )
+  expect((tall["height"] as number) / (tall["width"] as number)).toBeCloseTo(8, 1)
   // One whose header declares a size past the limits is never decoded.
   expect(preview(await render({ path: "files/wide.png" }))).toMatchObject({
     status: "unavailable",

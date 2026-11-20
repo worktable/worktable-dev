@@ -441,8 +441,9 @@ describe("released tool surface", () => {
     const released = (await listTools()).tools
     const preview = (await listTools("preview")).tools
     // Waiting in preview: the thread list leaves archived threads out unless
-    // asked. Every other tool is listed the same on both.
-    const waiting = ["worktable_threads_read"]
+    // asked, and a render takes a PDF's page. Every other tool is listed the
+    // same on both.
+    const waiting = ["worktable_threads_read", "worktable_files_render"]
     const settled = (tools: typeof released) =>
       tools.filter((tool) => !waiting.includes(tool.name))
     expect(settled(preview)).toEqual(settled(released))

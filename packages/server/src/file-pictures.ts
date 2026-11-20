@@ -155,7 +155,8 @@ export async function renderFilePicture(
         type,
         width,
         maxSide: IMAGE_MAX_SIDE,
-        maxPixels: IMAGE_MAX_PIXELS,
+        maxSourcePixels: IMAGE_MAX_PIXELS,
+        maxPixels: MAX_DOCUMENT_PREVIEW_PIXELS,
         maxBytes: MAX_DOCUMENT_PREVIEW_BYTES,
         piece: READ_PIECE_BYTES,
       })
@@ -369,6 +370,7 @@ async function drawImage(input: {
   type: string
   width: number
   maxSide: number
+  maxSourcePixels: number
   maxPixels: number
   maxBytes: number
   piece: number
@@ -395,15 +397,25 @@ async function drawImage(input: {
       bitmap.height === 0 ||
       bitmap.width > input.maxSide ||
       bitmap.height > input.maxSide ||
-      bitmap.width * bitmap.height > input.maxPixels
+      bitmap.width * bitmap.height > input.maxSourcePixels
     )
       return { ok: false, code: "damaged" }
-    // Never drawn larger than it is.
+    // Never drawn larger than it is, nor past the picture's pixel limit,
+    // which a tall image scaled by its width alone would pass.
     const wanted = Math.min(1, input.width / bitmap.width)
     let scale = wanted
+    const area = bitmap.width * bitmap.height * scale * scale
+    if (area > input.maxPixels) scale *= Math.sqrt(input.maxPixels / area)
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const width = Math.max(1, Math.round(bitmap.width * scale))
-      const height = Math.max(1, Math.round(bitmap.height * scale))
+      // Rounding never takes it past the pixel limit.
+      const height = Math.max(
+        1,
+        Math.min(
+          Math.round(bitmap.height * scale),
+          Math.floor(input.maxPixels / width)
+        )
+      )
       const canvas = new OffscreenCanvas(width, height)
       const context = canvas.getContext("2d")
       if (!context) return { ok: false, code: "damaged" }
@@ -415,7 +427,13 @@ async function drawImage(input: {
         let text = ""
         for (let index = 0; index < output.length; index += 0x8000)
           text += String.fromCharCode(...output.subarray(index, index + 0x8000))
-        return { ok: true, data: btoa(text), width, height, shrunk: scale < wanted }
+        return {
+          ok: true,
+          data: btoa(text),
+          width,
+          height,
+          shrunk: scale < wanted * 0.999,
+        }
       }
       scale *= 0.7
     }
@@ -460,7 +478,9 @@ async function drawPdfPage(input: {
   const loading = pdfjs.getDocument({
     range: transport,
     length: input.size,
-    rangeChunkSize: 256 * 1024,
+    // Small ranges: a PDF that lists its pages flat has every page looked
+    // at as it opens, and larger ranges would then pull in most of the file.
+    rangeChunkSize: 64 * 1024,
     disableAutoFetch: true,
     disableStream: true,
     disableWorkerRendering: true,

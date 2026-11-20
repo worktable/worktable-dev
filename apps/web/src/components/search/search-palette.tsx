@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   Library as LibraryIcon,
   MessageCircle,
+  ChevronDown,
   Search,
   Settings,
   X,
@@ -32,18 +33,15 @@ import {
   DialogTitle,
 } from "@worktable/ui/components/dialog"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "@worktable/ui/components/select"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@worktable/ui/components/dropdown-menu"
 import { cn } from "@worktable/ui/lib/utils"
-import {
-  DocLocation,
-  DocumentFormatIcon,
-} from "@/components/document-format-icon"
+import { DocumentFormatIcon } from "@/components/document-format-icon"
 import { SpaceIcon } from "@/components/spaces/space-icon"
 import { useSkillLibrariesEnabled } from "@/hooks/use-deployment-info"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -64,7 +62,7 @@ const KINDS: ReadonlyArray<{ kind: SearchKind; label: string }> = [
   { kind: "record", label: "Records" },
 ]
 
-/** A filter left open: the Select needs a value for "no filter". */
+/** A filter left open: the menu needs a value for "no filter". */
 const ANY = "any"
 
 /**
@@ -116,7 +114,7 @@ function Highlighted({ text, tokens }: { text: string; tokens: string[] }) {
             {part}
           </mark>
         ) : (
-          <span key={index}>{part}</span>
+          part
         )
       )}
     </>
@@ -128,6 +126,24 @@ const skillSplat = (skill: NonNullable<SearchResult["skill"]>) =>
   `${libraryKey(skill.library)}/${skill.id}`
 
 const ICON = "size-4"
+
+/** The folder a path is in, if any. */
+function folderOf(path: string | undefined): string | undefined {
+  const at = path?.lastIndexOf("/") ?? -1
+  return at > 0 ? path!.slice(0, at) : undefined
+}
+
+/** Where a result lives, as one line: its Space, then its folders. */
+function place(spaceName: string | undefined, folder: string | undefined) {
+  const text = [spaceName, ...(folder ? folder.split("/") : [])]
+    .filter(Boolean)
+    .join(" / ")
+  return text ? (
+    <span className="truncate font-mono text-[0.7rem] text-muted-foreground/80">
+      {text}
+    </span>
+  ) : undefined
+}
 
 function resultRow(
   result: SearchResult,
@@ -168,12 +184,7 @@ function resultRow(
         ...(result.recordId ? { search: { record: result.recordId } } : {}),
       },
       ...(result.excerpt ? { excerpt: result.excerpt } : {}),
-      location: (
-        <DocLocation
-          spaceName={spaceName}
-          path={`${result.collectionId ?? ""}/`}
-        />
-      ),
+      location: place(spaceName, result.collectionId),
     }
   }
   const path = result.path
@@ -196,7 +207,7 @@ function resultRow(
         }
       : {}),
     ...(result.excerpt ? { excerpt: result.excerpt } : {}),
-    location: <DocLocation spaceName={spaceName} path={path ?? ""} />,
+    location: place(spaceName, folderOf(path)),
   }
 }
 
@@ -227,16 +238,17 @@ function recentRow(
       ),
     // A path this app showed; the router takes it as it is.
     target: { to: open.path },
-    location: spaceName ? (
-      <DocLocation
-        spaceName={spaceName}
-        path={section === "documents" ? (rest ?? "") : ""}
-      />
-    ) : undefined,
+    ...(spaceName
+      ? {
+          location: place(
+            spaceName,
+            section === "documents" ? folderOf(rest) : undefined
+          ),
+        }
+      : {}),
   }
 }
 
-/** Opens search when asked, and keeps what was typed while the app is open. */
 /** What a search remembers between openings while the app is open. */
 export interface SearchState {
   query: string
@@ -516,12 +528,6 @@ function PaletteBody({
     }
   }
 
-  // A filter's menu hands the keys back to the field once it closes, so the
-  // arrows move through results again.
-  const backToField = (open: boolean) => {
-    if (!open) input.current?.focus()
-  }
-
   const kindLabel = KINDS.find((item) => item.kind === kind)?.label
   const spaceName = spaceId ? spacesById.get(spaceId)?.name : undefined
   const noMatches =
@@ -563,46 +569,34 @@ function PaletteBody({
       </div>
 
       <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
-        <Select
-          value={kind ?? ANY}
-          onValueChange={(next) =>
+        <FilterMenu
+          label="Kind"
+          anyLabel="Any Kind"
+          value={kind}
+          valueLabel={kindLabel}
+          options={KINDS.map((item) => ({
+            value: item.kind,
+            label: item.label,
+          }))}
+          onChange={(next) =>
             onKindChange(KINDS.find((item) => item.kind === next)?.kind ?? null)
           }
-          onOpenChangeComplete={backToField}
-        >
-          <FilterTrigger label="Kind" set={kind !== null}>
-            {kindLabel ?? "Kind"}
-          </FilterTrigger>
-          <SelectContent container={container}>
-            <SelectItem value={ANY}>Any Kind</SelectItem>
-            <SelectSeparator />
-            {KINDS.map((item) => (
-              <SelectItem key={item.kind} value={item.kind}>
-                {item.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={spaceId ?? ANY}
-          onValueChange={(next) =>
-            onSpaceChange(next && next !== ANY ? next : null)
-          }
-          onOpenChangeComplete={backToField}
-        >
-          <FilterTrigger label="Space" set={spaceId !== null}>
-            {spaceName ?? "Space"}
-          </FilterTrigger>
-          <SelectContent container={container} className="max-h-72">
-            <SelectItem value={ANY}>Any Space</SelectItem>
-            <SelectSeparator />
-            {(spaces ?? []).map((space) => (
-              <SelectItem key={space.id} value={space.id}>
-                {space.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          container={container}
+          returnFocus={input}
+        />
+        <FilterMenu
+          label="Space"
+          anyLabel="Any Space"
+          value={spaceId}
+          valueLabel={spaceName}
+          options={(spaces ?? []).map((space) => ({
+            value: space.id,
+            label: space.name,
+          }))}
+          onChange={onSpaceChange}
+          container={container}
+          returnFocus={input}
+        />
       </div>
 
       <div
@@ -636,26 +630,64 @@ function PaletteBody({
   )
 }
 
-function FilterTrigger({
+/**
+ * One filter under the field: a chip naming what it narrows to, opening a
+ * menu of choices. Closing the menu hands the keys back to the field, so the
+ * arrows move through results again.
+ */
+function FilterMenu({
   label,
-  set,
-  children,
+  anyLabel,
+  value,
+  valueLabel,
+  options,
+  onChange,
+  container,
+  returnFocus,
 }: {
   label: string
-  /** The filter narrows the search. */
-  set: boolean
-  children: ReactNode
+  anyLabel: string
+  value: string | null
+  valueLabel: string | undefined
+  options: ReadonlyArray<{ value: string; label: string }>
+  onChange: (value: string | null) => void
+  container: HTMLElement | null
+  returnFocus: RefObject<HTMLInputElement | null>
 }) {
   return (
-    <SelectTrigger
-      aria-label={label}
-      className={cn(
-        "h-8 w-auto max-w-[45%] gap-1.5 rounded-full px-3",
-        set ? "bg-surface-selected text-foreground" : "text-muted-foreground"
-      )}
-    >
-      <SelectValue>{children}</SelectValue>
-    </SelectTrigger>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={label}
+        className={cn(
+          "well well-interactive flex h-8 max-w-[45%] min-w-0 items-center gap-1.5 rounded-full border border-input px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+          value !== null
+            ? "bg-surface-selected text-foreground"
+            : "text-muted-foreground"
+        )}
+      >
+        <span className="truncate">{valueLabel ?? label}</span>
+        <ChevronDown className="size-3.5 shrink-0" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        container={container}
+        finalFocus={returnFocus}
+        className="max-h-72 w-auto min-w-44"
+      >
+        <DropdownMenuRadioGroup
+          aria-label={label}
+          value={value ?? ANY}
+          onValueChange={(next: string) => onChange(next === ANY ? null : next)}
+        >
+          <DropdownMenuRadioItem value={ANY}>{anyLabel}</DropdownMenuRadioItem>
+          <DropdownMenuSeparator />
+          {options.map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={option.value}>
+              <span className="truncate">{option.label}</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

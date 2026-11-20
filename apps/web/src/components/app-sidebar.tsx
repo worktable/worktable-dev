@@ -2942,8 +2942,7 @@ export function AppSidebar() {
         />
       </DeferredMount>
 
-      {/* Search's code loads on its own, when the tab is idle or search first
-          opens. */}
+      {/* Search over the page, carried with the sidebar's code. */}
       <SearchHost />
       <RecentOpensRecorder />
 

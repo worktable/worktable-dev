@@ -50,7 +50,6 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { libraryKey } from "@/lib/library"
 import { searchQueryOptions, useSpaces, useWorkspace } from "@/lib/queries"
 import { readRecentOpens, type RecentOpen } from "@/lib/recent-opens"
-import { onOpenSearch } from "@/lib/search-open"
 import { matchPlaces } from "@/lib/search-places"
 import { openSettings } from "@/lib/settings-open"
 
@@ -238,12 +237,35 @@ function recentRow(
 }
 
 /** Opens search when asked, and keeps what was typed while the app is open. */
-export function SearchPalette() {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState("")
-  const [kind, setKind] = useState<SearchKind | null>(null)
-  const [spaceId, setSpaceId] = useState<string | null>(null)
-  useEffect(() => onOpenSearch(() => setOpen(true)), [])
+/** What a search remembers between openings while the app is open. */
+export interface SearchState {
+  query: string
+  kind: SearchKind | null
+  spaceId: string | null
+}
+
+/**
+ * Search over the page. Its code loads on its own, when the tab is idle or
+ * search first opens; the sidebar's host keeps what was typed.
+ */
+export default function SearchPalette({
+  open,
+  onOpenChange,
+  state,
+  onStateChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  state: SearchState
+  onStateChange: (state: SearchState) => void
+}) {
+  const { query, kind, spaceId } = state
+  const setOpen = onOpenChange
+  const setQuery = (next: string) => onStateChange({ ...state, query: next })
+  const setKind = (next: SearchKind | null) =>
+    onStateChange({ ...state, kind: next })
+  const setSpaceId = (next: string | null) =>
+    onStateChange({ ...state, spaceId: next })
   const isMobile = useIsMobile()
   const input = useRef<HTMLInputElement>(null)
 
@@ -657,25 +679,21 @@ function PaletteRow({
       <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted-foreground">
         {row.icon}
       </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-baseline gap-3">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-            <Highlighted text={row.title} tokens={tokens} />
-          </span>
-          {row.location && (
-            <span className="hidden max-w-[45%] min-w-0 shrink-0 justify-end sm:flex">
-              {row.location}
-            </span>
-          )}
+      {/* The place sits beside the title; a phone gives the title the whole
+          width and the place the last line. */}
+      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          <Highlighted text={row.title} tokens={tokens} />
         </span>
-        {row.excerpt && (
-          <span className="truncate text-xs text-muted-foreground">
-            <Highlighted text={row.excerpt} tokens={tokens} />
+        {row.location && (
+          <span className="order-last flex min-w-0 basis-full sm:order-none sm:max-w-[45%] sm:basis-auto sm:justify-end">
+            {row.location}
           </span>
         )}
-        {/* A phone gives the title the whole width and the place a line. */}
-        {row.location && (
-          <span className="flex min-w-0 sm:hidden">{row.location}</span>
+        {row.excerpt && (
+          <span className="basis-full truncate text-xs text-muted-foreground">
+            <Highlighted text={row.excerpt} tokens={tokens} />
+          </span>
         )}
       </span>
     </>

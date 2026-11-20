@@ -123,7 +123,7 @@ const UnpinDocumentButton = lazy(() =>
     default: module.UnpinDocumentButton,
   }))
 )
-import { SearchPalette } from "@/components/search/search-palette"
+import { SearchHost } from "@/components/search/search-host"
 import { SidebarSearchButton } from "@/components/search/sidebar-search-button"
 import { RecentOpensRecorder } from "@/components/search/recent-opens-recorder"
 import { openSettings } from "@/lib/settings-open"
@@ -2942,9 +2942,9 @@ export function AppSidebar() {
         />
       </DeferredMount>
 
-      {/* Search lives with the sidebar's code, which every page loads once it
-          is quiet, so opening it waits on nothing. */}
-      <SearchPalette />
+      {/* Search's code loads on its own, when the tab is idle or search first
+          opens. */}
+      <SearchHost />
       <RecentOpensRecorder />
 
       {navigation && (

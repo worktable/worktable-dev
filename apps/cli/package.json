@@ -19,7 +19,7 @@
     "@bomb.sh/tab": "^0.0.17",
     "@clack/prompts": "^1.5.1",
     "@commander-js/extra-typings": "^15.0.0",
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@worktable/mcp-connect": "workspace:*",
     "@worktable/server": "workspace:*",
     "@worktable/types": "workspace:*",

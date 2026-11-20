@@ -7,6 +7,7 @@ import {
   CanonicalIdSchema,
   DocumentIdSchema,
   type DocumentId,
+  IsoTimestampSchema,
 } from "@worktable/types"
 import { z } from "zod"
 import { ensureAppDir } from "./app-storage.ts"
@@ -64,7 +65,7 @@ const JobSchema = z.discriminatedUnion("operation", [
       state: z.enum(["prepared", "base-committed"]),
       operation: z.literal("move"),
       spaceId: CanonicalIdSchema,
-      createdAt: z.iso.datetime(),
+      createdAt: IsoTimestampSchema,
       documents: z.array(MoveDocumentSchema).min(1).max(FOLDER_OPERATION_MAX_ENTRIES),
     })
     .strict(),
@@ -76,7 +77,7 @@ const JobSchema = z.discriminatedUnion("operation", [
       state: z.enum(["prepared", "base-committed"]),
       operation: z.literal("delete"),
       spaceId: CanonicalIdSchema,
-      createdAt: z.iso.datetime(),
+      createdAt: IsoTimestampSchema,
       documents: z.array(DeleteDocumentSchema).min(1).max(FOLDER_OPERATION_MAX_ENTRIES),
     })
     .strict(),

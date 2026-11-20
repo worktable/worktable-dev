@@ -10,6 +10,7 @@ import {
   DocumentGenerationIdSchema,
   DocumentIdSchema,
   DocumentSourceSchema,
+  IsoTimestampSchema,
 } from "@worktable/types"
 import { z } from "zod"
 import { ensureAppDir } from "./app-storage.ts"
@@ -53,7 +54,7 @@ const JobSchema = z
     source: DocumentSourceSchema,
     generationId: DocumentGenerationIdSchema,
     generationEntry: DocumentGenerationEntrySchema.shape.path,
-    createdAt: z.iso.datetime(),
+    createdAt: IsoTimestampSchema,
     createdBy: z.string().min(1),
     operationSource: z.string().min(1),
     reason: z.string().optional(),

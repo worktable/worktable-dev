@@ -28,6 +28,7 @@ import {
   type DocumentFormatClaim,
   type DocumentId,
   type DocumentPortableStateManifestV2,
+  IsoTimestampSchema,
 } from "@worktable/types"
 import { atomicWriteText } from "./atomic-file.ts"
 import {
@@ -673,7 +674,7 @@ function emptyCompatibleDocumentAnnotationsV2(input: {
 }
 
 function normalizedLegacyAnnotationTimestamp(value: string): string {
-  return z.string().datetime().safeParse(value).success
+  return IsoTimestampSchema.safeParse(value).success
     ? value
     : new Date(0).toISOString()
 }

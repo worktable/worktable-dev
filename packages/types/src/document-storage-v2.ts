@@ -5,6 +5,7 @@ import {
   DocumentProvenanceSchema,
 } from "./documents"
 import { AnnotationSchema } from "./annotations"
+import { IsoTimestampSchema } from "./widgets"
 
 export const DocumentStorageSha256Schema = z.string().regex(/^[a-f0-9]{64}$/)
 
@@ -227,13 +228,13 @@ export const DocumentGenerationManifestV2Schema = z
     logicalPath: z.string().min(1).max(4096),
     format: DocumentFormatClaimSchema,
     operation: z.enum(["create", "update", "checkpoint"]),
-    createdAt: z.string().datetime(),
+    createdAt: IsoTimestampSchema,
     /**
      * When a later save by the same actor last replaced this version's
      * content. createdAt stays when the version started; absent means the
      * content is from createdAt.
      */
-    updatedAt: z.string().datetime().optional(),
+    updatedAt: IsoTimestampSchema.optional(),
     createdBy: z.string().min(1).max(512),
     source: z.string().min(1).max(512),
     reason: z.string().max(500).optional(),
@@ -338,7 +339,7 @@ export const DocumentAnnotationFileV2Schema = z
     documentId: DocumentIdSchema,
     logicalPath: z.string().min(1).max(4096),
     revision: DocumentStorageSha256Schema,
-    updatedAt: z.string().datetime(),
+    updatedAt: IsoTimestampSchema,
     annotations: z.array(DocumentAnnotationV2Schema),
   })
   .passthrough()
@@ -352,7 +353,7 @@ export const DocumentPortableStateManifestV2Schema = z
     logicalPath: z.string().min(1).max(4096),
     format: DocumentFormatClaimSchema,
     stateVersion: z.number().int().positive(),
-    updatedAt: z.string().datetime(),
+    updatedAt: IsoTimestampSchema,
     revision: DocumentStorageSha256Schema,
     entries: DocumentGenerationEntriesSchema,
     totalBytes: z

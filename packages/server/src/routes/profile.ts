@@ -3,7 +3,7 @@ import { requireTeamDatabase, currentTeamWorktable } from "../team-database.ts";
 import { resolveWorkspaceOriginForRequest } from "../workspace-origin.ts";
 import { Hono } from "hono"
 import type { Context } from "hono"
-import { isImageHash } from "@worktable/types"
+import { isImageHash, IsoTimestampSchema } from "@worktable/types"
 import {
   acceptIdentityImage,
   identityImageResponse,
@@ -226,7 +226,7 @@ const SaveHelpSchema = z
     event: z.enum(HELP_EVENTS).optional(),
     version: z.number().int().min(0).max(1000).optional(),
     /** The close a showing follows, from the person's summary. */
-    follows: z.iso.datetime().optional(),
+    follows: IsoTimestampSchema.optional(),
     /** Show every tip again from the start. */
     resetAll: z.literal(true).optional(),
     /** Evidence only the browser sees, such as the rules line added. */

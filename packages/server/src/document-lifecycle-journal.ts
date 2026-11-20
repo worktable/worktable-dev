@@ -43,6 +43,7 @@ import {
   type DocumentFormatClaim,
   type DocumentId,
   type DocumentSource,
+  IsoTimestampSchema,
 } from "@worktable/types"
 import { z } from "zod"
 import { parseCanonicalYaml, rewriteYamlTopLevelString } from "./yaml.ts"
@@ -301,7 +302,7 @@ const JournalBaseSchema = z.object({
     z.literal(JOURNAL_PLAN_VERSION),
   ]),
   operationId: z.string().regex(OPERATION_ID_PATTERN),
-  createdAt: z.iso.datetime(),
+  createdAt: IsoTimestampSchema,
   phase: z.enum(["applying", "committed"]),
   workspace: z
     .object({

@@ -45,6 +45,10 @@ export const FILE_TYPE_NOTES: {
     share: {
       why: "SVG can carry script and outside references, so shared pages, which carry only raster data URLs, show a placeholder.",
     },
+    picture: {
+      why: "Agents read an SVG's source as text, and nothing else asks for a picture of one yet.",
+      fix: "Rasterise it in the sandboxed preview browser once a list or card shows pictures.",
+    },
   },
   html: {
     serve: {
@@ -82,6 +86,10 @@ export const FILE_SURFACE_NOTES: {
   },
   import: {
     where: "packages/server/src/records-import.ts and the file page's Import",
+  },
+  picture: {
+    where: "packages/server/src/file-pictures.ts",
+    note: "Pictures are made in the sandboxed preview browser, within limits on bytes, pixels and time that stay with the surface. A file past one has no picture and says why.",
   },
   diff: {
     where: "packages/server/src/document-diff.ts",
@@ -122,6 +130,11 @@ export const FILE_SURFACE_RULES: readonly {
     name: "Drawings hold the images shared pages carry",
     surfaces: ["drawing", "share"],
     holds: ({ drawing, share }) => drawing === (share === "inline"),
+  },
+  {
+    name: "A picture is made of every image the page shows",
+    surfaces: ["picture", "page"],
+    holds: ({ picture, page }) => (picture === "image") === (page === "image"),
   },
   {
     name: "A paste is named for image types only",

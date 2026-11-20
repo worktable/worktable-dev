@@ -37,6 +37,27 @@ declare module "*.wasm" {
   const path: string
   export default path
 }
+// pdf.js's files, embedded as files for the preview page (file-pictures.ts).
+declare module "pdfjs-dist/build/*.mjs" {
+  const path: string
+  export default path
+}
+declare module "*.bcmap" {
+  const path: string
+  export default path
+}
+declare module "*.pfb" {
+  const path: string
+  export default path
+}
+declare module "*.ttf" {
+  const path: string
+  export default path
+}
+declare module "*.icc" {
+  const path: string
+  export default path
+}
 declare module "@quickdrawjs/core/geometry" {
   export function geoPolygon(geo: string, w: number, h: number): number[]
   export function ellipsePolygon(w: number, h: number, n?: number): number[]

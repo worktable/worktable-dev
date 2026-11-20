@@ -1012,6 +1012,13 @@ export const DocumentsReadInput = z.strictObject({
       spaceId: ReadDocInput.shape.spaceId,
       path: z.string().min(1).max(4096),
       ...DocumentRenderFields,
+      page: z
+        .number()
+        .int()
+        .min(1)
+        .max(100_000)
+        .optional()
+        .describe("For a PDF: the page to render, from 1 (default 1)"),
     }),
     actionSchema("read_source", {
       spaceId: ReadDocInput.shape.spaceId,

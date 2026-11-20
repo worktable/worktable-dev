@@ -204,6 +204,7 @@ const annotationsRead = fieldsOf("worktable_annotations_read", "read")
 const annotationsCreate = fieldsOf("worktable_annotations_write", "create")
 const annotationsReply = fieldsOf("worktable_annotations_write", "reply")
 const annotationsUpdate = fieldsOf("worktable_annotations_write", "update")
+const documentsRender = fieldsOf("worktable_documents_read", "render")
 const threadsList = fieldsOf("worktable_threads_read", "list")
 const threadsRead = fieldsOf("worktable_threads_read", "read")
 const threadsWait = fieldsOf("worktable_threads_read", "wait")
@@ -374,7 +375,8 @@ const TOOLS: CatalogTool[] = [
     description:
       "Render a drawing or HTML Doc as a PNG preview you can see. Read-only; reports incomplete loads, and needs Records read access for an HTML Doc's Records data.",
     annotations: READ,
-    inputSchema: flatInput(["spaceId", "path"], [fieldsOf("worktable_documents_read", "render")]),
+    // The released listing holds back page (PREVIEW_CHANGES).
+    inputSchema: flatInput(["spaceId", "path"], [without(documentsRender, "page")]),
     runs: [["worktable_documents_read", "render"]],
     route: (args) => step("worktable_documents_read", "render", args),
   },
@@ -976,6 +978,17 @@ export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
  * until agent directories review them. Each takes a released tool's place.
  */
 const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
+  // Pictures of plain files: one page of a PDF, and an image scaled down,
+  // which shows an agent an image too large to read as one.
+  worktable_files_render: (tool) => ({
+    ...tool,
+    description:
+      "Render a file as a PNG preview you can see: a drawing, an HTML Doc, one page of a PDF (set page; the result gives pageCount) or an image scaled down to preview.width. Read-only; reports incomplete loads, and needs Records read access for an HTML Doc's Records data. A file with no preview says why.",
+    inputSchema: z.strictObject({
+      ...tool.inputSchema.shape,
+      page: documentsRender.page!,
+    }),
+  }),
   // Threads archive when they go quiet. The list leaves those out unless
   // asked, so an agent that lists threads reads the ones still in use; an
   // archived thread stays reachable by asking for it or by its id.

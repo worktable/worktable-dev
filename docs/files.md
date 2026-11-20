@@ -378,6 +378,9 @@ fine.
   its last piece, and a download piece by piece".
 - `mcp-document-previews.test.ts` "keeps HTML saved when preview runtime is
   unavailable and fences standalone captures to the source revision".
+- `mcp-document-previews.test.ts` "shows agents a PDF's page and an image
+  scaled down, on the preview surface, and says why a file has no preview": a
+  file that changes while its page is drawn fails the preview.
 
 **Gaps:** a Records import from a CSV reads the file again without its
 revision, so the proposal and the import can see different bytes
@@ -489,6 +492,10 @@ the type table allows), `packages/types/src/file-types.ts`,
   under the sandbox policy.
 - `mcp-documents.test.ts` "reads supported formats through one bounded inert
   projection": scripts and styles in a file never surface or run.
+- `mcp-document-previews.test.ts` "shows agents a PDF's page and an image
+  scaled down, on the preview surface, and says why a file has no preview": a
+  password, damage and a size past the limits each end in a reason, never a
+  picture.
 
 The one binary format Worktable decodes is AVIF, for agents on the MCP preview
 surface: the sandboxed preview browser converts it to PNG, with no network,
@@ -498,8 +505,21 @@ anything decodes it), and a PNG up to 5 MiB (`agent-image-conversion.ts`).
 Past any limit, or with `WORKTABLE_AGENT_IMAGE_CONVERSION=off`, the agent gets
 the file's bytes as before.
 
+Pictures of files are drawn in the same sandboxed browser, for agents on the
+MCP preview surface (`file-pictures.ts`): an image scaled down, and one page of
+a PDF, which pdf.js parses there with no network, no workers, a PDF's scripts
+and forms off, and 30 seconds at most. The page is handed the file's bytes at
+one revision, at most 1 MiB at a time as it asks, never a path or a link. An
+image is read up to 32 MiB and decoded only when its header declares at most
+8192 pixels a side and 40 million pixels, which holds for the images inside a
+PDF too. A picture is at most 4 million pixels and 4 MiB, drawn smaller when
+it would pass either. `WORKTABLE_PICTURES_PDF=off` and
+`WORKTABLE_PICTURES_IMAGE=off` turn each off. A file with no picture says why
+and still reads and downloads.
+
 **Gaps:** no test covers the web page's `sandbox=""` frame. Worktable has no
-container parsers yet; the first one must follow this rule.
+container parsers in its own process yet; the first one must follow this
+rule.
 
 ## Cost
 
@@ -625,13 +645,20 @@ reason for both), `mcp/file-results.ts`.
   unavailable and fences standalone captures to the source revision".
 - `mcp-documents.test.ts` "reads code the type table doesn't list and a
   Dockerfile as text, and an AVIF as an image": on the preview surface only.
+- `mcp-document-previews.test.ts` "shows agents a PDF's page and an image
+  scaled down, on the preview surface, and says why a file has no preview":
+  the picture names the revision it is of, and the released surface is as it
+  was.
 
 Code files the table knows (`.js`, `.ts`, `.css`) show as text on their page,
 as agents read them. Plain text and logs are text to both; CSV and TSV are a
 table to people and text to agents, which carries the same content. On the MCP
 preview surface, source code the table doesn't list (such as `.py` or `.go`)
 and a `Dockerfile` read as text, and an AVIF as a PNG agents can see
-(`mcp/file-results.ts`).
+(`mcp/file-results.ts`). There too, `worktable_files_render` gives an agent a
+picture of a plain file: one page of a PDF, with its page count, or an image
+scaled down, which shows it an image too large to read as one. People see no
+pictures of files yet.
 
 **Gaps:** a code type the table doesn't list, and a `Dockerfile`, is a card to
 people, and base64 to agents on the released surface. AVIF is an image to

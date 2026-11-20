@@ -1907,6 +1907,9 @@ async function _dispatchOperationInner(
         scopes: context.scopes ?? ["*"],
         html: operationId === "html.render",
         signal: context.signal,
+        page: args["page"] as number | undefined,
+        // Pictures of plain files are held on the preview surface.
+        filePictures: context.surface === "preview",
       })
     }
     case "html.list": {

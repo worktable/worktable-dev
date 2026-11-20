@@ -738,7 +738,9 @@ ${WIDGET_COMMENT_RUNTIME}
     last=key;
     postToParent({type:'worktable.place',widgetId:cfg.widgetId,spaceId:cfg.spaceId,navigationToken:navigationToken,place:place},'*');
   }
-  function soon(){clearTimeout(timer);timer=setTimeout(report,150)}
+  // At once, then at most every 100 ms while it keeps scrolling: a new
+  // version can arrive right after the reader stops.
+  function soon(){if(timer) return;report();timer=setTimeout(function(){timer=0;report()},100)}
   window.addEventListener('scroll',soon,{passive:true});
   window.addEventListener('hashchange',report);
   for(const name of ['pushState','replaceState']){
@@ -751,7 +753,6 @@ ${WIDGET_COMMENT_RUNTIME}
     const d=event.data;
     if(!d||d.type!=='worktable.place.restore'||!d.place) return;
     const x=Number(d.place.x)||0,y=Number(d.place.y)||0;
-    if(!x&&!y) return;
     // The page may still be laying out: try for a moment, and stop when the
     // reader moves first.
     let tries=0,stopped=false;

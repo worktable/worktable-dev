@@ -268,7 +268,9 @@ function WidgetDetailPage({
   // loads the page again: it opens at the same address fragment (a deck's
   // slide), and the scroll position is sent back once it starts.
   const [frameHash, setFrameHash] = useState("")
-  const frameScroll = useRef({ x: 0, y: 0 })
+  // Null until the page reports a place: a page that has not been scrolled
+  // yet opens wherever its address puts it.
+  const frameScroll = useRef<{ x: number; y: number } | null>(null)
   const [frameOpening, setFrameOpening] = useState({
     base: baseFrameSrc,
     hash: "",
@@ -482,10 +484,11 @@ function WidgetDetailPage({
           data.navigationToken.length >= 16
         ) {
           navigationToken = data.navigationToken
-          const { x, y } = frameScroll.current
-          if (x || y)
+          // Sent even at the top: an address that names a section would
+          // otherwise move a reader who had scrolled back up.
+          if (frameScroll.current)
             iframeWindow?.postMessage(
-              { type: "worktable.place.restore", place: { x, y } },
+              { type: "worktable.place.restore", place: frameScroll.current },
               "*"
             )
         }

@@ -266,6 +266,7 @@ test("a PDF whose bytes stop arriving says so instead of waiting", async ({
     timeout: 15_000,
   })
   await page.unroute("**/documents/file?*")
+})
 
 test("a PDF in a Doc opens full screen, and on to its page", async ({
   page,

@@ -83,6 +83,7 @@ test("other links say how each stands, and only the reader's own have menus", ()
   const expired = new Date(Date.now() - DAY).toISOString()
   const board = link({
     label: "Board",
+    level: "comment",
     hasPassword: true,
     expiresAt: later,
     lastUsedAt: new Date(Date.now() - 60_000).toISOString(),
@@ -109,7 +110,7 @@ test("other links say how each stands, and only the reader's own have menus", ()
     />
   )
   expect(text(html)).toContain(
-    `BoardPassword · Expires ${formatArchiveDate(later)} · Opened today`
+    `BoardPassword · Expires ${formatArchiveDate(later)} · Comments on · Opened today`
   )
   expect(text(html)).toContain(`OldExpired ${formatArchiveDate(expired)}`)
   expect(text(html)).toContain("AuditNever expires · Comments paused")

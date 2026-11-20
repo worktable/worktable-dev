@@ -90,7 +90,7 @@ interface LinkDraft {
   expiry: ShareLinkExpiry
   passwordEnabled: boolean
   password: string
-  /** Only the first link is made with comments. */
+  /** Whether the link takes visitor comments. */
   comments: boolean
   /** Other links show live data with the first link's access. */
   live: boolean
@@ -372,10 +372,18 @@ export function ShareLinksDialog({
             expiry: next.link.expiresAt ? "keep" : "never",
             passwordEnabled: next.link.hasPassword,
             password: "",
-            comments: false,
+            comments: commentsOn(next.link),
             live: Boolean(next.link.grant),
           }
-        : { ...newDraft(policy), live: Boolean(liveGrant) }
+        : {
+            ...newDraft(policy),
+            // Another link starts the way the first is set.
+            comments:
+              commentsAllowed &&
+              defaultLink !== null &&
+              commentsOn(defaultLink),
+            live: Boolean(liveGrant),
+          }
     )
   }
 
@@ -426,7 +434,7 @@ export function ShareLinksDialog({
       create.mutate({
         ...draft,
         expiry,
-        comments: false,
+        comments: draft.comments && commentsAllowed,
         live,
         ...(live ? { grant: liveGrant } : {}),
       })
@@ -438,6 +446,10 @@ export function ShareLinksDialog({
       draft.live === Boolean(link.grant)
         ? {}
         : { grant: draft.live ? liveGrant : null }
+    const commentsChange =
+      draft.comments === commentsOn(link)
+        ? {}
+        : commentsSwitched(link, draft.comments)
     update.mutate({
       link,
       said: "Link saved",
@@ -454,6 +466,7 @@ export function ShareLinksDialog({
           : draft.password
             ? { password: draft.password }
             : {}),
+        ...commentsChange,
         ...liveChange,
       },
     })
@@ -471,6 +484,7 @@ export function ShareLinksDialog({
         withLabel={kind === "new" || Boolean(editingLink?.label)}
         passwordRequired={passwordRequired}
         hasPassword={editingLink?.hasPassword ?? false}
+        withComments={commentsAllowed || editingLink?.level === "comment"}
         withLive={liveGrant !== null || Boolean(editingLink?.grant)}
         busy={busy}
         submitLabel={kind === "new" ? "Create Link" : "Save"}
@@ -768,14 +782,7 @@ export function ShareLinksDialog({
                       update.mutate({
                         link: defaultLink,
                         said: allow ? "Comments on" : "Comments off",
-                        change: allow
-                          ? {
-                              ...(defaultLink.level !== "comment"
-                                ? { level: "comment" }
-                                : {}),
-                              comments: { acceptComments: true },
-                            }
-                          : { comments: { acceptComments: false } },
+                        change: commentsSwitched(defaultLink, allow),
                       })
                     }
                   />
@@ -1000,6 +1007,19 @@ function commentsOn(link: ShareLink): boolean {
   )
 }
 
+/** The change that turns a link's comments on, which also resumes paused ones, or off. */
+function commentsSwitched(
+  link: ShareLink,
+  allow: boolean
+): UpdateShareLinkInput {
+  return allow
+    ? {
+        ...(link.level !== "comment" ? { level: "comment" } : {}),
+        comments: { acceptComments: true },
+      }
+    : { comments: { acceptComments: false } }
+}
+
 function commentsStatus(link: ShareLink): string {
   if (link.level === "comment" && link.comments.autoPaused) return "Paused"
   return commentsOn(link) ? "On" : "Off"
@@ -1039,7 +1059,7 @@ export function UnsharedRecordsNote({
   )
 }
 
-/** One switch for the default link: its comment level and whether it takes comments. */
+/** One switch for a link: its comment level and whether it takes comments. */
 function CommentsSwitch({
   checked,
   disabled,
@@ -1474,7 +1494,7 @@ function LinkMenu({
   )
 }
 
-/** A compact form for a link's label, expiry, password and live data. */
+/** A compact form for a link's label, expiry, password, comments and live data. */
 function LinkForm({
   draft,
   onChange,
@@ -1482,6 +1502,7 @@ function LinkForm({
   withLabel,
   passwordRequired,
   hasPassword,
+  withComments,
   withLive,
   busy,
   submitLabel,
@@ -1495,6 +1516,8 @@ function LinkForm({
   withLabel: boolean
   passwordRequired: boolean
   hasPassword: boolean
+  /** The owner allows comment links, or the link is one already. */
+  withComments: boolean
   /** Shows live data with the first link's access; off removes it. */
   withLive: boolean
   busy: boolean
@@ -1554,6 +1577,13 @@ function LinkForm({
         }
         onValueChange={(password) => onChange({ ...draft, password })}
       />
+      {withComments ? (
+        <CommentsSwitch
+          checked={draft.comments}
+          disabled={busy}
+          onChange={(comments) => onChange({ ...draft, comments })}
+        />
+      ) : null}
       {withLive ? (
         <LiveSwitch
           checked={draft.live}

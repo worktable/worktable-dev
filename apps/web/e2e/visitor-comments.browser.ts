@@ -334,6 +334,32 @@ for (const appearance of [
         await expect(
           sharing.getByRole("button", { name: "Save", exact: true })
         ).toBeHidden()
+        // Another link takes comments when its own switch says so.
+        await sharing
+          .getByRole("button", { name: "New Link", exact: true })
+          .click()
+        await sharing.getByLabel("Label", { exact: true }).fill("Room B")
+        await sharing.getByRole("switch", { name: "Allow comments" }).click()
+        const made = page.waitForResponse(
+          (response) =>
+            response.url().endsWith("/api/shares/links") &&
+            response.request().method() === "POST"
+        )
+        await sharing
+          .getByRole("button", { name: "Create Link", exact: true })
+          .click()
+        const create = await made
+        expect(create.request().postDataJSON()).toMatchObject({
+          label: "Room B",
+          level: "comment",
+        })
+        expect((await create.json()).link).toMatchObject({
+          level: "comment",
+          comments: { acceptComments: true, autoPaused: false },
+        })
+        await expect(
+          sharing.getByRole("listitem").filter({ hasText: "Room B" })
+        ).toContainText("Comments on")
         await sharing.getByRole("button", { name: "Done", exact: true }).click()
         await page.reload({ waitUntil: "networkidle" })
         await page.goto(`${url}#visitors`, { waitUntil: "networkidle" })

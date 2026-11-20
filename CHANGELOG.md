@@ -9,6 +9,10 @@ infrastructure and personal context out of release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Share links:** A link made under More links can take visitor comments, with its own Allow comments switch. Each link says when comments are on.
+
 ## [0.1.52] - 2026-11-19
 
 ### Added

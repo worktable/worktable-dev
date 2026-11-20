@@ -251,7 +251,7 @@ export function shareLinkExpiresText(
 
 /**
  * What the share dialog says under a link: "Password · Expires Nov 1 ·
- * Opened today", or why it stopped. `opened` adds when it was last opened.
+ * Comments on · Opened today", or why it stopped. `opened` adds when it was last opened.
  */
 export function shareLinkSummary(
   link: ShareLink,
@@ -271,6 +271,8 @@ export function shareLinkSummary(
     parts.push({ text: BLOCKED_LABELS[link.blockedBy], stopped: true })
   if (link.level === "comment" && link.comments.autoPaused)
     parts.push({ text: "Comments paused", stopped: true })
+  else if (link.level === "comment" && link.comments.acceptComments)
+    parts.push({ text: "Comments on" })
   if (opened && link.views) {
     parts.push(...viewParts(link.views), ...viewedParts(link.views, now))
   } else if (opened && link.lastUsedAt) {

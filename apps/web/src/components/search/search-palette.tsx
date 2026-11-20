@@ -35,6 +35,8 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -46,6 +48,7 @@ import { SpaceIcon } from "@/components/spaces/space-icon"
 import { useSkillLibrariesEnabled } from "@/hooks/use-deployment-info"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { libraryKey } from "@/lib/library"
+import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { searchQueryOptions, useSpaces, useWorkspace } from "@/lib/queries"
 import { readRecentOpens, type RecentOpen } from "@/lib/recent-opens"
 import { matchPlaces } from "@/lib/search-places"
@@ -54,11 +57,16 @@ import { openSettings } from "@/lib/settings-open"
 /** How long typing rests before a search is sent. */
 const SEARCH_DELAY_MS = 180
 
-const KINDS: ReadonlyArray<{ kind: SearchKind; label: string }> = [
-  { kind: "doc", label: "Docs" },
-  { kind: "html", label: "HTML Docs" },
-  { kind: "drawing", label: "Drawings" },
-  { kind: "file", label: "Files" },
+/** Each file type, with the format its rows show the icon of. */
+const KINDS: ReadonlyArray<{
+  kind: SearchKind
+  label: string
+  formatId?: string
+}> = [
+  { kind: "doc", label: "Docs", formatId: "worktable.rich-text" },
+  { kind: "html", label: "HTML Docs", formatId: "worktable.html" },
+  { kind: "drawing", label: "Drawings", formatId: "worktable.quickdraw" },
+  { kind: "file", label: "Files", formatId: "worktable.file" },
   { kind: "record", label: "Records" },
 ]
 
@@ -526,6 +534,21 @@ function PaletteBody({
     }
   }
 
+  // Current Spaces by name, then archived ones apart: archived work is
+  // searched too.
+  const spaceOptions = useMemo<FilterOption[]>(
+    () =>
+      [...(spaces ?? [])]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((space) => ({
+          value: space.id,
+          label: space.name,
+          icon: <SpaceIcon space={space} size="xs" variant="glyph" />,
+          ...(getSpaceArchiveInfo(space) ? { archived: true } : {}),
+        })),
+    [spaces]
+  )
+
   const kindLabel = KINDS.find((item) => item.kind === kind)?.label
   const spaceName = spaceId ? spacesById.get(spaceId)?.name : undefined
   const noMatches =
@@ -575,6 +598,11 @@ function PaletteBody({
           options={KINDS.map((item) => ({
             value: item.kind,
             label: item.label,
+            icon: item.formatId ? (
+              <DocumentFormatIcon formatId={item.formatId} className={ICON} />
+            ) : (
+              <Database className={ICON} />
+            ),
           }))}
           onChange={(next) =>
             onKindChange(KINDS.find((item) => item.kind === next)?.kind ?? null)
@@ -586,10 +614,7 @@ function PaletteBody({
           anyLabel="Any Space"
           value={spaceId}
           valueLabel={spaceName}
-          options={(spaces ?? []).map((space) => ({
-            value: space.id,
-            label: space.name,
-          }))}
+          options={spaceOptions}
           onChange={onSpaceChange}
           returnFocus={input}
         />
@@ -644,7 +669,7 @@ function FilterMenu({
   anyLabel: string
   value: string | null
   valueLabel: string | undefined
-  options: ReadonlyArray<{ value: string; label: string }>
+  options: ReadonlyArray<FilterOption>
   onChange: (value: string | null) => void
   returnFocus: RefObject<HTMLInputElement | null>
 }) {
@@ -680,18 +705,44 @@ function FilterMenu({
             {anyLabel}
           </DropdownMenuRadioItem>
           <DropdownMenuSeparator />
-          {options.map((option) => (
-            <DropdownMenuRadioItem
-              key={option.value}
-              value={option.value}
-              closeOnClick
-            >
-              <span className="truncate">{option.label}</span>
-            </DropdownMenuRadioItem>
-          ))}
+          {options
+            .filter((option) => !option.archived)
+            .map((option) => (
+              <FilterItem key={option.value} option={option} />
+            ))}
+          {options.some((option) => option.archived) && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Archived</DropdownMenuLabel>
+                {options
+                  .filter((option) => option.archived)
+                  .map((option) => (
+                    <FilterItem key={option.value} option={option} />
+                  ))}
+              </DropdownMenuGroup>
+            </>
+          )}
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+interface FilterOption {
+  value: string
+  label: string
+  icon?: ReactNode
+  /** Listed apart, after the rest. */
+  archived?: boolean
+}
+
+function FilterItem({ option }: { option: FilterOption }) {
+  return (
+    <DropdownMenuRadioItem value={option.value} closeOnClick>
+      {option.icon}
+      <span className="truncate">{option.label}</span>
+    </DropdownMenuRadioItem>
   )
 }
 

@@ -25,6 +25,7 @@ import {
 } from "../settings-store.ts";
 import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
 import { filesEnabled } from "../files-enabled.ts";
+import { viewerEnabled } from "../viewer-frames.ts";
 import { noteAllSpacesChanged } from "../workspace-read-model.ts";
 import { invalidateLinkGraph } from "../link-graph.ts";
 import { notifyWorkspaceChange } from "../workspace-events.ts";
@@ -176,6 +177,8 @@ export interface DeploymentInfo {
     shareLinks: boolean;
     /** File features are on: off only where WORKTABLE_FILES=0. */
     files: boolean;
+    /** PDFs open in the viewer; off where WORKTABLE_VIEWER_PDF=off. */
+    pdfViewer: boolean;
     /** Comments can be sent to people and agents (Preview agent tools). */
     commentRecipients: boolean;
     /** People manage the skill libraries agents read (Preview agent tools). */
@@ -208,6 +211,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       // Without Teams the only person here is the owner.
       shareLinks: documentSharing,
       files: filesEnabled(),
+      pdfViewer: filesEnabled() && viewerEnabled("pdf"),
       commentRecipients: true,
       skillLibraries: true,
       help: true,

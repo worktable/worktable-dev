@@ -11,6 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **PDFs:** A PDF opens on its page and reads in place: scroll, select and copy text, find, jump to a page and zoom, with a picture of each page and the file's outline beside it. A password-protected PDF asks for its password, and a link ending in `#page=12` opens at that page.
 - **Pinned pictures:** On Home and Space Home, a pinned image, PDF or drawing shows a picture of it instead of its icon.
 - **Export downloads resume:** A Worktable export that stops downloading partway can pick up where it stopped, in a browser or download tool that resumes downloads.
 - **Agents (preview):** With preview tools on, agents asked for slides learn what makes a deck work in Worktable: one 16:9 slide at a time with keys and tap, a stack on a phone, one slide per page in print, and the slide kept in the address so an edit doesn't move the presenter. What the slides hold and how they look is left to the request.

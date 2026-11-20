@@ -8,6 +8,7 @@ import { agentLogoAssets } from "./agent-logo-assets"
 import { sharedIconChunk } from "./shared-icon-chunk"
 import { helpChunk } from "./help-chunk"
 import { blocknoteHoverRule } from "./blocknote-hover-rule"
+import { viewerFrames } from "./viewer-frames"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
 import { browserNotices } from "../../scripts/browser-notices"
@@ -133,6 +134,7 @@ export default defineConfig({
     browserNotices(),
     buildIdFile(),
     agentLogoAssets(),
+    viewerFrames(),
     webAppManifest(),
     precompressAssets(),
   ],

@@ -23,6 +23,15 @@ function ownBuild(): string | null {
     : null
 }
 
+/**
+ * A query value that names this tab's build on a request for something the
+ * build made, so the browser may keep it for good; empty in development.
+ */
+export function buildVersionQuery(): string {
+  const build = ownBuild()
+  return build ? `v=${encodeURIComponent(build)}` : ""
+}
+
 /** Record the build a server response came from. */
 export function noteServerBuild(response: Response): void {
   noteServerBuildId(response.headers.get(BUILD_HEADER))

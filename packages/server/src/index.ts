@@ -76,6 +76,7 @@ import { dirname, join } from "node:path"
 import { healthRouter } from "./routes/health.ts"
 import { spacesRouter } from "./routes/spaces.ts"
 import { sidebarRouter } from "./routes/sidebar.ts"
+import { viewersRouter } from "./routes/viewers.ts";
 import { docsRouter } from "./routes/docs.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import { widgetsRouter } from "./routes/widgets.ts"
@@ -570,6 +571,7 @@ app.route("/api/shares", sharesRouter);
 app.route("/api/linked", linkedRouter);
 app.route("/api/app-choices", appChoicesRouter);
 app.route("/api/sidebar", sidebarRouter);
+app.route("/api/viewers", viewersRouter);
 app.route("/api/spaces", spacesRouter);
 app.route("/api/spaces/:spaceId/documents", documentsRouter);
 app.route("/api/spaces/:spaceId/docs", docsRouter);

@@ -50,6 +50,12 @@ export const FILE_TYPE_NOTES: {
       fix: "Rasterise it in the sandboxed preview browser once a list or card shows pictures.",
     },
   },
+  pdf: {
+    agent: {
+      why: "People read a PDF in the viewer; agents get its bytes, or a download link for a large one, until Worktable extracts a file's contents for agents.",
+      fix: "Give agents a PDF's text, by page, once file contents for agents are built.",
+    },
+  },
   html: {
     serve: {
       why: "Served inline as text/html, unlike other text, because its page shows it in a frame. The response's sandbox policy and the frame's sandbox keep its scripts off and load nothing, so it shows as a static page until a person opens it as an HTML Doc.",
@@ -65,7 +71,10 @@ export const FILE_SURFACE_NOTES: {
     where: "packages/server/src/file-media.ts",
     note: "Only images, and HTML for the sandboxed frame its page shows it in, show inline; a type without a media type here downloads as plain bytes.",
   },
-  page: { where: "apps/web/src/components/file-page.tsx" },
+  page: {
+    where: "apps/web/src/components/file-page.tsx",
+    note: "A PDF is parsed inside a viewer frame (apps/web/viewer-frames), never in the app's own page. Where the viewer is off, or can't show a file, the page shows a card.",
+  },
   icon: { where: "apps/web/src/components/document-format-icon.tsx" },
   agent: {
     where: "packages/server/src/mcp/file-results.ts",

@@ -2559,7 +2559,11 @@
         "wasm/jbig2.wasm",
         "wasm/openjpeg.wasm",
         "wasm/qcms_bg.wasm",
-        "iccs/"
+        "iccs/",
+        "legacy/build/pdf.mjs",
+        "legacy/build/pdf.worker.mjs",
+        "legacy/web/pdf_viewer.mjs",
+        "legacy/web/pdf_viewer.css"
       ]
     },
     {

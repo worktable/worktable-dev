@@ -103,6 +103,9 @@ Open **Comments** in **Share** and turn on **Allow comments**. Each visitor sees
 only their own comments and the team's replies. A comment needs the visitor's
 name and may need a human check.
 
+A link made under **More links** has its own **Allow comments** switch in
+**New Link** and **Edit Link**. A new one starts the way the main link is set.
+
 Visitor comments appear in the document's comments panel. Agents do not see
 them until a member chooses **Pass to Team**.
 

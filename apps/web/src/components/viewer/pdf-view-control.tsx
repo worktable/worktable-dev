@@ -1,7 +1,7 @@
 import { lazy, useEffect, useState, type RefObject } from "react"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { filePolicy } from "@worktable/types"
-import { sourceFileOf } from "@/lib/source-file"
+import { sourceFileOf } from "@/lib/file-embeds"
 import type { ViewerPdf } from "./pdf-viewer-dialog"
 
 // The viewer loads when a PDF is first pointed at, so it opens at once.

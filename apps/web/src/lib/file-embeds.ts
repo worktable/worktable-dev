@@ -27,6 +27,54 @@ export function fileSourceUrl(
   return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}${options.download ? "&download=1" : ""}${options.at ? `&at=${encodeURIComponent(options.at)}` : ""}`
 }
 
+// The reverse, read back from a URL fileSourceUrl wrote: the image viewer
+// uses it for a shown image's file, and Docs for the PDF a card stands for.
+/** A Space's file, as a URL from fileSourceUrl names it. */
+export interface SourceFile {
+  spaceId: string
+  path: string
+  version: string | null
+  at?: string
+}
+
+/**
+ * The Space file a fileSourceUrl URL loads, or null for any other URL, such
+ * as an image a Doc embeds from the web.
+ */
+export function sourceFileOf(url: string): SourceFile | null {
+  const page = globalThis.location?.href ?? "http://localhost/"
+  let source: URL
+  let spaces: URL
+  try {
+    source = new URL(url, page)
+    spaces = new URL(`${BASE_URL}/api/spaces/`, page)
+  } catch {
+    return null
+  }
+  if (
+    source.origin !== spaces.origin ||
+    !source.pathname.startsWith(spaces.pathname)
+  )
+    return null
+  const spaceId = /^([^/]+)\/documents\/file$/.exec(
+    source.pathname.slice(spaces.pathname.length)
+  )?.[1]
+  const path = source.searchParams.get("path")
+  if (!spaceId || !path) return null
+  const at = source.searchParams.get("at")
+  try {
+    return {
+      spaceId: decodeURIComponent(spaceId),
+      path,
+      version: source.searchParams.get("v"),
+      ...(at ? { at } : {}),
+    }
+  } catch {
+    // A Doc can embed any URL, including one that isn't validly encoded.
+    return null
+  }
+}
+
 /**
  * Upload New Version: the file's new bytes, keeping the old in its history.
  * `basedOn` is the version the page loaded, or a revision a replace gave;
@@ -44,7 +92,9 @@ export async function replaceFile(
     {
       method: "PUT",
       body: file,
-      ...(basedOn === "current" ? {} : { headers: { "If-Match": `"${basedOn}"` } }),
+      ...(basedOn === "current"
+        ? {}
+        : { headers: { "If-Match": `"${basedOn}"` } }),
     }
   )
   const body = (await response.json().catch(() => null)) as {
@@ -106,7 +156,10 @@ export function embedSourceUrl(
  * then. A version that merged rapid saves keeps the first one's createdAt;
  * its id names the last.
  */
-export function versionFilesAt(version: { id: string; createdAt: string }): string {
+export function versionFilesAt(version: {
+  id: string
+  createdAt: string
+}): string {
   const savedAt = versionIdTimestamp(version.id)
   return savedAt === null ? version.createdAt : new Date(savedAt).toISOString()
 }
@@ -130,7 +183,10 @@ export function rememberImageSize(url: string, image: HTMLImageElement): void {
     const oldest = imageSizes.keys().next().value
     if (oldest !== undefined) imageSizes.delete(oldest)
   }
-  imageSizes.set(url, { width: image.naturalWidth, height: image.naturalHeight })
+  imageSizes.set(url, {
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+  })
 }
 
 /** A path as a link holds it: characters a URL reads as syntax are encoded. */
@@ -138,8 +194,9 @@ function linkPath(path: string): string {
   return path
     .split("/")
     .map((segment) =>
-      segment.replace(/[ #?%()<>"']/g, (character) =>
-        `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+      segment.replace(
+        /[ #?%()<>"']/g,
+        (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`
       )
     )
     .join("/")
@@ -169,7 +226,10 @@ export function embeddedFileName(file: File, now = new Date()): string {
   const fromType = pasted
     ? (FILE_TYPES[pasted].extensions[0] ?? "")
     : file.type.startsWith("image/")
-      ? file.type.slice("image/".length).replace("jpeg", "jpg").replace("svg+xml", "svg")
+      ? file.type
+          .slice("image/".length)
+          .replace("jpeg", "jpg")
+          .replace("svg+xml", "svg")
       : ""
   const extension = (dot > 0 ? fileName.slice(dot + 1) : fromType)
     .toLowerCase()

@@ -34,7 +34,11 @@ const SETTLE_MS = 5_000
 /** When every Space is looked over after start. */
 const FIRST_PASS_MS = 60_000
 
-/** The source stamp each file was last looked at with, by Space and file. */
+/**
+ * The source stamp each file was last looked at with, by Space and file.
+ * It lasts as long as the background it serves: each start, and a
+ * workspace reset, which takes the derived store with it, begin it afresh.
+ */
 const lookedAt = new Map<string, string>()
 
 /**
@@ -123,7 +127,12 @@ export function startContentsBackground(): () => Promise<void> {
     timer.unref?.()
     due.set(spaceId, timer)
   }
+  lookedAt.clear()
   const stopListening = onWorkspaceChange((event) => {
+    if (event.type === "workspaceReset") {
+      lookedAt.clear()
+      return
+    }
     if ((event.type === "documentCorpus" || event.type === "space") && event.spaceId) {
       schedule(event.spaceId)
     }

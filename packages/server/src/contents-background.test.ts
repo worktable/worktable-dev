@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { parseChangedFiles } from "./contents-background.ts"
-import { closeDerivedStore, derivedStore } from "./derived-store.ts"
+import { parseChangedFiles, startContentsBackground } from "./contents-background.ts"
+import { closeDerivedStore, derivedStore, derivedStoreDir } from "./derived-store.ts"
 import { writeSpace } from "./store.ts"
 import { smallPdf } from "./test-support/small-pdf.ts"
 import {
@@ -57,6 +57,16 @@ describe("parsing in the background", () => {
     expect(kept()).toHaveLength(1)
     // Nothing changed: nothing is read or parsed again.
     expect(await parseChangedFiles(spaceId)).toBe(0)
+    // A new start of the background looks again, and finds it kept.
+    const stop = startContentsBackground()
+    await stop()
+    expect(await parseChangedFiles(spaceId)).toBe(0)
+    closeDerivedStore()
+    await rm(derivedStoreDir(), { recursive: true, force: true })
+    // The store was removed, as a workspace reset removes it: a new start
+    // parses the PDF again.
+    await startContentsBackground()()
+    expect(await parseChangedFiles(spaceId)).toBe(1)
 
     await writeFile(join(docs, "report.pdf"), smallPdf([{ text: "Second edition" }]))
     noteSpaceChanged(spaceId)

@@ -378,10 +378,12 @@ for (const target of selectedTargets.server) {
   mkdirSync(binDir, { recursive: true })
 
   const executable = join(binDir, "worktable-server")
+  // The entry runs the server, or the worker that parses files for their
+  // contents, from the one executable.
   await buildExecutable(
     target,
     executable,
-    join(root, "packages", "server", "src", "index.ts")
+    join(root, "packages", "server", "src", "server-entry.ts")
   )
   assertPortableExecutable(executable)
   const backupWorker = join(binDir, "worktable-backup")

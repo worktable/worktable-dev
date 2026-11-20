@@ -2714,8 +2714,11 @@ export function startServer(
   return server;
 }
 
-// Auto-start when run directly
-if (import.meta.main) {
+/**
+ * What the server executable does when run: a maintenance command named on
+ * its command line, or else the server (server-entry.ts).
+ */
+export async function runServerMain(): Promise<void> {
   try {
     const handled = await runServerMaintenance(process.argv);
     if (!handled) {
@@ -2727,3 +2730,6 @@ if (import.meta.main) {
     process.exit(1);
   }
 }
+
+// Auto-start when run directly
+if (import.meta.main) await runServerMain();

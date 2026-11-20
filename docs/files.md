@@ -553,10 +553,20 @@ the same frame, host and messages (`viewer-frame-protocol.ts`).
   them" and "turns a viewer off without a release".
 - `apps/web/src/lib/viewer-frame-protocol.test.ts`: what a frame may ask for.
 
+Files parsed for their contents (PDF, Office) are parsed in the contents
+lane (`contents-lane.ts`): one job at a time, in a worker process started
+from the server's own executable (`server-entry.ts`, `contents-worker.ts`),
+which loads only its readers. The worker gets the file's bytes on its input
+and nothing else: no environment, no path or link, and an empty working
+folder. It is killed past 60 seconds, 1 GiB of memory or 16 MiB of output,
+and the job says why. `WORKTABLE_CONTENTS_<READER>=off` turns a reader off;
+the file still lists and downloads. Proved by `contents-lane.test.ts` "stops
+a reader that hangs, grows too large or writes too much, and says why" and
+"gives a reader the file's bytes and nothing else, and returns what it read".
+
 **Gaps:** no test covers the web page's `sandbox=""` frame for an outside
-`.html`. Worktable has no container parsers in its own process yet; the first
-one must follow this rule. The PDF viewer is tested in Chromium only by the
-required checks.
+`.html`. The contents lane has no readers yet; each one added must follow
+this rule. The PDF viewer is tested in Chromium only by the required checks.
 
 ## Cost
 

@@ -1,9 +1,4 @@
-import {
-  useDeferredValue,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react"
+import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
 import { Search } from "lucide-react"
 import { delimiterForFilename, parseDelimitedText } from "@worktable/types"
 import { Input } from "@worktable/ui/components/input"
@@ -115,4 +110,3 @@ export default function TableFileView({
     </div>
   )
 }
-

@@ -28,6 +28,12 @@ const OVERSCAN = 8
  * once a block, not on every frame.
  */
 const BLOCK_ROWS = 8
+/**
+ * Columns are drawn only near the view too: the view's left edge moves in
+ * blocks this wide, and a few columns past each side are drawn as well.
+ */
+const BLOCK_WIDTH = 320
+const OVERSCAN_COLUMNS = 2
 /** Rows measured to size the columns; enough to see a column's usual width. */
 const SAMPLE_ROWS = 200
 /** Cells measured at most, so a very wide file sizes quickly. */
@@ -47,6 +53,14 @@ const FONT_SIZE = 14
 const NAME_FONT_SIZE = 12
 
 type Sort = { column: number; direction: "asc" | "desc" } | null
+
+/** The columns drawn, by index, and the width of those left out on each side. */
+interface ColumnWindow {
+  first: number
+  end: number
+  before: number
+  after: number
+}
 
 /**
  * A row's shading: every other row striped with the inset fill, and the
@@ -68,6 +82,9 @@ const GUTTER =
   "sticky left-0 z-10 border-r border-b border-border/60 bg-card pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums transition-colors select-none before:pointer-events-none before:absolute before:inset-0 before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:content-[''] group-hover/row:text-foreground group-hover/row:before:bg-surface-inset group-hover/row:after:bg-surface-hover"
 const GUTTER_PLAIN = GUTTER
 const GUTTER_STRIPED = `${GUTTER} before:bg-surface-inset`
+/** The column names' row, where columns aren't drawn: the same lines. */
+const NAME_SPACER =
+  "sticky z-20 border-t border-b border-t-border/60 border-b-border/60 bg-card"
 const CELL =
   "truncate border-r border-b border-r-border/40 border-b-border/60 px-3 whitespace-nowrap"
 const CELL_NUMBER = `${CELL} text-right tabular-nums`
@@ -114,7 +131,16 @@ export function SheetGrid({
   const [dragged, setDragged] = useState<ReadonlyMap<number, number>>(
     () => new Map()
   )
-  const widths = fitted.map((width, index) => dragged.get(index) ?? width)
+  const widths = useMemo(
+    () => fitted.map((width, index) => dragged.get(index) ?? width),
+    [fitted, dragged]
+  )
+  // Where each column starts, from the first column's left edge.
+  const offsets = useMemo(() => {
+    const starts = [0]
+    for (const width of widths) starts.push(starts.at(-1)! + width)
+    return starts
+  }, [widths])
   const numeric = useMemo(
     () => numericColumns(rows, columnCount),
     [rows, columnCount]
@@ -161,8 +187,34 @@ export function SheetGrid({
   )
   const before = first * ROW_HEIGHT
   const after = Math.max(0, order.length - end) * ROW_HEIGHT
-  const columns = Array.from({ length: columnCount }, (_, index) => index)
-  const width = numberWidth + widths.reduce((sum, value) => sum + value, 0)
+  // The columns near the view; spacers stand in for the rest, so a file of
+  // 200 columns draws a screen of cells, not 200 per row.
+  const from = Math.max(0, view.left - numberWidth)
+  const to = view.left + view.width + BLOCK_WIDTH - numberWidth
+  let firstColumn = 0
+  while (firstColumn < columnCount && offsets[firstColumn + 1]! <= from) {
+    firstColumn += 1
+  }
+  let endColumn = firstColumn
+  while (endColumn < columnCount && offsets[endColumn]! < to) endColumn += 1
+  firstColumn = Math.max(0, firstColumn - OVERSCAN_COLUMNS)
+  endColumn = Math.min(columnCount, endColumn + OVERSCAN_COLUMNS)
+  const shownColumns: ColumnWindow = {
+    first: firstColumn,
+    end: endColumn,
+    before: offsets[firstColumn]!,
+    after: offsets[columnCount]! - offsets[endColumn]!,
+  }
+  const columns: number[] = []
+  for (let index = firstColumn; index < endColumn; index += 1) {
+    columns.push(index)
+  }
+  const drawnColumns =
+    1 +
+    columns.length +
+    (shownColumns.before ? 1 : 0) +
+    (shownColumns.after ? 1 : 0)
+  const width = numberWidth + offsets[columnCount]!
 
   const setWidth = (column: number, value: number) =>
     setDragged((current) => new Map(current).set(column, value))
@@ -185,14 +237,21 @@ export function SheetGrid({
     >
       <table
         aria-rowcount={order.length + 1}
+        aria-colcount={columnCount + 1}
         className="table-fixed border-separate border-spacing-0 text-sm"
         style={{ width }}
       >
         <colgroup>
           <col style={{ width: numberWidth }} />
-          {widths.map((value, index) => (
-            <col key={index} style={{ width: value }} />
+          {shownColumns.before ? (
+            <col style={{ width: shownColumns.before }} />
+          ) : null}
+          {columns.map((index) => (
+            <col key={index} style={{ width: widths[index] }} />
           ))}
+          {shownColumns.after ? (
+            <col style={{ width: shownColumns.after }} />
+          ) : null}
         </colgroup>
         <thead>
           <tr aria-hidden>
@@ -200,6 +259,9 @@ export function SheetGrid({
               className="sticky top-0 left-0 z-30 bg-card"
               style={{ height: LETTER_HEIGHT }}
             />
+            {shownColumns.before ? (
+              <th className="sticky top-0 z-20 bg-card" />
+            ) : null}
             {columns.map((index) => (
               <th
                 key={index}
@@ -211,12 +273,22 @@ export function SheetGrid({
                 {columnLetter(index)}
               </th>
             ))}
+            {shownColumns.after ? (
+              <th className="sticky top-0 z-20 bg-card" />
+            ) : null}
           </tr>
           <tr aria-rowindex={1}>
             <th
               className="sticky left-0 z-30 border-t border-r border-b border-border/60 bg-card"
               style={{ top: LETTER_HEIGHT, height: NAME_HEIGHT }}
             />
+            {shownColumns.before ? (
+              <th
+                aria-hidden
+                className={NAME_SPACER}
+                style={{ top: LETTER_HEIGHT, height: NAME_HEIGHT }}
+              />
+            ) : null}
             {columns.map((index) => {
               const direction =
                 sort?.column === index ? sort.direction : undefined
@@ -225,6 +297,7 @@ export function SheetGrid({
                 <th
                   key={index}
                   scope="col"
+                  aria-colindex={index + 2}
                   aria-sort={
                     direction === "asc"
                       ? "ascending"
@@ -276,13 +349,20 @@ export function SheetGrid({
                 </th>
               )
             })}
+            {shownColumns.after ? (
+              <th
+                aria-hidden
+                className={NAME_SPACER}
+                style={{ top: LETTER_HEIGHT, height: NAME_HEIGHT }}
+              />
+            ) : null}
           </tr>
         </thead>
         <tbody>
           {order.length === 0 ? (
             <tr>
               <td
-                colSpan={columnCount + 1}
+                colSpan={drawnColumns}
                 className="sticky left-0 px-4 py-10 text-sm text-muted-foreground"
               >
                 {empty}
@@ -291,7 +371,7 @@ export function SheetGrid({
           ) : null}
           {before > 0 && (
             <tr aria-hidden>
-              <td style={{ height: before }} colSpan={columnCount + 1} />
+              <td style={{ height: before }} colSpan={drawnColumns} />
             </tr>
           )}
           {order.slice(first, end).map((rowIndex, offset) => (
@@ -300,13 +380,13 @@ export function SheetGrid({
               row={rows[rowIndex]!}
               number={rowIndex + 1}
               position={first + offset}
-              columnCount={columnCount}
+              columns={shownColumns}
               numeric={numeric}
             />
           ))}
           {after > 0 && (
             <tr aria-hidden>
-              <td style={{ height: after }} colSpan={columnCount + 1} />
+              <td style={{ height: after }} colSpan={drawnColumns} />
             </tr>
           )}
         </tbody>
@@ -319,52 +399,68 @@ export function SheetGrid({
  * One row of the grid. A row already drawn isn't drawn again as the grid
  * scrolls; only rows coming into view are.
  */
-const SheetRow = memo(function SheetRow({
-  row,
-  number,
-  position,
-  columnCount,
-  numeric,
-}: {
-  row: readonly string[]
-  /** The row's number in the file, whatever order it shows in. */
-  number: number
-  /** Where it shows, which sets its stripe. */
-  position: number
-  columnCount: number
-  numeric: readonly boolean[]
-}) {
-  const cells = []
-  for (let index = 0; index < columnCount; index += 1) {
-    const value = row[index] ?? ""
-    cells.push(
-      <td
-        key={index}
-        title={value || undefined}
-        className={numeric[index] ? CELL_NUMBER : CELL}
+const SheetRow = memo(
+  function SheetRow({
+    row,
+    number,
+    position,
+    columns,
+    numeric,
+  }: {
+    row: readonly string[]
+    /** The row's number in the file, whatever order it shows in. */
+    number: number
+    /** Where it shows, which sets its stripe. */
+    position: number
+    /** The columns drawn, and the room the rest take. */
+    columns: ColumnWindow
+    numeric: readonly boolean[]
+  }) {
+    const cells = []
+    if (columns.before) cells.push(<td key="before" aria-hidden />)
+    for (let index = columns.first; index < columns.end; index += 1) {
+      const value = row[index] ?? ""
+      cells.push(
+        <td
+          key={index}
+          aria-colindex={index + 2}
+          title={value || undefined}
+          className={numeric[index] ? CELL_NUMBER : CELL}
+        >
+          {value}
+        </td>
+      )
+    }
+    if (columns.after) cells.push(<td key="after" aria-hidden />)
+    // Every other row as shown is striped, so stripes stay even after
+    // sorting or searching.
+    const striped = position % 2 === 1
+    return (
+      <tr
+        aria-rowindex={position + 2}
+        className={striped ? ROW_STRIPED : ROW_PLAIN}
       >
-        {value}
-      </td>
+        <td
+          className={striped ? GUTTER_STRIPED : GUTTER_PLAIN}
+          style={{ height: ROW_HEIGHT }}
+        >
+          {number}
+        </td>
+        {cells}
+      </tr>
     )
-  }
-  // Every other row as shown is striped, so stripes stay even after
-  // sorting or searching.
-  const striped = position % 2 === 1
-  return (
-    <tr
-      aria-rowindex={position + 2}
-      className={striped ? ROW_STRIPED : ROW_PLAIN}
-    >
-      <td
-        className={striped ? GUTTER_STRIPED : GUTTER_PLAIN}
-        style={{ height: ROW_HEIGHT }}
-      >
-        {number}
-      </td>
-      {cells}
-    </tr>
-  )
-})
+  },
+  // A row redraws only when it moves, or when other columns come into view.
+  (previous, next) =>
+    previous.row === next.row &&
+    previous.number === next.number &&
+    previous.position === next.position &&
+    previous.numeric === next.numeric &&
+    previous.columns.first === next.columns.first &&
+    previous.columns.end === next.columns.end &&
+    previous.columns.before === next.columns.before &&
+    previous.columns.after === next.columns.after
+)
 
 /** A column's letters, as a spreadsheet names it: A to Z, then AA, AB… */
 function columnLetter(index: number): string {
@@ -569,10 +665,14 @@ function useFontsLoaded(): boolean {
 function useScrollView(element: HTMLElement | null): {
   top: number
   height: number
+  left: number
+  width: number
 } {
   const [view, setView] = useState(() => ({
     top: 0,
     height: typeof window === "undefined" ? 0 : window.innerHeight,
+    left: 0,
+    width: typeof window === "undefined" ? 0 : window.innerWidth,
   }))
   useLayoutEffect(() => {
     if (!element) return
@@ -580,13 +680,19 @@ function useScrollView(element: HTMLElement | null): {
     const block = BLOCK_ROWS * ROW_HEIGHT
     const read = () => {
       frame = 0
-      // Snapped to blocks of rows, so the grid redraws once a block.
+      // Snapped to blocks of rows and of width, so the grid redraws once a
+      // block, not on every frame.
       const top = Math.floor(element.scrollTop / block) * block
       const height = Math.ceil(element.clientHeight / block) * block
+      const left = Math.floor(element.scrollLeft / BLOCK_WIDTH) * BLOCK_WIDTH
+      const width = Math.ceil(element.clientWidth / BLOCK_WIDTH) * BLOCK_WIDTH
       setView((current) =>
-        current.top === top && current.height === height
+        current.top === top &&
+        current.height === height &&
+        current.left === left &&
+        current.width === width
           ? current
-          : { top, height }
+          : { top, height, left, width }
       )
     }
     const schedule = () => {
@@ -634,7 +740,10 @@ function columnWidths(
   }
   return widest.map((width) =>
     Math.ceil(
-      Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, width + CELL_PADDING))
+      Math.min(
+        MAX_COLUMN_WIDTH,
+        Math.max(MIN_COLUMN_WIDTH, width + CELL_PADDING)
+      )
     )
   )
 }

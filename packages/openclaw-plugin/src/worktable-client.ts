@@ -1,4 +1,5 @@
 import { name as packageName, version as packageVersion } from "../package.json"
+import { createHash } from "node:crypto"
 import type {
   ClaimedWorktableComments,
   ClaimedWorktableDelivery,
@@ -15,6 +16,14 @@ export function worktableMcpEndpoint(server: string): URL {
   return url
 }
 
+/** Comments a recovered answer already reached, for OpenClaw's retries. */
+const answeredComments = new Set<string>()
+function rememberAnswered(key: string): void {
+  answeredComments.add(key)
+  if (answeredComments.size > 500)
+    answeredComments.delete(answeredComments.values().next().value!)
+}
+
 function textResult(result: unknown): Record<string, unknown> {
   const response = result as {
     isError?: boolean
@@ -23,14 +32,16 @@ function textResult(result: unknown): Record<string, unknown> {
   const text = response.content?.find((item) => item.type === "text")?.text
   if (!text) throw new Error("Worktable MCP returned no text result")
   if (response.isError) {
+    // Worktable answered and refused, as opposed to not answering at all.
+    const refusal = (error: Error) => Object.assign(error, { refused: true })
     try {
       const parsed = JSON.parse(text) as { code?: string; error?: string }
       const error = new Error(parsed.error ?? text)
       Object.assign(error, { code: parsed.code })
-      throw error
+      throw refusal(error)
     } catch (error) {
       if (error instanceof Error && "code" in error) throw error
-      throw new Error(text)
+      throw refusal(new Error(text))
     }
   }
   return JSON.parse(text) as Record<string, unknown>
@@ -376,7 +387,15 @@ export class McpWorktableClient implements WorktableClient {
     body: string
   }): Promise<string[]> {
     const answered: string[] = []
+    const answer = createHash("sha256").update(input.body).digest("base64url")
     for (const annotationId of new Set(input.annotationIds)) {
+      // OpenClaw sends again after a failure; comments that already got
+      // this answer don't get it twice.
+      const key = `${input.spaceId}\0${annotationId}\0${answer}`
+      if (answeredComments.has(key)) {
+        answered.push(annotationId)
+        continue
+      }
       try {
         await this.#call("worktable_annotations_write", {
           action: "reply",
@@ -384,9 +403,13 @@ export class McpWorktableClient implements WorktableClient {
           annotationId,
           body: input.body,
         })
+        rememberAnswered(key)
         answered.push(annotationId)
-      } catch {
-        // A comment deleted or moved out of reach since the turn began.
+      } catch (error) {
+        // Worktable refused it: deleted or out of reach since the turn
+        // began. Anything else, such as Worktable being down, fails the send
+        // so OpenClaw tries again.
+        if (!(error as { refused?: boolean }).refused) throw error
       }
     }
     return answered

@@ -57,12 +57,15 @@ export interface ClaimedWorktableComments {
   leaseExpiresAt: string
   identityId: string
   page: { spaceId: string; path: string; title: string }
+  /** The same on every retry of this batch. */
+  batchId?: string
   comments: Array<{
     annotationId: string
     requestId: string
     quote?: string
     body: string
-    from: WorktableParticipant
+    /** For an agent, who connected it, so each author is judged on its own. */
+    from: WorktableParticipant & { connectedBy?: string | null }
     replies: Array<{ from: string; body: string }>
   }>
   connectedBy?: ClaimedWorktableDelivery["connectedBy"]

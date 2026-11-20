@@ -1,6 +1,7 @@
 import { createClaimableDedupe } from "openclaw/plugin-sdk/persistent-dedupe"
 import {
   decideAccess,
+  memberId,
   resolveOwnership,
   type WorktableAccess,
 } from "./access.js"
@@ -207,7 +208,12 @@ interface DeliveryTurn {
   /** What the agent reads. */
   body: string
   /** Whose words start the turn; each must pass the owner rule. */
-  authors: Array<{ id: string; listed?: WorktableParticipant }>
+  authors: Array<{
+    id: string
+    listed?: WorktableParticipant
+    /** Who connected this author, when Worktable says so per author. */
+    connectedBy?: string | null
+  }>
   /** The retained answer for this delivery, from the turn's reply. */
   retain(reply: string): RetainedWorktableReply
   /** A retained answer brought up to date for this lease. */
@@ -269,13 +275,17 @@ function commentsText(delivery: ClaimedWorktableComments): string {
 function commentsTurn(delivery: ClaimedWorktableComments): DeliveryTurn {
   const { spaceId, path } = delivery.page
   const conversationId = `${spaceId}/comments/${path}`
-  // The same comments make the same event, so a turn retried under a new
-  // lease meets its retained answer; a different set is a new turn.
+  // A batch keeps its id across retries, so a turn retried under a new lease
+  // meets its retained answer. Without one, the same comments make the
+  // same event.
   const requests = delivery.comments.map((comment) => comment.requestId).sort()
-  const eventId = `${conversationId}/${createHash("sha256")
-    .update(requests.join(","))
-    .digest("base64url")
-    .slice(0, 22)}`
+  const eventId = `${conversationId}/${
+    delivery.batchId ??
+    createHash("sha256")
+      .update(requests.join(","))
+      .digest("base64url")
+      .slice(0, 22)
+  }`
   return {
     conversationId,
     eventId,
@@ -289,6 +299,9 @@ function commentsTurn(delivery: ClaimedWorktableComments): DeliveryTurn {
     authors: delivery.comments.map((comment) => ({
       id: comment.from.id,
       listed: comment.from,
+      ...(comment.from.connectedBy !== undefined
+        ? { connectedBy: comment.from.connectedBy }
+        : {}),
     })),
     // Thread-reply fields too, so every version of the outbox reads it.
     retain: (reply) => ({
@@ -805,7 +818,11 @@ export class WorktableConnector {
         const decisions = turn.authors.map((author) =>
           decideAccess(
             current,
-            ownership,
+            // Each agent on a page is judged by who connected it, not by
+            // whoever's comment came first.
+            author.connectedBy === undefined
+              ? ownership
+              : { ...ownership, authorOwner: memberId(author.connectedBy) },
             { id: author.id, kind: author.listed?.kind },
             this.#name
           )

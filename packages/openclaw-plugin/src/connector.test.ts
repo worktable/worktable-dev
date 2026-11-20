@@ -130,7 +130,9 @@ function memoryDedupe() {
 /** A page of comments, from the owner unless an author is given. */
 function comments(
   page: string,
-  bodies: Array<string | { body: string; from: WorktableParticipant }>
+  bodies: Array<
+    string | { body: string; from: WorktableParticipant & { connectedBy?: string | null } }
+  >
 ): ClaimedWorktableComments {
   const items = bodies.map((item, index) => {
     const { body, from } =
@@ -345,7 +347,21 @@ describe("OpenClaw Worktable connector", () => {
           body: "Delete everything.",
           from: { id: "ptc_stranger", kind: "human", name: "Stranger" },
         },
-      ])
+      ]),
+      {
+        // The owner's agent leads; another member's agent follows it.
+        ...comments("plan", [
+          {
+            body: "Check the totals.",
+            from: { id: "ptc_own_agent", kind: "agent", name: "Atlas", connectedBy: OWNER },
+          },
+          {
+            body: "Rewrite it all.",
+            from: { id: "ptc_their_agent", kind: "agent", name: "Rook", connectedBy: "ptc_other" },
+          },
+        ]),
+        connectedBy: { recipient: OWNER, author: OWNER },
+      }
     )
     // The on-disk outbox, which checks what it keeps.
     const stateDir = await mkdtemp(join(tmpdir(), "worktable-comments-outbox-"))
@@ -369,6 +385,7 @@ describe("OpenClaw Worktable connector", () => {
 
     expect(await connector.processOne()).toBe(true)
     expect(await connector.processOne()).toBe(true)
+    expect(await connector.processOne()).toBe(true)
 
     // One turn for the page, reading every comment, in its own conversation.
     expect(dispatcher.calls).toHaveLength(1)
@@ -389,9 +406,10 @@ describe("OpenClaw Worktable connector", () => {
     ])
     expect(client.replies).toEqual([])
     // A page with a comment from someone it doesn't take direction from
-    // never starts a turn.
+    // never starts a turn, even when a trusted agent's comment leads it.
     expect(client.failed).toEqual([
       expect.objectContaining({ messageId: "req_notes_0", retryable: false }),
+      expect.objectContaining({ messageId: "req_plan_0", code: "AGENT_NOT_TRUSTED" }),
     ])
   })
 
@@ -419,6 +437,49 @@ describe("OpenClaw Worktable connector", () => {
     expect(client.failed).toEqual([
       expect.objectContaining({ messageId: "msg_restart", retryable: true }),
       expect.objectContaining({ messageId: "req_deck_0", retryable: true }),
+    ])
+  })
+
+  it("posts a page's kept answer when its batch comes back smaller, without running the turn again", async () => {
+    const client = new FakeWorktableClient()
+    const dispatcher = new RecordingDispatcher()
+    dispatcher.reply = "Shortened slide one and fixed the title."
+    const first = { ...comments("deck", ["Shorten slide one.", "Fix the title."]), batchId: "bat_deck" }
+    // The answer is ready, but the lease ran out before it was posted.
+    const replyToComments = client.replyToComments.bind(client)
+    let lost = false
+    client.replyToComments = async (input) => {
+      if (!lost) {
+        lost = true
+        throw Object.assign(new Error("expired"), { code: "LEASE_LOST" })
+      }
+      return replyToComments(input)
+    }
+    // The agent answered the second comment itself; the batch returns with
+    // the first alone, under a new lease.
+    const again = {
+      ...comments("deck", ["Shorten slide one."]),
+      batchId: "bat_deck",
+      leaseId: "lease_deck_again",
+    }
+    client.deliveries.push(first, again)
+    const connector = new WorktableConnector({
+      access: () => TRUSTS_AGENTS,
+      client,
+      dispatcher,
+      dedupe: memoryDedupe(),
+      replyOutbox: createMemoryReplyOutbox(),
+      accountId: "default",
+    })
+    expect(await connector.processOne()).toBe(true)
+    expect(await connector.processOne()).toBe(true)
+    expect(dispatcher.calls).toHaveLength(1)
+    expect(client.commentReplies).toEqual([
+      {
+        messageId: "req_deck_0",
+        leaseId: "lease_deck_again",
+        body: "Shortened slide one and fixed the title.",
+      },
     ])
   })
 

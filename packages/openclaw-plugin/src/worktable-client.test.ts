@@ -166,6 +166,68 @@ describe("OpenClaw Worktable client", () => {
     }
   })
 
+  it("answers recovered comments once each, skips gone ones, and fails the send while Worktable is down", async () => {
+    const replies: string[] = []
+    let down = false
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      async fetch(request) {
+        const rpc = (await request.json()) as {
+          id?: number
+          method: string
+          params?: { arguments?: { request?: { annotationId?: string } } }
+        }
+        if (rpc.id === undefined) return new Response(null, { status: 202 })
+        if (rpc.method === "initialize")
+          return Response.json({
+            jsonrpc: "2.0",
+            id: rpc.id,
+            result: {
+              protocolVersion: "2025-03-26",
+              capabilities: { tools: {} },
+              serverInfo: { name: "answers-test", version: "1" },
+            },
+          })
+        const annotationId = rpc.params?.arguments?.request?.annotationId ?? ""
+        if (annotationId === "ann_down" && down)
+          return new Response("Unavailable", { status: 503 })
+        if (annotationId === "ann_gone")
+          return Response.json({
+            jsonrpc: "2.0",
+            id: rpc.id,
+            result: {
+              isError: true,
+              content: [{ type: "text", text: "Annotation not found: ann_gone" }],
+            },
+          })
+        replies.push(annotationId)
+        return Response.json({
+          jsonrpc: "2.0",
+          id: rpc.id,
+          result: { content: [{ type: "text", text: "{}" }] },
+        })
+      },
+    })
+    const client = new McpWorktableClient(server.url.href, "test-token")
+    const send = () =>
+      client.answerComments({
+        spaceId: "demo",
+        annotationIds: ["ann_first", "ann_gone", "ann_down"],
+        body: "Recovered answer.",
+      })
+    try {
+      down = true
+      await expect(send()).rejects.toThrow()
+      down = false
+      expect(await send()).toEqual(["ann_first", "ann_down"])
+      expect(replies).toEqual(["ann_first", "ann_down"])
+    } finally {
+      await client.close()
+      server.stop(true)
+    }
+  })
+
   it("advertises location support while claiming deliveries", async () => {
     const requests: Array<Record<string, unknown>> = []
     const result = await claimWithThreadLocations(async (request) => {

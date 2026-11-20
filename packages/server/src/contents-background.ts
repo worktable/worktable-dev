@@ -11,7 +11,9 @@
 // It works from each Space's catalog snapshot: a file's source stamp says
 // whether its bytes changed since it was last looked at, so a Space's other
 // changes cost nothing. One file is parsed at a time, in the lane's
-// background queue, so what someone waits for goes first. On a Cloud
+// background queue, so what someone waits for goes first, and each Space has
+// a budget of parsing time an hour, so one Space filled at once can't hold
+// the lane for hours. On a Cloud
 // machine it runs only while the machine is awake; what it hasn't reached
 // is parsed when someone reads it.
 
@@ -28,9 +30,38 @@ import { parseVersion } from "./parsed-contents.ts"
 import { listSpaces } from "./store.ts"
 import { runWithoutTeamIdentity } from "./team-policy.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
+import { workspaceCacheKey } from "./workspace.ts"
 
 /** How long a Space's changes settle before its files are looked over. */
 const SETTLE_MS = 5_000
+/**
+ * Background parsing one Space may take an hour, as time spent parsing:
+ * a Space filled with files at once is parsed over hours, a slice an hour,
+ * and never holds the lane past it. Its files are still parsed when read.
+ */
+export const SPACE_PARSE_BUDGET_MS = 10 * 60_000
+const BUDGET_WINDOW_MS = 60 * 60_000
+
+/** Time each Space's background parsing took in its current hour. */
+const spent = new Map<string, { since: number; ms: number }>()
+
+/** A Space of the served workspace, as these maps know it. */
+function spaceKey(spaceId: string): string {
+  return `${workspaceCacheKey()}\0${spaceId}`
+}
+
+/** When a Space may parse in the background again, or now. */
+function budgetResumesAt(spaceId: string, budgetMs: number, now = Date.now()): number {
+  const used = spent.get(spaceKey(spaceId))
+  if (!used || now - used.since >= BUDGET_WINDOW_MS) return now
+  return used.ms < budgetMs ? now : used.since + BUDGET_WINDOW_MS
+}
+
+function spend(spaceId: string, ms: number, now = Date.now()): void {
+  const used = spent.get(spaceKey(spaceId))
+  if (!used || now - used.since >= BUDGET_WINDOW_MS) spent.set(spaceKey(spaceId), { since: now, ms })
+  else used.ms += ms
+}
 /** When every Space is looked over after start. */
 const FIRST_PASS_MS = 60_000
 
@@ -47,8 +78,14 @@ const lookedAt = new Map<string, string>()
  */
 export async function parseChangedFiles(
   spaceId: string,
-  signal?: AbortSignal
+  options: {
+    signal?: AbortSignal
+    budgetMs?: number
+    /** Told when the Space's budget runs out, with when it resumes. */
+    deferred?: (resumesAt: number) => void
+  } = {}
 ): Promise<number> {
+  const { signal, budgetMs = SPACE_PARSE_BUDGET_MS } = options
   const stopped = () => signal?.aborted === true
   return runWithoutTeamIdentity(async () => {
     const catalog = await readDocumentCatalogSnapshot(spaceId)
@@ -60,7 +97,7 @@ export async function parseChangedFiles(
       const reader = contentsReaderFor(entry.descriptor.path)
       if (reader === null || reader === "text") continue
       const stamp = entry.handle.sourceStamp ?? ""
-      const seen = `${spaceId}\0${entry.handle.documentId}`
+      const seen = `${spaceKey(spaceId)}\0${entry.handle.documentId}`
       if (lookedAt.get(seen) === stamp) continue
       if ((sourceStampSize(stamp) ?? 0) > FILE_VERSION_MAX_BYTES) {
         lookedAt.set(seen, stamp)
@@ -86,9 +123,16 @@ export async function parseChangedFiles(
         continue
       }
       if (!derivedStore().getContents(key)) {
+        const resumesAt = budgetResumesAt(spaceId, budgetMs)
+        if (resumesAt > Date.now()) {
+          options.deferred?.(resumesAt)
+          break
+        }
+        const started = performance.now()
         const result = await parseVersion(key, resolved.current.pinned, "background", {
           ...(signal ? { signal } : {}),
         })
+        spend(spaceId, performance.now() - started)
         // A busy lane, a file mid-change or a stop is looked at again next time.
         if (result.kind === "failed" && ["busy", "source", "cancelled"].includes(result.why)) continue
         parsed += 1
@@ -113,17 +157,25 @@ export function startContentsBackground(): () => Promise<void> {
   let chain: Promise<unknown> = Promise.resolve()
   const run = (spaceId: string) => {
     chain = chain
-      .then(() => (stopping.signal.aborted ? 0 : parseChangedFiles(spaceId, stopping.signal)))
+      .then(() =>
+        stopping.signal.aborted
+          ? 0
+          : parseChangedFiles(spaceId, {
+              signal: stopping.signal,
+              // Picks the Space up again once its hour's budget is back.
+              deferred: (resumesAt) => schedule(spaceId, resumesAt - Date.now()),
+            })
+      )
       .catch(() => {
         // Looked over again at the Space's next change.
       })
   }
-  const schedule = (spaceId: string) => {
+  const schedule = (spaceId: string, delay = SETTLE_MS) => {
     clearTimeout(due.get(spaceId))
     const timer = setTimeout(() => {
       due.delete(spaceId)
       run(spaceId)
-    }, SETTLE_MS)
+    }, Math.max(delay, SETTLE_MS))
     timer.unref?.()
     due.set(spaceId, timer)
   }

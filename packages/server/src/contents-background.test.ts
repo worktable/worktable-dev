@@ -77,6 +77,21 @@ describe("parsing in the background", () => {
     expect(derivedStore().readContentsLines({ ...row!, spaceId })?.text).toContain("Second edition")
   }, 60_000)
 
+  it("parses a Space within its hour's budget, and says when it can go on", async () => {
+    const docs = join(root, "spaces", spaceId, "docs")
+    for (const name of ["one", "two", "three"]) {
+      await writeFile(join(docs, `${name}.pdf`), smallPdf([{ text: `Report ${name}` }]))
+    }
+    noteSpaceChanged(spaceId)
+    let resumesAt: number | null = null
+    // A budget one parse uses up: the pass stops there and says when it resumes.
+    expect(await parseChangedFiles(spaceId, { budgetMs: 1, deferred: (at) => (resumesAt = at) })).toBe(1)
+    expect(resumesAt).toBeGreaterThan(Date.now() + 50 * 60_000)
+    expect(await parseChangedFiles(spaceId, { budgetMs: 1 })).toBe(0)
+    // With the hour's budget, the rest are parsed.
+    expect(await parseChangedFiles(spaceId)).toBe(2)
+  }, 60_000)
+
   it("goes on past a file it can't read, and reads it once it can", async () => {
     // Root reads any file, so the unreadable one can't be made there.
     if (process.getuid?.() === 0) return

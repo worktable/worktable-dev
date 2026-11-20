@@ -20,21 +20,26 @@
 import { resolve } from "node:path"
 import type { DocumentCatalogEntry } from "./document-catalog.ts"
 import { BUILTIN_DOCUMENT_FORMATS } from "./document-format-registry.ts"
+import { inspectDocumentSource } from "./document-inventory.ts"
 import { readDocumentIdentities } from "./document-query.ts"
 import { resolveCurrentFile } from "./document-page-service.ts"
-import {
-  PreviewBrowserError,
-  previewBrowserFailed,
-} from "./document-preview-browser.ts"
-import { readRegisteredDocumentSource } from "./document-write-service.ts"
+import { previewBrowserFailed } from "./document-preview-browser.ts"
 import { renderDrawing } from "./drawing-render.ts"
 import {
   FilePictureError,
   filePictureKind,
   renderFilePicture,
 } from "./file-pictures.ts"
-import { currentFileRevision, OpenFileRevision } from "./file-revision.ts"
-import { QUICKDRAW_FORMAT, QuickdrawDocumentSchema } from "@worktable/types"
+import {
+  FILE_READ_CHUNK_BYTES,
+  FileRevisionError,
+  OpenFileRevision,
+} from "./file-revision.ts"
+import {
+  QUICKDRAW_FORMAT,
+  QUICKDRAW_MAX_BYTES,
+  QuickdrawDocumentSchema,
+} from "@worktable/types"
 import { getWorkspaceRoot } from "./workspace.ts"
 
 /** A picture's width: a pinned tile at twice its widest. */
@@ -120,8 +125,9 @@ async function drawItemPicture(input: {
   version: string
   theme: "light" | "dark"
 }): Promise<ItemPicture> {
+  // A browser that failed to start may start later: not now, not never.
   if (previewBrowserFailed())
-    throw new ItemPictureError("none", "This host can't draw pictures.")
+    throw new ItemPictureError("busy", "The preview browser isn't running.")
   const deadline = new AbortController()
   // Held by a timer this call owns: Bun 1.3 can collect an unreferenced
   // AbortSignal.timeout before it fires.
@@ -145,14 +151,12 @@ async function drawItemPicture(input: {
       : await filePicture(input, deadline.signal)
   } catch (error) {
     if (error instanceof ItemPictureError) throw error
-    if (error instanceof FilePictureError)
+    // What a file is at this version decides these, so they hold for good;
+    // a maker switched off may be switched back on.
+    if (error instanceof FilePictureError && error.code !== "off")
       throw new ItemPictureError("none", error.message)
-    if (
-      error instanceof PreviewBrowserError &&
-      error.code === "PREVIEW_UNAVAILABLE"
-    )
-      throw new ItemPictureError("none", error.message)
-    // Busy, timed out, cancelled, or changed while it was read: not now.
+    // Busy, timed out, cancelled, a browser that couldn't start, a maker
+    // switched off, or changed while it was read: not now.
     throw new ItemPictureError(
       "busy",
       error instanceof Error ? error.message : String(error)
@@ -172,8 +176,10 @@ async function filePicture(
     path: input.path,
     revision: input.version,
   })
-  if (result.kind !== "file")
+  if (result.kind === "changed" || result.kind === "not-found")
     throw new ItemPictureError("none", "The file is not at this version.")
+  if (result.kind !== "file")
+    throw new ItemPictureError("busy", "The file can't be read now.")
   const { current } = result
   const opened = await OpenFileRevision.open(
     current.pinned.path,
@@ -200,8 +206,8 @@ async function filePicture(
 }
 
 /**
- * A drawing's picture in `theme`. Its bytes are of `version` only when the
- * file is at that version before and after they are read.
+ * A drawing's picture in `theme`, from the source the Space's snapshot
+ * names, read at `version` a piece at a time: no catalog is built for it.
  */
 async function drawingPicture(
   input: {
@@ -213,27 +219,41 @@ async function drawingPicture(
   entry: Extract<DocumentCatalogEntry, { kind: "document" }>,
   signal: AbortSignal
 ): Promise<ItemPicture> {
-  const absolutePath = resolve(
-    getWorkspaceRoot(),
-    "spaces",
-    input.spaceId,
-    entry.handle.source.relativePath
+  // Checked as the file route checks a file: no link on the way to it.
+  const inspected = await inspectDocumentSource(
+    resolve(getWorkspaceRoot(), "spaces", input.spaceId),
+    entry.handle.source
   )
-  const atVersion = async () =>
-    (await currentFileRevision(absolutePath).catch(() => null))?.revision ===
-    input.version
-  if (!(await atVersion()))
-    throw new ItemPictureError("none", "The drawing is not at this version.")
-  const source = await readRegisteredDocumentSource({
-    spaceId: input.spaceId,
-    path: input.path,
-  })
-  if (!(await atVersion()))
-    throw new ItemPictureError("none", "The drawing is not at this version.")
+  if (!inspected.safe)
+    throw new ItemPictureError("none", "The drawing can't be read safely.")
+  let opened: OpenFileRevision
+  try {
+    opened = await OpenFileRevision.open(inspected.absolutePath, input.version)
+  } catch (error) {
+    if (error instanceof FileRevisionError && error.reason === "changed")
+      throw new ItemPictureError("none", "The drawing is not at this version.")
+    throw error
+  }
+  let bytes: Uint8Array
+  try {
+    if (opened.size > QUICKDRAW_MAX_BYTES)
+      throw new ItemPictureError("none", "The drawing is too large to draw.")
+    bytes = new Uint8Array(opened.size)
+    for (let position = 0; position < opened.size; ) {
+      const chunk = await opened.read(
+        position,
+        Math.min(FILE_READ_CHUNK_BYTES, opened.size - position)
+      )
+      bytes.set(chunk, position)
+      position += chunk.byteLength
+    }
+  } finally {
+    await opened.close()
+  }
   let drawing
   try {
     drawing = QuickdrawDocumentSchema.parse(
-      JSON.parse(new TextDecoder().decode(source.bytes))
+      JSON.parse(new TextDecoder().decode(bytes))
     )
   } catch {
     throw new ItemPictureError("none", "The drawing can't be read.")

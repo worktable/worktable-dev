@@ -409,10 +409,14 @@ function ItemPicture({
   children: ReactNode
 }) {
   const { resolvedTheme } = useTheme()
-  const [loaded, setLoaded] = useState(false)
+  const accessKey = spaceAccessKey(spaceId)
   const src = `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/picture?path=${encodeURIComponent(path)}&v=${encodeURIComponent(version)}${
     themed ? `&theme=${resolvedTheme === "dark" ? "dark" : "light"}` : ""
-  }`
+  }${accessKey ? `&a=${encodeURIComponent(accessKey)}` : ""}`
+  // Which picture has loaded: a new version or theme shows the icon again
+  // until its own picture loads, and keeps it when that one has none.
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
+  const loaded = loadedSrc === src
   return (
     <span
       aria-hidden
@@ -425,7 +429,7 @@ function ItemPicture({
         alt=""
         decoding="async"
         draggable={false}
-        onLoad={() => setLoaded(true)}
+        onLoad={() => setLoadedSrc(src)}
         className={cn(
           "absolute inset-0 size-full object-cover object-top transition-opacity duration-300",
           loaded ? "opacity-100" : "opacity-0"

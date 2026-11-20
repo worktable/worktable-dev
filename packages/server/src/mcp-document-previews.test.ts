@@ -454,6 +454,8 @@ it("shows a pinned PDF, image and drawing as a picture of its version, and a Doc
     expect(response.status, path).toBe(200)
     // Kept for good: the address names the version.
     expect(response.headers.get("cache-control")).toBe("private, max-age=31536000, immutable")
+    // Kept for this signed-in reader only.
+    expect(response.headers.get("vary")).toBe("Cookie, Authorization")
     expect(response.headers.get("content-type")).toBe("image/webp")
     const meta = await sharp(Buffer.from(await response.arrayBuffer())).metadata()
     expect(meta).toMatchObject({ format: "webp", width: 480 })
@@ -475,6 +477,11 @@ it("shows a pinned PDF, image and drawing as a picture of its version, and a Doc
   )
   noteSpaceChanged("preview")
   expect((await picture("files/shot.png", old)).status).toBe(404)
+  // A drawing changed on disk is at a new version too.
+  const drawingFile = join(docs, "flow.quickdraw")
+  await writeFile(drawingFile, `${await Bun.file(drawingFile).text()}\n`)
+  noteSpaceChanged("preview")
+  expect((await picture("flow", version("flow")!)).status).toBe(404)
   // Nor do a Doc, or a file of a type that has no picture.
   expect((await picture("plan", "x")).status).toBe(404)
   expect((await picture("files/notes.zip", "x")).status).toBe(404)

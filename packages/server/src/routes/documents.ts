@@ -617,6 +617,8 @@ documentsRouter.get("/picture", requireScope("documents:read"), async (c) => {
       headers: {
         "Content-Type": picture.mimeType,
         "Cache-Control": "private, max-age=31536000, immutable",
+        // Kept answers are for this signed-in reader only.
+        Vary: "Cookie, Authorization",
         "Content-Security-Policy": "default-src 'none'; sandbox",
         "Cross-Origin-Resource-Policy": "same-origin",
         "X-Content-Type-Options": "nosniff",
@@ -630,6 +632,7 @@ documentsRouter.get("/picture", requireScope("documents:read"), async (c) => {
       "Cache-Control",
       error.kind === "none" ? "private, max-age=86400" : "no-store"
     )
+    if (error.kind === "none") c.header("Vary", "Cookie, Authorization")
     return error.kind === "none"
       ? c.json({ error: "No picture.", code: "NOT_FOUND" }, 404)
       : c.json({ error: "Not yet.", code: "PREVIEW_BUSY" }, 503)

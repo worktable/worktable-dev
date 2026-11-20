@@ -23,7 +23,7 @@ test.afterAll(async () => {
   await harness?.stop()
 })
 
-test("a table file shows every row as written, with its header in view", async ({
+test("a table file shows every row as written, and sorts and searches its view", async ({
   page,
 }) => {
   await page.goto(
@@ -42,17 +42,30 @@ test("a table file shows every row as written, with its header in view", async (
     grid.getByRole("cell", { name: 'Split, then "rush"', exact: true })
   ).toBeVisible()
 
-  // The last row is drawn once scrolled to, and the header stays at the top.
+  // The last row is drawn once scrolled to, and the header stays put.
+  const headerTop = (await header.boundingBox())?.y
   await grid.evaluate((element) => {
     element.scrollTop = element.scrollHeight
   })
-  const last = grid.getByRole("cell", { name: "Row 3000", exact: true })
-  await expect(last).toBeVisible()
-  const [headerBox, gridBox] = await Promise.all([
-    header.boundingBox(),
-    grid.boundingBox(),
-  ])
-  expect(headerBox && gridBox && headerBox.y - gridBox.y).toBe(0)
+  await expect(grid.getByRole("cell", { name: "Row 3000", exact: true })).toBeVisible()
+  expect((await header.boundingBox())?.y).toBe(headerTop)
   // Only the rows in view are in the page, not all 3,000.
   expect(await grid.locator("tbody tr").count()).toBeLessThan(100)
+
+  // A number column sorts as numbers, largest first on the second click,
+  // and each row keeps its number in the file.
+  await grid.evaluate((element) => {
+    element.scrollTop = 0
+  })
+  const amount = grid.getByRole("button", { name: "Amount", exact: true })
+  await amount.click()
+  await amount.click()
+  const firstRow = grid.locator("tbody tr[aria-rowindex]").first()
+  await expect(firstRow.getByRole("cell").nth(3)).toHaveText("3000")
+  await expect(firstRow.getByRole("cell").first()).toHaveText("3000")
+
+  // Search keeps the rows that match and says how many.
+  await page.getByLabel("Search rows").fill("row 2999")
+  await expect(page.getByText("1 of 3,000 rows", { exact: true })).toBeVisible()
+  await expect(grid.getByRole("cell", { name: "Row 2999", exact: true })).toBeVisible()
 })

@@ -172,7 +172,7 @@ export function SheetGrid({
           </tr>
           <tr aria-rowindex={1}>
             <th
-              className="sticky left-0 z-30 border-b border-border/60 bg-card"
+              className="sticky left-0 z-30 border-r border-b border-border/60 bg-card"
               style={{ top: LETTER_HEIGHT, height: NAME_HEIGHT }}
             />
             {columns.map((index) => {
@@ -190,7 +190,7 @@ export function SheetGrid({
                         ? "descending"
                         : undefined
                   }
-                  className="sticky z-20 border-b border-border/60 bg-card px-1 text-left font-normal"
+                  className="sticky z-20 border-r border-b border-r-border/40 border-b-border/60 bg-card px-1 text-left font-normal last:border-r-0"
                   style={{ top: LETTER_HEIGHT, height: NAME_HEIGHT }}
                 >
                   <button
@@ -261,7 +261,7 @@ export function SheetGrid({
                 className="hover:[&>td]:bg-surface-hover"
               >
                 <td
-                  className="sticky left-0 z-10 border-b border-border/60 bg-card pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums select-none"
+                  className="sticky left-0 z-10 border-r border-b border-border/60 bg-card pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums select-none"
                   style={{ height: ROW_HEIGHT }}
                 >
                   {rowIndex + 1}
@@ -273,7 +273,7 @@ export function SheetGrid({
                       key={index}
                       title={value || undefined}
                       className={cn(
-                        "truncate border-b border-border/60 px-3 whitespace-nowrap",
+                        "truncate border-r border-b border-r-border/40 border-b-border/60 px-3 whitespace-nowrap last:border-r-0",
                         numeric[index] && "text-right tabular-nums"
                       )}
                     >

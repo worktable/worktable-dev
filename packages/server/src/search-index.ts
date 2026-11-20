@@ -1233,7 +1233,16 @@ export async function searchWithStatus(
     if (!archived) filtered.push(hit);
   }
 
-  const results: SearchResult[] = filtered.slice(0, maxResults).map(({ result: r, displayBody }) => {
+  const isArchived = (entry: IndexEntry) =>
+    (entry.type === "doc" && entry.archived === true) || inArchivedSpace(entry.spaceId);
+  // Current work first, so archived matches never crowd it out of the limit.
+  const ordered = opts?.archivedLast
+    ? [
+        ...filtered.filter((hit) => !isArchived(hit.result as unknown as IndexEntry)),
+        ...filtered.filter((hit) => isArchived(hit.result as unknown as IndexEntry)),
+      ]
+    : filtered;
+  const results: SearchResult[] = ordered.slice(0, maxResults).map(({ result: r, displayBody }) => {
     const entry = r as unknown as IndexEntry;
     // r.terms holds the document-side matched terms (prefix/fuzzy already
     // expanded, e.g. query "pair" → term "pairing"), so they locate in the body.
@@ -1264,10 +1273,7 @@ export async function searchWithStatus(
         : {}),
       ...(excerpt !== undefined ? { excerpt } : {}),
       ...(entry.type === "record" ? { collectionId: entry.collectionId, recordId: entry.recordId } : {}),
-      ...(opts?.archivedLast &&
-      ((entry.type === "doc" && entry.archived) || inArchivedSpace(entry.spaceId))
-        ? { archived: true as const }
-        : {}),
+      ...(opts?.archivedLast && isArchived(entry) ? { archived: true as const } : {}),
     };
   });
 

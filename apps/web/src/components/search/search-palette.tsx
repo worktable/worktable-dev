@@ -4,12 +4,11 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentProps,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
 } from "react"
-import { Link, useRouterState } from "@tanstack/react-router"
+import { Link, useRouterState, type LinkProps } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import {
   Database,
@@ -22,7 +21,6 @@ import {
   X,
 } from "lucide-react"
 import {
-  searchResultKind,
   type SearchKind,
   type SearchResult,
   type SpaceFile,
@@ -70,7 +68,15 @@ const KINDS: ReadonlyArray<{ kind: SearchKind; label: string }> = [
 /** A filter left open: the Select needs a value for "no filter". */
 const ANY = "any"
 
-type LinkTarget = Pick<ComponentProps<typeof Link>, "to" | "params" | "search">
+/**
+ * Where a row leads. Rows of every kind share one list, so each names its
+ * route here and the list hands it to the router's link.
+ */
+interface LinkTarget {
+  to: string
+  params?: Record<string, string>
+  search?: Record<string, string>
+}
 
 interface Row {
   key: string
@@ -142,7 +148,7 @@ function resultRow(
         to: "/library/$",
         params: { _splat: skillSplat(result.skill) },
       },
-      excerpt: result.excerpt,
+      ...(result.excerpt ? { excerpt: result.excerpt } : {}),
       location: (
         <span className="truncate text-xs text-muted-foreground">
           {result.skill.library.kind === "worktable"
@@ -160,9 +166,9 @@ function resultRow(
       target: {
         to: "/spaces/$spaceId/records/$",
         params: { spaceId: result.spaceId, _splat: result.collectionId ?? "" },
-        search: result.recordId ? { record: result.recordId } : undefined,
+        ...(result.recordId ? { search: { record: result.recordId } } : {}),
       },
-      excerpt: result.excerpt,
+      ...(result.excerpt ? { excerpt: result.excerpt } : {}),
       location: (
         <DocLocation
           spaceName={spaceName}
@@ -190,7 +196,7 @@ function resultRow(
           },
         }
       : {}),
-    excerpt: result.excerpt,
+    ...(result.excerpt ? { excerpt: result.excerpt } : {}),
     location: <DocLocation spaceName={spaceName} path={path ?? ""} />,
   }
 }
@@ -221,7 +227,7 @@ function recentRow(
         <Database className={ICON} />
       ),
     // A path this app showed; the router takes it as it is.
-    target: { to: open.path as "/" },
+    target: { to: open.path },
     location: spaceName ? (
       <DocLocation
         spaceName={spaceName}
@@ -349,7 +355,7 @@ function PaletteBody({
         id: "home",
         name: "Home",
         icon: <LayoutDashboard className={ICON} />,
-        target: { to: "/" } as LinkTarget,
+        target: { to: "/" } satisfies LinkTarget,
       },
       {
         id: "threads",
@@ -359,13 +365,13 @@ function PaletteBody({
           to: "/threads/$",
           params: { _splat: "" },
           search: { location: "all" },
-        } as LinkTarget,
+        } satisfies LinkTarget,
       },
       {
         id: "activity",
         name: "Activity",
         icon: <History className={ICON} />,
-        target: { to: "/activity" } as LinkTarget,
+        target: { to: "/activity" } satisfies LinkTarget,
       },
       ...(skillLibraries
         ? [
@@ -376,7 +382,7 @@ function PaletteBody({
               target: {
                 to: "/library/$",
                 params: { _splat: "" },
-              } as LinkTarget,
+              } satisfies LinkTarget,
             },
           ]
         : []),
@@ -393,7 +399,7 @@ function PaletteBody({
         target: {
           to: "/spaces/$spaceId",
           params: { spaceId: space.id },
-        } as LinkTarget,
+        } satisfies LinkTarget,
       })),
     ],
     [skillLibraries, spaces]
@@ -669,7 +675,8 @@ function PaletteRow({
       )}
       {row.target ? (
         <Link
-          {...row.target}
+          // The targets are this app's own routes, named as plain text.
+          {...(row.target as LinkProps)}
           {...common}
           // The field keeps the focus; rows are chosen from it.
           tabIndex={-1}

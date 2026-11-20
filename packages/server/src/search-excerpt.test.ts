@@ -527,6 +527,13 @@ describe("search excerpts", () => {
       "pairing-old",
     ]);
 
+    // Current work keeps its place when the limit is short.
+    expect(
+      (await find("pairing", "&includeArchived=true&archivedLast=true&maxResults=1")).map(
+        (result) => result.path,
+      ),
+    ).toEqual(["pairing-today"]);
+
     // Without the app's order, results say nothing more than before.
     const plain = await find("pairing", "&includeArchived=true");
     expect(plain).toHaveLength(3);

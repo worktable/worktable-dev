@@ -24,6 +24,8 @@ import {
 /** What a viewer frame's page can ask of it. */
 export interface ViewerFrameHandle {
   command: (command: ViewerCommand) => void
+  /** Answer a file's request for a password; null gives up on it. */
+  password: (password: string | null) => void
 }
 
 /** How long a frame has to show the file before the page gives up on it. */
@@ -54,6 +56,8 @@ export function ViewerFrame({
   onState,
   onRefused,
   onChanged,
+  onFind,
+  onPassword,
   onKey,
 }: {
   ref?: Ref<ViewerFrameHandle>
@@ -70,6 +74,10 @@ export function ViewerFrame({
   onRefused: (reason: ViewerRefusal) => void
   /** The file changed while it was being read. */
   onChanged: () => void
+  /** Where finding text has got to: the match shown, of how many. */
+  onFind?: (found: { current: number; total: number }) => void
+  /** The file needs a password; `retry` when the last one was wrong. */
+  onPassword?: (retry: boolean) => void
   onKey?: (key: string) => void
 }) {
   const { resolvedTheme } = useTheme()
@@ -78,14 +86,32 @@ export function ViewerFrame({
     (message: ViewerHostMessage, transfer?: Transferable[]) => void
   >(() => {})
   const [settled, setSettled] = useState(false)
-  const handlers = useRef({ onShown, onState, onRefused, onChanged, onKey })
-  useEffect(() => {
-    handlers.current = { onShown, onState, onRefused, onChanged, onKey }
+  const handlers = useRef({
+    onShown,
+    onState,
+    onRefused,
+    onChanged,
+    onFind,
+    onPassword,
+    onKey,
   })
+  useEffect(() => {
+    handlers.current = {
+      onShown,
+      onState,
+      onRefused,
+      onChanged,
+      onFind,
+      onPassword,
+      onKey,
+    }
+  })
+  const answerPassword = useRef<(password: string | null) => void>(() => {})
   const src = viewerUrl(viewer, "", [`theme=${resolvedTheme}`])
 
   useImperativeHandle(ref, () => ({
     command: (command) => post.current({ type: "viewer.command", command }),
+    password: (password) => answerPassword.current(password),
   }))
 
   useEffect(() => {
@@ -137,7 +163,14 @@ export function ViewerFrame({
       0,
       whole ? byteLength : Math.min(VIEWER_FIRST_BYTES, byteLength)
     ).catch(() => null)
-    const deadline = window.setTimeout(() => refuse("failed"), SHOW_DEADLINE_MS)
+    // The time to show the file, paused while the reader types a password.
+    let deadline = window.setTimeout(() => refuse("failed"), SHOW_DEADLINE_MS)
+    answerPassword.current = (password) => {
+      if (password !== null) {
+        deadline = window.setTimeout(() => refuse("failed"), SHOW_DEADLINE_MS)
+      }
+      send({ type: "viewer.password", password })
+    }
 
     const onMessage = async (event: MessageEvent) => {
       // Only this frame, and only while it is the document with no origin
@@ -207,6 +240,16 @@ export function ViewerFrame({
           window.clearTimeout(deadline)
           refuse(message.reason)
           return
+        case "viewer.find":
+          handlers.current.onFind?.({
+            current: message.current,
+            total: message.total,
+          })
+          return
+        case "viewer.password":
+          window.clearTimeout(deadline)
+          handlers.current.onPassword?.(message.retry === true)
+          return
         case "viewer.link":
           openLink(message.url)
           return
@@ -228,6 +271,7 @@ export function ViewerFrame({
     return () => {
       over = true
       post.current = () => {}
+      answerPassword.current = () => {}
       abort.abort()
       window.clearTimeout(deadline)
       window.removeEventListener("message", onMessage)

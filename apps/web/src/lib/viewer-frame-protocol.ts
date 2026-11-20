@@ -49,11 +49,14 @@ export type ViewerHostMessage =
   | { type: "viewer.bytes"; begin: number; data: ArrayBuffer | null }
   | { type: "viewer.asset"; id: string; data: ArrayBuffer | null }
   | { type: "viewer.command"; command: ViewerCommand }
+  /** The password a reader typed, or null when they gave up. */
+  | { type: "viewer.password"; password: string | null }
 
 /** What the page asks of an open viewer. */
 export type ViewerCommand =
   | { name: "page"; page: number }
   | { name: "zoom"; to: "in" | "out" | "fit" }
+  /** Find text; an empty query ends finding and clears what was found. */
   | { name: "find"; query: string; direction?: "next" | "previous" }
 
 /** From the frame to the page. Every message carries the frame's token. */
@@ -64,6 +67,8 @@ export type ViewerFrameMessage = { token: string } & (
   | ({ type: "viewer.shown" } & ViewerState)
   | ({ type: "viewer.state" } & ViewerState)
   | { type: "viewer.find"; current: number; total: number }
+  /** The file needs a password; `retry` when the last one was wrong. */
+  | { type: "viewer.password"; retry: boolean }
   | { type: "viewer.refused"; reason: ViewerRefusal }
   /** A link the reader followed; the page decides whether to open it. */
   | { type: "viewer.link"; url: string }
@@ -91,6 +96,7 @@ const MESSAGE_TYPES = new Set([
   "viewer.shown",
   "viewer.state",
   "viewer.find",
+  "viewer.password",
   "viewer.refused",
   "viewer.link",
   "viewer.key",
@@ -127,4 +133,14 @@ export function viewerAssetPath(request: ViewerAssetRequest): string | null {
   if (!/^[a-z][a-z_-]{0,31}$/.test(request.kind)) return null
   if (!plain.test(request.name) || request.name.includes("..")) return null
   return `${request.kind}/${request.name}`
+}
+
+/**
+ * The page a link to a PDF names, as `#page=12`, the way links into PDFs
+ * do everywhere; other parts of the address are left alone.
+ */
+export function pdfPageFromHash(hash: string): number | undefined {
+  const match = /(?:^#|&)page=(\d{1,6})(?:&|$)/.exec(hash)
+  const page = match ? Number(match[1]) : NaN
+  return page >= 1 ? page : undefined
 }

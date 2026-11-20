@@ -1,7 +1,23 @@
-import { useCallback, useRef, useState, type ReactNode } from "react"
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { MoveHorizontal, ZoomIn, ZoomOut } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronUp,
+  MoveHorizontal,
+  Search,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
+import { Input } from "@worktable/ui/components/input"
 import { Skeleton } from "@worktable/ui/components/skeleton"
 import { FileCard } from "@/components/file-card"
 import {
@@ -9,7 +25,11 @@ import {
   type ViewerFrameHandle,
 } from "@/components/viewer/viewer-frame"
 import { documentQueryKeys } from "@/lib/documents-queries"
-import type { ViewerRefusal, ViewerState } from "@/lib/viewer-frame-protocol"
+import {
+  pdfPageFromHash,
+  type ViewerRefusal,
+  type ViewerState,
+} from "@/lib/viewer-frame-protocol"
 
 const REFUSALS: Record<ViewerRefusal, string> = {
   password: "Password protected",
@@ -18,8 +38,8 @@ const REFUSALS: Record<ViewerRefusal, string> = {
 }
 
 /**
- * A PDF on its own page: the file fills the pane, with its place and zoom
- * above it. The file is parsed in a viewer frame, never in this page.
+ * A PDF on its own page: the file fills the pane, with its place, zoom and
+ * Find above it. The file is parsed in a viewer frame, never in this page.
  */
 export default function PdfFileView({
   spaceId,
@@ -39,10 +59,20 @@ export default function PdfFileView({
 }) {
   const queryClient = useQueryClient()
   const frame = useRef<ViewerFrameHandle>(null)
+  const [startPage] = useState(() => pdfPageFromHash(window.location.hash))
   const [shown, setShown] = useState<ViewerState | null>(null)
   const [refused, setRefused] = useState<ViewerRefusal | null>(null)
   // The page number as typed, until it is entered or the reader moves on.
   const [typed, setTyped] = useState<string | null>(null)
+  // Finding text: open with what is typed, and where it has got to.
+  const [find, setFind] = useState<string | null>(null)
+  const [found, setFound] = useState<{ current: number; total: number } | null>(
+    null
+  )
+  const findInput = useRef<HTMLInputElement>(null)
+  // The file asked for a password: whether the last one was wrong.
+  const [asking, setAsking] = useState<{ retry: boolean } | null>(null)
+  const [password, setPassword] = useState("")
 
   const goToTyped = useCallback(() => {
     const page = Number(typed)
@@ -53,6 +83,41 @@ export default function PdfFileView({
   }, [typed])
   const zoom = (to: "in" | "out" | "fit") =>
     frame.current?.command({ name: "zoom", to })
+
+  const openFind = useCallback(() => {
+    setFind((open) => open ?? "")
+    // Focus once the field is there; again if it already was.
+    requestAnimationFrame(() => {
+      findInput.current?.focus()
+      findInput.current?.select()
+    })
+  }, [])
+  const closeFind = useCallback(() => {
+    setFind(null)
+    setFound(null)
+    frame.current?.command({ name: "find", query: "" })
+  }, [])
+  const findAgain = (direction: "next" | "previous") => {
+    if (find) frame.current?.command({ name: "find", query: find, direction })
+  }
+
+  // Cmd or Ctrl+F finds in the PDF, not in the page around it.
+  useEffect(() => {
+    if (!shown) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        event.key.toLowerCase() === "f"
+      ) {
+        event.preventDefault()
+        openFind()
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [openFind, shown])
+
   // A file replaced while it was being read loads again from its page.
   const reload = useCallback(
     () =>
@@ -63,6 +128,14 @@ export default function PdfFileView({
     [path, queryClient, spaceId]
   )
 
+  const submitPassword = (event: FormEvent) => {
+    event.preventDefault()
+    if (!password) return
+    frame.current?.password(password)
+    setPassword("")
+    setAsking(null)
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-1">
@@ -71,8 +144,73 @@ export default function PdfFileView({
         </div>
         {shown ? (
           <div className="flex shrink-0 items-center gap-0.5">
+            {find !== null ? (
+              <div className="mr-1 flex items-center gap-0.5">
+                <Input
+                  ref={findInput}
+                  aria-label="Find in PDF"
+                  placeholder="Find"
+                  className="h-7 w-36 text-xs sm:w-44"
+                  value={find}
+                  onChange={(event) => {
+                    const query = event.target.value
+                    setFind(query)
+                    if (!query) setFound(null)
+                    frame.current?.command({ name: "find", query })
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      findAgain(event.shiftKey ? "previous" : "next")
+                    } else if (event.key === "Escape") {
+                      event.preventDefault()
+                      closeFind()
+                    }
+                  }}
+                />
+                <span
+                  className="min-w-14 text-center text-xs text-muted-foreground tabular-nums"
+                  aria-live="polite"
+                >
+                  {find && found
+                    ? found.total === 0
+                      ? "No matches"
+                      : `${found.current} of ${found.total}`
+                    : ""}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={!found?.total}
+                  onClick={() => findAgain("previous")}
+                  title="Previous match"
+                  aria-label="Previous match"
+                >
+                  <ChevronUp />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={!found?.total}
+                  onClick={() => findAgain("next")}
+                  title="Next match"
+                  aria-label="Next match"
+                >
+                  <ChevronDown />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={closeFind}
+                  title="Close Find"
+                  aria-label="Close Find"
+                >
+                  <X />
+                </Button>
+                <div className="mx-1 h-5 w-px bg-border" />
+              </div>
+            ) : null}
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
-              <span className="sr-only">Page</span>
               <input
                 inputMode="numeric"
                 aria-label="Page"
@@ -121,6 +259,17 @@ export default function PdfFileView({
             >
               <MoveHorizontal />
             </Button>
+            {find === null ? (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={openFind}
+                title="Find"
+                aria-label="Find"
+              >
+                <Search />
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -131,8 +280,50 @@ export default function PdfFileView({
       ) : (
         <div className="relative min-h-0 flex-1">
           {shown ? null : (
-            <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden bg-background p-4">
-              <Skeleton className="mx-auto aspect-[17/22] w-full max-w-3xl rounded-sm" />
+            <div className="absolute inset-0 z-10 overflow-hidden bg-background p-4">
+              {asking ? (
+                <form
+                  onSubmit={submitPassword}
+                  className="mx-auto mt-12 flex w-full max-w-sm flex-col gap-3 rounded-xl card-surface p-5"
+                >
+                  <h2 className="text-base font-semibold text-foreground">
+                    Password Protected
+                  </h2>
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    aria-label="Password"
+                    placeholder="Password"
+                    aria-invalid={asking.retry || undefined}
+                    autoFocus
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                  {asking.retry ? (
+                    <p className="text-sm text-destructive">
+                      That password didn’t work.
+                    </p>
+                  ) : null}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        frame.current?.password(null)
+                        setAsking(null)
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" size="sm" disabled={!password}>
+                      Open
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <Skeleton className="pointer-events-none mx-auto aspect-[17/22] w-full max-w-3xl rounded-sm" />
+              )}
             </div>
           )}
           <ViewerFrame
@@ -141,6 +332,7 @@ export default function PdfFileView({
             title={name}
             fileUrl={fileUrl}
             byteLength={byteLength}
+            {...(startPage ? { startPage } : {})}
             className="block h-full w-full border-0 bg-background"
             onShown={setShown}
             onState={(state) => {
@@ -149,6 +341,12 @@ export default function PdfFileView({
             }}
             onRefused={setRefused}
             onChanged={reload}
+            onFind={setFound}
+            onPassword={(retry) => setAsking({ retry })}
+            onKey={(key) => {
+              if (key === "find") openFind()
+              else if (key === "Escape" && find !== null) closeFind()
+            }}
           />
         </div>
       )}

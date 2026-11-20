@@ -40,6 +40,15 @@ function pdfOf(pages: string[], padding = 0): Buffer {
   return Buffer.from(body, "latin1")
 }
 
+/**
+ * A one-page PDF under the standard security handler (RC4, 40-bit), user
+ * password "open sesame", made for this test.
+ */
+const LOCKED_PDF = Buffer.from(
+  "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA1NSA+PgpzdHJlYW0KvWGGDIwKKafzKfupfrTGrvQBbqH4Hnb3khzi9ZUGOZV1FV4c2xo6jk4ppspw8N1vBmIOzTGMIwplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iago2IDAgb2JqCjw8IC9GaWx0ZXIgL1N0YW5kYXJkIC9WIDEgL1IgMiAvTyA8ZmNlODk4MjQwNmFjZmQ5ZDhmYTZkODdiODI0N2FjYTFkYjY3YTM0YjE3ZTg2YWQyNzQ1YmZhNWYwYTEyZWQzYz4gL1UgPDMwYjBjYjg2ODI2MmY4MGViMjU0MDhiZjQzNzU3MjdiZTFhZWM3N2FhOTIzMGNjYTdmYWZkYzUyZTI3MDdlZDg+IC9QIC00NCA+PgplbmRvYmoKeHJlZgowIDcKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDAzNDYgMDAwMDAgbiAKMDAwMDAwMDQxNiAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDcgL1Jvb3QgMSAwIFIgL0VuY3J5cHQgNiAwIFIgL0lEIFs8OGY4MjQyYTRlMDQzNTI1Y2RjOWI4ZTQ5NDRhYmJhM2I+IDw4ZjgyNDJhNGUwNDM1MjVjZGM5YjhlNDk0NGFiYmEzYj5dID4+CnN0YXJ0eHJlZgo2MTIKJSVFT0YK",
+  "base64"
+)
+
 let harness: WebHarness
 test.beforeAll(async () => {
   harness = await startWebHarness("pdf-viewer", { storageVersion: 2 })
@@ -57,6 +66,7 @@ test.beforeAll(async () => {
     // Past the size a file is handed over whole, so it is read in pieces.
     ["long.pdf", pdfOf(["A page far into a large file"], 5 * 1024 * 1024)],
     ["damaged.pdf", Buffer.from("This was never a PDF. ".repeat(40))],
+    ["locked.pdf", LOCKED_PDF],
   ] as const) {
     const saved = await fetch(
       `${harness.apiUrl}/api/spaces/papers/documents/file?path=${name}`,
@@ -140,6 +150,48 @@ test("a PDF opens and reads on its page, inside a frame that can reach nothing",
       .subarray(0, 8)
       .toString()
   ).toBe("%PDF-1.4")
+})
+
+test("a reader finds text, opens at a linked page, and unlocks a file", async ({
+  page,
+}) => {
+  // A link to a page opens there.
+  await page.goto(`${harness.webUrl}/spaces/papers/documents/report.pdf#page=2`)
+  const pageNumber = page.getByRole("textbox", { name: "Page" })
+  await expect(pageNumber).toHaveValue("2", { timeout: 60_000 })
+
+  // Find counts every match and moves through them.
+  await page.getByRole("button", { name: "Find", exact: true }).click()
+  const findField = page.getByRole("textbox", { name: "Find in PDF" })
+  await findField.fill("page")
+  await expect(page.getByText("1 of 3")).toBeVisible()
+  await findField.press("Enter")
+  await expect(page.getByText("2 of 3")).toBeVisible()
+  await findField.fill("nowhere in this file")
+  await expect(page.getByText("No matches")).toBeVisible()
+  await findField.press("Escape")
+  await expect(findField).toBeHidden()
+
+  // A locked file asks for its password, says when one is wrong, and opens.
+  await page.goto(`${harness.webUrl}/spaces/papers/documents/locked.pdf`)
+  const password = page.getByLabel("Password", { exact: true })
+  await password.fill("not it")
+  await page.getByRole("button", { name: "Open", exact: true }).click()
+  await expect(page.getByText("That password didn’t work.")).toBeVisible({
+    timeout: 30_000,
+  })
+  await password.fill("open sesame")
+  await page.getByRole("button", { name: "Open", exact: true }).click()
+  await expect(
+    page
+      .frameLocator('iframe[data-viewer-frame="pdf"]')
+      .getByText("A page behind a password")
+  ).toBeVisible()
+
+  // Giving up leaves the card and the download.
+  await page.reload()
+  await page.getByRole("button", { name: "Cancel", exact: true }).click()
+  await expect(page.getByText("Password protected")).toBeVisible()
 })
 
 test("a large PDF is read in pieces, not whole", async ({ page }) => {

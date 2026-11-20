@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   clampViewerRead,
+  pdfPageFromHash,
   viewerAssetPath,
   viewerFrameMessage,
 } from "./viewer-frame-protocol"
@@ -54,4 +55,20 @@ describe("what a viewer frame may ask its page for", () => {
       expect(viewerFrameMessage(data)).toBeNull()
     }
   })
+})
+
+test("a link to a PDF opens at the page it names", () => {
+  expect(pdfPageFromHash("#page=12")).toBe(12)
+  expect(pdfPageFromHash("#zoom=100&page=3")).toBe(3)
+  for (const hash of [
+    "",
+    "#",
+    "#page=0",
+    "#page=-2",
+    "#page=x",
+    "#pages=4",
+    "#page=1.5",
+  ]) {
+    expect(pdfPageFromHash(hash)).toBeUndefined()
+  }
 })

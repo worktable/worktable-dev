@@ -100,6 +100,7 @@ let transport: HostTransport | null = null
 let viewer: PDFViewer | null = null
 let eventBus: EventBus | null = null
 let query = ""
+let givePassword: ((password: string | null) => void) | null = null
 
 function state() {
   return {
@@ -144,9 +145,19 @@ async function open(
     enableXfa: false,
     maxImageSize: 64 * 1024 * 1024,
   })
-  task.onPassword = () => {
-    say({ type: "viewer.refused", reason: "password" })
-    void task.destroy()
+  // The reader is asked in the app's page; the password stays in this open.
+  task.onPassword = (answer: (password: string) => void, reason: number) => {
+    givePassword = (password) => {
+      givePassword = null
+      if (password === null) {
+        say({ type: "viewer.refused", reason: "password" })
+        void task.destroy()
+      } else answer(password)
+    }
+    say({
+      type: "viewer.password",
+      retry: reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD,
+    })
   }
   let pdf: Awaited<typeof task.promise>
   try {
@@ -214,6 +225,9 @@ function command(
     if (asked.to === "fit") viewer.currentScaleValue = "page-width"
     else if (asked.to === "in") viewer.increaseScale()
     else viewer.decreaseScale()
+  } else if (asked.query === "") {
+    query = ""
+    eventBus.dispatch("findbarclose", { source: null })
   } else {
     const again = asked.query === query && asked.direction !== undefined
     query = asked.query
@@ -235,6 +249,7 @@ hear((message) => {
     }
   } else if (message.type === "viewer.asset")
     assetArrived(message.id, message.data)
+  else if (message.type === "viewer.password") givePassword?.(message.password)
   else command(message)
 })
 

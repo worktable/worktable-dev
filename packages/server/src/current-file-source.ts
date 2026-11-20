@@ -38,6 +38,11 @@ const READ_ATTEMPTS = 3
 const sourceRevisions = new Map<string, string>()
 const SOURCE_REVISIONS_MAX = 4096
 
+/** Forgets every kept source revision, so a test sees each read. */
+export function forgetSourceRevisionsForTests(): void {
+  sourceRevisions.clear()
+}
+
 function sourceRevisionKey(current: CurrentFile): string {
   return JSON.stringify([
     current.documentId,

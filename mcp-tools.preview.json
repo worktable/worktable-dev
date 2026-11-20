@@ -13982,8 +13982,7 @@
       "required": [
         "messageId",
         "leaseId",
-        "status",
-        "body"
+        "status"
       ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false

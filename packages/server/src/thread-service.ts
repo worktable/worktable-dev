@@ -81,6 +81,7 @@ import {
 } from "./thread-store.ts"
 import {
   listParticipantBindings,
+  participantForPrincipal,
   participantKey,
   participantsByKey,
   requireParticipant,
@@ -95,6 +96,7 @@ import {
 } from "./pending-list.ts"
 import { ownerIdentity } from "./auth.ts"
 import { readDocumentIdentities } from "./document-query.ts"
+import { DocumentAnnotationError } from "./document-annotation-service.ts"
 import { readAnnotation, replyAnnotation } from "./annotation-store.ts"
 import { wsManager } from "./ws.ts"
 import {
@@ -1975,9 +1977,26 @@ async function commentClaim(
   const gone: string[] = []
   let path: string | undefined
   for (const ref of refs) {
-    const annotation = await readAnnotation(spaceId, ref.annotationId).catch(
-      () => null
-    )
+    let annotation: Awaited<ReturnType<typeof readAnnotation>> | null
+    try {
+      annotation = await readAnnotation(spaceId, ref.annotationId)
+    } catch (error) {
+      if (!commentMissing(error)) {
+        // Access that changed or storage that failed may come back: the
+        // page waits again, with its attempt returned.
+        await failThreadDelivery({
+          messageId: claim.messageId,
+          leaseId: claim.leaseId,
+          participantId,
+          retryable: true,
+          spendAttempt: false,
+          code: "COMMENT_UNAVAILABLE",
+          message: "A comment couldn't be read just now.",
+        })
+        return null
+      }
+      annotation = null
+    }
     const request = annotation?.requests?.find((r) => r.id === ref.requestId)
     if (
       !annotation ||
@@ -2044,6 +2063,34 @@ async function commentClaim(
   }
 }
 
+/** Whether reading a comment failed because it is gone, not for now. */
+function commentMissing(error: unknown): boolean {
+  return (
+    (error instanceof DocumentAnnotationError && error.reason === "not-found") ||
+    (error instanceof Error && /^Annotation not found:/.test(error.message))
+  )
+}
+
+/**
+ * The thread member an agent's comments come from. Comments name the
+ * agent's credential; members are bound to it by its participant key.
+ */
+async function agentParticipantId(principalId: string): Promise<string | null> {
+  const seen = participantForPrincipal(principalId)
+  if (seen) return seen
+  const byKey = await participantsByKey()
+  const direct = byKey.get(`principal:${principalId}`)
+  if (direct) return direct.id
+  const workspace = getWorkspaceRoot()
+  for (const token of await listTokens()) {
+    if (token.workspace !== workspace || token.principal.id !== principalId)
+      continue
+    const bound = byKey.get(participantKey(token))
+    if (bound) return bound.id
+  }
+  return null
+}
+
 /** A comment's author as a thread member, when they are one. */
 async function commentAuthor(author: {
   type: string
@@ -2065,6 +2112,10 @@ async function commentAuthor(author: {
   if (kind === "human" && !currentTeamWorktable()) {
     const { participant } = await resolveParticipant(ownerIdentity())
     return { id: participant.id, kind, name }
+  }
+  if (kind === "agent") {
+    const id = await agentParticipantId(author.id)
+    if (id) return { id, kind, name }
   }
   return { id: author.id, kind, name }
 }

@@ -1199,13 +1199,22 @@ export async function claimThreadDelivery(
     const batch: DeliveryRecord[] = candidate ? [candidate] : []
     if (candidate?.comment) {
       for (const record of file.deliveries) {
+        // Waiting ones, and the rest of an expired batch, which retries as
+        // one page within its attempts.
+        const waiting =
+          record.state === "queued" &&
+          !(record.nextAttemptAt && Date.parse(record.nextAttemptAt) > nowMs)
+        const expired =
+          record.state !== "queued" &&
+          active(record) &&
+          record.attempts < MAX_ATTEMPTS &&
+          (!record.leaseExpiresAt || Date.parse(record.leaseExpiresAt) <= nowMs)
         if (
           record === candidate ||
           record.participantId !== participantId ||
           record.comment?.page !== candidate.comment.page ||
           record.comment.spaceId !== candidate.comment.spaceId ||
-          record.state !== "queued" ||
-          (record.nextAttemptAt && Date.parse(record.nextAttemptAt) > nowMs)
+          (!waiting && !expired)
         )
           continue
         record.state = "leased"

@@ -1068,7 +1068,8 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
         .describe(
           "accepted acknowledges receipt; progress reports a phase; failed reports why delivery stopped; replied answers a page of comments."
         ),
-      body: deliveryReply.body!,
+      // Only replied takes a body; the reply operation requires it there.
+      body: deliveryReply.body!.optional(),
     }),
     runs: [...tool.runs, ["worktable_thread_delivery", "reply"]],
     route: (args) =>

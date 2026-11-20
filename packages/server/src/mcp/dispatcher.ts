@@ -1270,7 +1270,13 @@ async function _dispatchOperationInner(
           identity,
           parsed.waitSeconds,
           parsed.threadLocationVersion,
-          { comments: parsed.comments === true && context.surface === "preview" }
+          {
+            // Comment text goes only to credentials that may read comments.
+            comments:
+              parsed.comments === true &&
+              context.surface === "preview" &&
+              hasScope(identity.scopes, "annotations:read"),
+          }
         ),
       }
     }

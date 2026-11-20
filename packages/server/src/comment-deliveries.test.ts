@@ -21,6 +21,8 @@ import { startGrokBotRuntime } from "./grok-bot-runtime.ts"
 import { commentDeliveryStates } from "./thread-delivery-store.ts"
 import { claimNextDelivery, claimNextThreadDelivery } from "./thread-service.ts"
 import { writeDoc, writeSpace } from "./store.ts"
+import { readFile, writeFile } from "node:fs/promises"
+import { workspaceCacheKey } from "./workspace.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import { drainWorkspaceChanges } from "./workspace-events.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
@@ -82,11 +84,15 @@ async function comment(docPath: string, to: string, body: string) {
 }
 
 /** A runtime over MCP, calling the grouped delivery tool the plugins use. */
-async function runtime(identity: TokenIdentity, surface: McpSurface) {
+async function runtime(
+  identity: TokenIdentity,
+  surface: McpSurface,
+  scopes: string[] = ["*"]
+) {
   const server = createWorktableMcpServer({
     version: "test",
     surface,
-    scopes: ["*"],
+    scopes,
     identity: { agent: identity.agent, principal: identity.principal },
     principal: identity.principal,
   })
@@ -281,6 +287,56 @@ describe("comments delivered to an agent's runtime", () => {
       await preview.close()
     }
   }, 60_000)
+
+  it("names an agent author as its member, keeps comments from credentials that can't read them, and retries an expired page whole", async () => {
+    const agentId = (await resolveParticipant(robin, { name: "Robin" })).participant.id
+    const atlas: TokenIdentity = {
+      ...robin,
+      agent: "claude-code@atlas",
+      principal: { ...robin.principal, id: "token:atlas", displayName: "Atlas" },
+    }
+    const atlasId = (await resolveParticipant(atlas, { name: "Atlas" })).participant.id
+    const writer = await runtime(atlas, "preview")
+    const narrow = await runtime(robin, "preview", ["threads:*"])
+    const preview = await runtime(robin, "preview")
+    try {
+      // Another agent comments to Robin.
+      for (const body of ["From Atlas: check the totals.", "From Atlas: and the dates."])
+        await writer.call("worktable_annotations_write", {
+          action: "create",
+          spaceId: "demo",
+          target: { type: "doc", docPath: "deck" },
+          body,
+          to: [agentId],
+        })
+      // A credential that can't read comments gets none.
+      expect(await claim(narrow.call)).toBeNull()
+      const page = (await claim(preview.call))!
+      expect(page.comments.map((c) => c.from)).toEqual([
+        expect.objectContaining({ id: atlasId, kind: "agent" }),
+        expect.objectContaining({ id: atlasId, kind: "agent" }),
+      ])
+      await preview.call("worktable_thread_delivery", {
+        action: "accept",
+        messageId: page.messageId,
+        leaseId: page.leaseId,
+      })
+      // The runtime goes quiet: once the lease expires, the page comes back whole.
+      const path = join(appDir, "thread-deliveries", `${workspaceCacheKey()}.json`)
+      const file = JSON.parse(await readFile(path, "utf8"))
+      for (const record of file.deliveries)
+        if (record.leaseId === page.leaseId)
+          record.leaseExpiresAt = new Date(0).toISOString()
+      await writeFile(path, JSON.stringify(file))
+      const again = (await claim(preview.call))!
+      expect(again.leaseId).not.toBe(page.leaseId)
+      expect(again.comments).toHaveLength(2)
+    } finally {
+      await writer.close()
+      await narrow.close()
+      await preview.close()
+    }
+  }, 30_000)
 
   it("rings Grok for a comment only once its routine asks for comments", async () => {
     const grokId = (await resolveParticipant(grok, { name: "Grok" })).participant.id

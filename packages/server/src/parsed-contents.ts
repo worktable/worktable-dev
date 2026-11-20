@@ -57,6 +57,7 @@ export function parseVersion(
   const job = parseInLane({
     reader: key.maker,
     priority,
+    owner: key.spaceId,
     bytes: async (write) => {
       // The bytes parsed are the version the output is kept for.
       for await (const chunk of pinnedFileStream(pinned, 0, pinned.size, sha256Check(hex))) {

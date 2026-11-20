@@ -91,6 +91,15 @@ describe("the parsing lane", () => {
     expect(finished).toEqual(["first", "asked", "second"])
   }, 30_000)
 
+  it("answers busy past the jobs one Space may have waiting, without starving another", async () => {
+    // The first job starts as it is queued; four more wait for that Space.
+    const queued = Array.from({ length: 5 }, () => parse("echo", { owner: "flood" }))
+    expect(await parse("echo", { owner: "flood" })).toMatchObject({ kind: "failed", why: "busy" })
+    const other = parse("echo", { owner: "another" })
+    expect((await Promise.all(queued)).every((result) => result.kind === "ok")).toBe(true)
+    expect(await other).toMatchObject({ kind: "ok" })
+  }, 30_000)
+
   it("starts from the server's entry as a worker without loading the server", async () => {
     const entry = fileURLToPath(new URL("./server-entry.ts", import.meta.url))
     const result = await parseInLane({

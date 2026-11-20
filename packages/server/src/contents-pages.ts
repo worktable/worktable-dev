@@ -30,7 +30,12 @@ function aroundPage(
   for (let index = first; index < outline.length && outline[index]!.line <= Math.max(endLine, startLine); index += 1) {
     onPage.add(outline[index]!.label)
   }
-  const here = missing.filter((gap) => gap.where === undefined || onPage.has(gap.where))
+  // A gap that isn't of one part, such as pages past what a reader reads,
+  // has no lines to read it from, so every page says it.
+  const parts = new Set(outline.map((entry) => entry.label))
+  const here = missing.filter(
+    (gap) => gap.where === undefined || !parts.has(gap.where) || onPage.has(gap.where)
+  )
   const elsewhere = missing.length - here.length
   return {
     outline: window,

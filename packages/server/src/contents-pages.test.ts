@@ -39,14 +39,17 @@ describe("a page of a parsed file", () => {
           { where: "Page 2", why: "picture" },
           { where: "Page 700", why: "picture" },
           { where: "Page 900", why: "picture" },
+          { where: "Pages 1001 to 1200", why: "not read" },
         ],
       },
     })
     const first = contentsPageFromStore(store, key, 1, 4)
     expect(first.outline).toHaveLength(OUTLINE_WINDOW)
     expect(first.outline![0]).toEqual({ label: "Page 1", line: 1 })
+    // A gap with no part of its own, pages not read, shows on every page.
     expect(first.missing).toEqual([
       { where: "Page 2", why: "picture" },
+      { where: "Pages 1001 to 1200", why: "not read" },
       { why: "2 more parts leave something out. Reading them says what." },
     ])
     expect(first.state).toBe("partial")
@@ -56,6 +59,7 @@ describe("a page of a parsed file", () => {
     const later = contentsPageFromStore(store, key, line, 2)
     expect(later.outline![0]).toEqual({ label: "Page 700", line })
     expect(later.missing).toContainEqual({ where: "Page 700", why: "picture" })
-    expect(later.missing).toHaveLength(2)
+    expect(later.missing).toContainEqual({ where: "Pages 1001 to 1200", why: "not read" })
+    expect(later.missing).toHaveLength(3)
   })
 })

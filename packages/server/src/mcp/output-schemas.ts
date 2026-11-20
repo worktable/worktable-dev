@@ -239,6 +239,7 @@ const ClaimedCommentsOutput = z.looseObject({
             id: z.string(),
             kind: z.enum(["human", "agent", "system"]),
             name: z.string(),
+            connectedBy: z.string().nullable().optional(),
           }),
         })
       )

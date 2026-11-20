@@ -339,8 +339,9 @@ describe("comments delivered to an agent's runtime", () => {
       expect(await claim(narrow.call)).toBeNull()
       const page = (await claim(preview.call))!
       expect(page.comments.map((c) => c.from)).toEqual([
-        expect.objectContaining({ id: atlasId, kind: "agent" }),
-        expect.objectContaining({ id: atlasId, kind: "agent" }),
+        // Each agent author says who connected it: nobody on one-person Worktable.
+        expect.objectContaining({ id: atlasId, kind: "agent", connectedBy: null }),
+        expect.objectContaining({ id: atlasId, kind: "agent", connectedBy: null }),
       ])
       await preview.call("worktable_thread_delivery", {
         action: "accept",

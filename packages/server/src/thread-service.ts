@@ -1753,7 +1753,16 @@ export interface ClaimedComment {
   /** The words that asked: the comment, or the reply that asked again. */
   body: string
   /** Who asked, as a thread member, so the owner rule reads it as it does a message. */
-  from: { id: string; kind: "human" | "agent" | "system"; name: string }
+  from: {
+    id: string
+    kind: "human" | "agent" | "system"
+    name: string
+    /**
+     * For an agent, the person who connected it, as `connectedBy.author`
+     * says for the lead: each author on a page is judged on its own.
+     */
+    connectedBy?: string | null
+  }
   replies: Array<{ from: string; body: string }>
 }
 
@@ -2055,6 +2064,16 @@ async function commentClaim(
       participantId,
       lead.from.kind === "agent" ? lead.from.id : null
     )
+    const agents = new Map<string, string | null>()
+    for (const comment of comments) {
+      if (comment.from.kind !== "agent") continue
+      if (!agents.has(comment.from.id))
+        agents.set(
+          comment.from.id,
+          (await deliveryConnectedBy(participantId, comment.from.id)).author
+        )
+      comment.from.connectedBy = agents.get(comment.from.id)!
+    }
   } catch (error) {
     // Nothing reached the runtime: the page waits again, attempt returned.
     await failThreadDelivery({

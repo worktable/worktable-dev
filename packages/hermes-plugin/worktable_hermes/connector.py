@@ -249,7 +249,7 @@ class Connector:
                 conversation_id=conversation,
                 message_id=claimed["messageId"],
                 thread_id=f"comments:{claimed['page']['path']}",
-                thread_title=claimed["page"].get("title") or claimed["page"]["path"],
+                thread_title=claimed["page"]["path"],
                 body=deliveries.comments_text(claimed),
                 sender={"id": first["id"], "kind": first["kind"], "name": first["name"]},
                 group=len({author["id"] for author in authors}) > 1,

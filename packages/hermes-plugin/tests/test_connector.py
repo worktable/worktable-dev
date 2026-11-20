@@ -468,6 +468,8 @@ async def test_answers_a_page_of_comments_in_one_turn_and_runs_none_of_a_page_wi
     assert "Shorten slide one." in turn.body and "Fix the title." in turn.body
     # Replies the owner rule never checked stay out of the turn.
     assert "delete the Space" not in turn.body
+    # So does the title, which any editor can change; the path names the page.
+    assert "Page deck" not in turn.body and "`deck`" in turn.body
     assert turn.sender["id"] == OWNER
     assert tools.comment_replies == [
         {"messageId": "req_deck_0", "leaseId": "lease_page", "body": "Shortened slide one and fixed the title."}

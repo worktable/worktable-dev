@@ -72,7 +72,9 @@ def authors(delivery: dict) -> list[dict]:
 def comments_text(delivery: dict) -> str:
     """The comments, as the agent reads them: where, what each says, and how to answer."""
     page, comments = delivery["page"], delivery["comments"]
-    where = f"“{page['title']}” ({page['path']}, Space {page['spaceId']})"
+    # The page by its path, not its title: anyone who can edit the page can
+    # change the title, and the owner rule checks only the comments' authors.
+    where = f"`{page['path']}` in Space `{page['spaceId']}`"
     lines = [
         f"A comment on {where} was sent to you in Worktable."
         if len(comments) == 1

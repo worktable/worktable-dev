@@ -37,6 +37,7 @@ import { startLinkedRuntime } from "./linked-runtime.ts"
 import { startGrokBotRuntime } from "./grok-bot-runtime.ts"
 import { startMcpEventsRuntime } from "./mcp-events.ts"
 import { startDerivedSweeps } from "./derived-sweep.ts"
+import { startContentsBackground } from "./contents-background.ts"
 import { startCloudTaskRuntime } from "./cloud-task-runtime.ts"
 import { startAutoReplyNotices } from "./auto-reply.ts"
 import { pendingList, savePendingList } from "./pending-list.ts"
@@ -2353,6 +2354,7 @@ export function startServer(
   const stopGrokBot = workspaceRejected ? () => Promise.resolve() : startGrokBotRuntime();
   const stopMcpEvents = workspaceRejected ? () => Promise.resolve() : startMcpEventsRuntime();
   const stopDerivedSweeps = workspaceRejected ? () => {} : startDerivedSweeps();
+  const stopContentsBackground = workspaceRejected ? () => {} : startContentsBackground();
   const stopCloudTasks = workspaceRejected ? () => Promise.resolve() : startCloudTaskRuntime();
   const stopAutoReplyNotices = startAutoReplyNotices();
   // Index what waits on each person and agent before anyone asks.
@@ -2450,6 +2452,7 @@ export function startServer(
     const grokBotStopping = stopGrokBot();
     stopAutoReplyNotices();
     stopDerivedSweeps();
+    stopContentsBackground();
     const mcpEventsStopping = stopMcpEvents();
     const cloudTasksStopping = stopCloudTasks();
     watcher.stop({ flushPending: true });

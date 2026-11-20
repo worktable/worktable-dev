@@ -477,10 +477,13 @@ class Fts5VariantIndex implements VariantIndex {
     const statement = this.#store
       .db()
       .prepare(
-        "SELECT i.id, i.entry_id, i.space_id, i.meta, i.title, i.archived, " +
+        // Title scores are read once: joined as a subquery, they were read
+        // again for every match, which took seconds for a one-letter search.
+        "WITH t AS MATERIALIZED (SELECT rowid, bm25(titles) AS score FROM titles WHERE titles MATCH ?1) " +
+          "SELECT i.id, i.entry_id, i.space_id, i.meta, i.title, i.archived, " +
           "-(3 * coalesce(t.score, 0) + bm25(pieces, 3.0, 1.0)) AS score " +
           "FROM pieces JOIN items i ON i.id = pieces.rowid " +
-          "LEFT JOIN (SELECT rowid, bm25(titles) AS score FROM titles WHERE titles MATCH ?1) t ON t.rowid = i.id " +
+          "LEFT JOIN t ON t.rowid = i.id " +
           "WHERE pieces MATCH ?1 AND i.variant = ?2 AND (?3 IS NULL OR i.space_id = ?3) " +
           "ORDER BY " +
           (archivedSpaces

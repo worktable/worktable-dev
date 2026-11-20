@@ -2303,7 +2303,7 @@
               "description": "What the page leaves out, and why."
             },
             "outline": {
-              "description": "For a PDF: the line each page starts on, its mark, so offset reads from any page.",
+              "description": "For a PDF: the line each page starts on, its mark, so offset reads from that page: the page this read starts in and up to 200 after it. A read further on gives the next ones.",
               "type": "array",
               "items": {
                 "type": "object",

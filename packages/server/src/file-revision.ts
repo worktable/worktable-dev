@@ -384,6 +384,21 @@ function settledBefore(
   return seen + REVISION_SETTLES_NS < startedAt
 }
 
+/**
+ * Whether what a caller read of a whole file may be kept under its revision,
+ * as content hashes are: the file's change time had settled by `startedAtMs`
+ * (from `Date.now()`, taken before the file was opened), so a write in the
+ * same tick can't have left the revision unchanged.
+ */
+export function readIsKeepable(
+  path: string,
+  revision: string,
+  changedAtNs: bigint,
+  startedAtMs: number
+): boolean {
+  return settledBefore(hashKey(path, revision), changedAtNs, BigInt(startedAtMs) * 1_000_000n)
+}
+
 function keepContentHash(key: string, hash: string): void {
   if (contentHashes.size >= CONTENT_HASHES_MAX) {
     const oldest = contentHashes.keys().next().value

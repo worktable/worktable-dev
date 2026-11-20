@@ -1065,7 +1065,7 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
           outline: z
             .array(z.object({ label: z.string(), line: z.number().int().positive() }))
             .optional()
-            .describe("For a PDF: the line each page starts on, its mark, so offset reads from any page."),
+            .describe("For a PDF: the line each page starts on, its mark, so offset reads from that page: the page this read starts in and up to 200 after it. A read further on gives the next ones."),
           facts: z
             .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
             .optional()

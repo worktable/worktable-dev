@@ -40,6 +40,7 @@ export type FileSurface =
   | "import"
   | "diff"
   | "picture"
+  | "contents"
 
 /** A broad kind of file, for grouping; each surface has its own policy. */
 export type FileFamily =
@@ -98,6 +99,11 @@ export interface FileSurfacePolicies {
    * its pages, or nothing.
    */
   picture: "image" | "pages" | "none"
+  /**
+   * Which reader gives its contents, as text with where each part came
+   * from, to agents and search: the text itself, or none yet.
+   */
+  contents: "text" | "none"
 }
 
 export interface FileTypeEntry {
@@ -120,6 +126,7 @@ const NONE = {
   import: false,
   diff: false,
   picture: "none",
+  contents: "none",
 } as const
 
 const RASTER = {
@@ -133,6 +140,7 @@ const RASTER = {
   import: false,
   diff: false,
   picture: "image",
+  contents: "none",
 } as const
 
 const CODE = {
@@ -141,6 +149,7 @@ const CODE = {
   page: "text",
   icon: "code",
   agent: "text",
+  contents: "text",
 } as const
 
 const BINARY = { ...NONE, page: "card", agent: "bytes" } as const
@@ -192,6 +201,7 @@ export const FILE_TYPES = {
     surfaces: {
       ...RASTER,
       agent: "text",
+      contents: "text",
       share: "placeholder",
       drawing: false,
       picture: "none",
@@ -216,6 +226,7 @@ export const FILE_TYPES = {
       page: "table",
       icon: "spreadsheet",
       agent: "text",
+      contents: "text",
       import: true,
     },
   },
@@ -230,6 +241,7 @@ export const FILE_TYPES = {
       page: "table",
       icon: "spreadsheet",
       agent: "text",
+      contents: "text",
       import: true,
     },
   },
@@ -287,6 +299,7 @@ export const FILE_TYPES = {
       page: "text",
       icon: "document",
       agent: "text",
+      contents: "text",
     },
   },
   log: {
@@ -299,6 +312,7 @@ export const FILE_TYPES = {
       page: "text",
       icon: "document",
       agent: "text",
+      contents: "text",
     },
   },
   // The Doc registry claims .json first; a plain file reaches this entry
@@ -307,7 +321,7 @@ export const FILE_TYPES = {
     extensions: ["json"],
     mediaType: "application/json",
     family: "data",
-    surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text" },
+    surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text", contents: "text" },
   },
   jsonl: {
     extensions: ["jsonl"],
@@ -319,6 +333,7 @@ export const FILE_TYPES = {
       page: "text",
       icon: "code",
       agent: "text",
+      contents: "text",
       import: true,
     },
   },
@@ -326,25 +341,25 @@ export const FILE_TYPES = {
     extensions: ["yaml", "yml"],
     mediaType: "application/yaml",
     family: "data",
-    surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text" },
+    surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text", contents: "text" },
   },
   xml: {
     extensions: ["xml"],
     mediaType: "application/xml",
     family: "data",
-    surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text" },
+    surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text", contents: "text" },
   },
   toml: {
     extensions: ["toml"],
     mediaType: "application/toml",
     family: "data",
-    surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text" },
+    surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text", contents: "text" },
   },
   ini: {
     extensions: ["ini"],
     mediaType: "text/plain",
     family: "data",
-    surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text" },
+    surfaces: { ...NONE, serve: "bytes", page: "text", icon: "code", agent: "text", contents: "text" },
   },
   // The Doc registry claims .md first, as it does .json.
   markdown: {
@@ -592,6 +607,7 @@ export const UNKNOWN_FILE_POLICIES: FileSurfacePolicies = {
   import: false,
   diff: false,
   picture: "none",
+  contents: "none",
 }
 
 const ENTRIES = FILE_TYPES as Readonly<Record<FileTypeId, FileTypeEntry>>

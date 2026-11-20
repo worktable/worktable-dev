@@ -51,6 +51,12 @@ export async function readCurrentFileSource(options: {
   revision?: string
   /** Whether to keep the bytes: decided for the file found, by its size. */
   bytes?: boolean | ((current: CurrentFile) => boolean)
+  /**
+   * Sees every chunk of the bytes, in order, without their being kept. A
+   * fresh one is made for each attempt, so a file read again after it
+   * changed is seen from its start.
+   */
+  consume?: () => { update(chunk: Uint8Array): void }
 }): Promise<CurrentFileSource | null> {
   assertSpaceAccess(options.spaceId)
   for (let attempt = 1; ; attempt += 1) {
@@ -87,7 +93,10 @@ export async function readCurrentFileSource(options: {
         typeof options.bytes === "function"
           ? options.bytes(current)
           : options.bytes === true
-      return { current, ...(await readPinned(current, keepBytes)) }
+      return {
+        current,
+        ...(await readPinned(current, keepBytes, options.consume?.())),
+      }
     } catch (error) {
       if (!(error instanceof FileRevisionError) || error.reason !== "changed") {
         throw error
@@ -105,7 +114,8 @@ export async function readCurrentFileSource(options: {
 
 async function readPinned(
   current: CurrentFile,
-  keepBytes: boolean
+  keepBytes: boolean,
+  consumer?: { update(chunk: Uint8Array): void }
 ): Promise<{ sourceRevision: string; bytes?: Uint8Array }> {
   const revision = await registeredDocumentSourceRevisionHasher({
     documentId: current.documentId as DocumentId,
@@ -125,6 +135,7 @@ async function readPinned(
         Math.min(FILE_READ_CHUNK_BYTES, file.size - position)
       )
       revision.update(chunk)
+      consumer?.update(chunk)
       bytes?.set(chunk, position)
       position += chunk.byteLength
     }

@@ -1816,6 +1816,25 @@ export class PublicOperationOutputError extends Error {
   }
 }
 
+/** A page of a plain file's contents (file-contents.ts). */
+const FileContentsOutputSchema = z.looseObject({
+  documentId: z.string(),
+  path: z.string(),
+  format: DocumentFormatClaimSchema,
+  encoding: z.literal("contents"),
+  byteLength: z.number().int().nonnegative(),
+  sourceRevision: z.string(),
+  contents: z.looseObject({
+    state: z.enum(["ready", "partial", "unsupported"]),
+    text: z.string(),
+    startLine: z.number().int().positive(),
+    endLine: z.number().int().nonnegative(),
+    totalLines: z.number().int().nonnegative(),
+    nextOffset: z.number().int().positive().optional(),
+    missing: z.array(z.looseObject({ where: z.string().optional(), why: z.string() })),
+  }),
+})
+
 /** An upload link for an HTML Doc's page. */
 const HtmlUploadLinkOutputSchema = z.looseObject({
   ok: z.literal(true),
@@ -1832,6 +1851,8 @@ const HtmlUploadLinkOutputSchema = z.looseObject({
  * tool declares their fields with outputFields (catalog.ts).
  */
 const HELD_OPERATION_OUTPUT_VARIANTS: Partial<Record<OperationId, readonly z.ZodObject[]>> = {
+  // A page of a file's contents, on the preview surface.
+  "documents.read_source": [FileContentsOutputSchema],
   "html.create": [HtmlUploadLinkOutputSchema],
   "html.update": [HtmlUploadLinkOutputSchema],
   // Comments delivered to runtimes, on the preview surface.

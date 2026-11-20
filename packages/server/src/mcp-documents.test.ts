@@ -438,6 +438,68 @@ describe("files for agents", () => {
   }, 60_000)
 })
 
+describe("file contents for agents", () => {
+  it("reads a text file of any size a page of lines at a time, on the preview surface", async () => {
+    const manifestPath = join(root, "worktable.workspace.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
+    await writeFile(manifestPath, `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`)
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
+    try {
+      const docs = join(root, "spaces", spaceId, "docs")
+      // Past the 1 MiB a text file could come as before.
+      const lines = Array.from({ length: 40_000 }, (_, index) => `line ${index + 1} ${"x".repeat(60)}\n`)
+      await writeFile(join(docs, "server.log"), lines.join(""))
+      noteSpaceChanged(spaceId)
+      const read = async (surface: "released" | "preview", args: Record<string, unknown>) => {
+        const connected = await connect(["documents:read"], surface)
+        const result = await connected.callTool({
+          name: "worktable_files_read",
+          arguments: { spaceId, path: "server.log", source: true, ...args },
+        })
+        await connected.close()
+        return result
+      }
+
+      const first = (await read("preview", {})).structuredContent as {
+        encoding: string
+        contents: { state: string; text: string; startLine: number; endLine: number; totalLines: number; nextOffset: number }
+      }
+      expect(first.encoding).toBe("contents")
+      expect(first.contents).toMatchObject({ state: "ready", startLine: 1, totalLines: 40_000 })
+      expect(first.contents.text.startsWith("line 1 x")).toBe(true)
+      // The page stops at its byte limit, on a whole line.
+      expect(first.contents.text).toBe(lines.slice(0, first.contents.endLine).join(""))
+
+      const last = (await read("preview", { offset: 39_999, limit: 5 })).structuredContent as {
+        contents: Record<string, unknown>
+      }
+      expect(last.contents).toMatchObject({
+        text: lines.slice(39_998).join(""),
+        startLine: 39_999,
+        endLine: 40_000,
+        totalLines: 40_000,
+      })
+      expect(last.contents["nextOffset"]).toBeUndefined()
+
+      // Paging needs source, while limit still pages a listing; the
+      // released surface reads as before.
+      expect((await read("preview", { source: undefined, offset: 2 })).isError).toBe(true)
+      const listing = await connect(["documents:read"], "preview")
+      const listed = await listing.callTool({ name: "worktable_files_read", arguments: { spaceId, limit: 1 } })
+      await listing.close()
+      expect(listed.isError).not.toBe(true)
+      expect((listed.structuredContent as { documents: unknown[] }).documents).toHaveLength(1)
+      const released = (await read("released", {})).structuredContent as Record<string, unknown>
+      expect(released["encoding"]).toBe("base64")
+      expect(released["contents"]).toBeUndefined()
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
+    }
+  }, 60_000)
+})
+
 describe("file links for agents", () => {
   it("asks for the revision a replace is based on, on the preview surface too", async () => {
     const manifestPath = join(root, "worktable.workspace.json")

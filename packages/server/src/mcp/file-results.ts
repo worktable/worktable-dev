@@ -59,6 +59,14 @@ function agentReads(path: string) {
   return { type, reads }
 }
 
+/**
+ * Whether agents read a file of this name as text: what the type table says,
+ * and source code it doesn't list, and a Dockerfile.
+ */
+export function readsAsText(path: string): boolean {
+  return agentReads(path).reads === "text"
+}
+
 /** Whether a file is an AVIF, which agents get converted into an image. */
 export function isAvifFile(path: string): boolean {
   return fileTypeFor(path) === "avif"

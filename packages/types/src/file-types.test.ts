@@ -30,6 +30,7 @@ const POLICY_VALUES: {
   import: [true, false],
   diff: [true, false],
   picture: ["image", "pages", "none"],
+  contents: ["text", "none"],
 }
 
 const SURFACES = Object.keys(UNKNOWN_FILE_POLICIES) as FileSurface[]

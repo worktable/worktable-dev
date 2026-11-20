@@ -154,17 +154,27 @@ function keptPath(appDir = getAppDir(), key = workspaceCacheKey()): string {
   return join(appDir, "storage-pruned", `${key}.kept.json`)
 }
 
+/**
+ * The most everything may take; `kept` when that is what a Worktable held
+ * as its limit went down, rather than a limit.
+ */
+export interface KeptRecord {
+  totalBytes: number
+  kept: boolean
+}
+
 /** What was remembered for the served workspace; null when nothing was. */
-export async function loadKeptRecord(): Promise<number | null> {
+export async function loadKeptRecord(): Promise<KeptRecord | null> {
   try {
     const parsed = JSON.parse(await readFile(keptPath(), "utf8")) as {
       version?: number
       totalBytes?: unknown
+      kept?: unknown
     }
     return parsed?.version === 1 &&
       Number.isSafeInteger(parsed.totalBytes) &&
       (parsed.totalBytes as number) > 0
-      ? (parsed.totalBytes as number)
+      ? { totalBytes: parsed.totalBytes as number, kept: parsed.kept === true }
       : null
   } catch {
     return null
@@ -174,7 +184,7 @@ export async function loadKeptRecord(): Promise<number | null> {
 let keptWrite: Promise<void> = Promise.resolve()
 
 /** Remember the most everything may take. In order; never throws. */
-export function saveKeptRecord(totalBytes: number): Promise<void> {
+export function saveKeptRecord(record: KeptRecord): Promise<void> {
   // The path is taken now, for the workspace served now.
   let path: string
   try {
@@ -186,7 +196,7 @@ export function saveKeptRecord(totalBytes: number): Promise<void> {
   keptWrite = keptWrite.then(async () => {
     try {
       await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-      await atomicWriteText(path, `${JSON.stringify({ version: 1, totalBytes })}\n`)
+      await atomicWriteText(path, `${JSON.stringify({ version: 1, ...record })}\n`)
     } catch (error) {
       console.error("[storage-limit] could not remember the storage limit:", logError(error))
     }

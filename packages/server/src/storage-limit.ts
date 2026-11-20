@@ -52,6 +52,7 @@ import {
   loadPrunedRecord,
   prunedSummary,
   saveKeptRecord,
+  type KeptRecord,
   type PrunedSummary,
 } from "./storage-pruned.ts"
 import {
@@ -125,7 +126,7 @@ export function storageTotalLimitBytes(limit = storageLimitBytes()): number {
 /** The most everything may take while a lower limit is in force; null otherwise. */
 let kept: number | null = null
 /** The total limit last remembered, or what was kept; null until read. */
-let remembered: number | null = null
+let remembered: KeptRecord | null = null
 /** Reading what was remembered, at start. */
 let keptLoaded: Promise<void> = Promise.resolve()
 
@@ -141,15 +142,17 @@ function totalCeiling(): number {
 function followLimit(usage: StorageUsage): void {
   const total = storageTotalLimitBytes()
   const used = usedBytes(usage)
-  if (kept === null && remembered !== null && total < remembered && used > total) {
-    kept = Math.min(remembered, used)
+  if (kept === null && remembered && total < remembered.totalBytes && used > total) {
+    // What was kept before a restart stays as it was; a limit that went
+    // down keeps what is held under it.
+    kept = remembered.kept ? remembered.totalBytes : Math.min(remembered.totalBytes, used)
     console.warn(
       `[storage-limit] the limit went down to ${formatStorageBytes(storageLimitBytes())}; keeping what this Worktable holds, and pruning nothing for it`
     )
   }
   if (kept !== null && used <= total) kept = null
-  const next = kept ?? total
-  if (next !== remembered) {
+  const next = { totalBytes: kept ?? total, kept: kept !== null }
+  if (next.totalBytes !== remembered?.totalBytes || next.kept !== remembered?.kept) {
     remembered = next
     void saveKeptRecord(next)
   }
@@ -530,14 +533,13 @@ function runPruning(): Promise<void> {
   pruning = (async () => {
     try {
       const { planPruning, prunePlanned } = await import("./storage-pruning.ts")
-      if (remembered === null) {
-        // Nothing is pruned before a lower limit can be noticed.
-        await keptLoaded
-        const usage = storageUsage()
-        if (usage) followLimit(usage)
-      }
       do {
         again = false
+        // Nothing is pruned before a lower limit is noticed, whether or not
+        // a count has looked yet.
+        await keptLoaded
+        const counted = storageUsage()
+        if (counted) followLimit(counted)
         if ((await knownIsCurrent()) && dueBytes(known!.reclaimable) <= 0) continue
         const epoch = prunableHistoryEpoch()
         const plan = await planPruning(() => stopped)
@@ -613,8 +615,8 @@ export function startStorageLimits(): () => Promise<void> {
   remembered = null
   void loadPrunedRecord().catch(() => undefined)
   keptLoaded = loadKeptRecord()
-    .then((bytes) => {
-      remembered ??= bytes
+    .then((record) => {
+      remembered ??= record
     })
     .catch(() => undefined)
   const unsubscribe = onStorageApplied(() => {

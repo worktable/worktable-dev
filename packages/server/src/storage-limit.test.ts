@@ -767,12 +767,6 @@ describe("storage limit", () => {
     const refused = await createDoc("more", 1 * KB).catch((error) => error)
     expect(refused).toBeInstanceOf(StorageLimitError)
     expect(refused.message).toContain("is over its")
-
-    // A server started again with the lower limit remembers what is kept.
-    for (const stop of stops) await stop()
-    stops = [startStorageLimits(), startStorageAccounting()]
-    await writeOnDisk(() => undefined)
-    expect(summary().totalLimitBytes).toBe(held)
     expect(await generations(doc)).toEqual(before)
     expect(storageSummary()!.pruned).toBeNull()
 
@@ -792,6 +786,19 @@ describe("storage limit", () => {
     expect(summary().totalBytes).toBeLessThanOrEqual(held)
     expect(storageSummary()!.pruned!.versions).toBeGreaterThan(0)
     expect((await generations(doc)).length).toBeLessThanOrEqual(before.length)
+
+    // A server started again keeps the same figure, and a write that needs
+    // room right after start gets it within that: a restore, which keeps a
+    // checkpoint as well.
+    for (const stop of stops) await stop()
+    stops = [startStorageLimits(), startStorageAccounting({ firstCountDelayMs: 60_000 })]
+    const versions = await generations(doc)
+    await restoreDocVersion("notes", "kept", versions.at(-1)!)
+    await settled()
+    expect((await generations(doc)).length).toBeGreaterThanOrEqual(versions.length)
+    expect(summary().totalLimitBytes).toBe(held)
+    expect(summary().totalBytes).toBeLessThanOrEqual(held)
+    expect(summary().totalBytes).toBeGreaterThan(20 * KB)
 
     // Back up: the limit applies as before.
     setStorageLimitForTests(null, { lowered: true })

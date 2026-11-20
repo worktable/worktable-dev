@@ -683,10 +683,16 @@ function FilterMenu({
           value={value ?? ANY}
           onValueChange={(next: string) => onChange(next === ANY ? null : next)}
         >
-          <DropdownMenuRadioItem value={ANY}>{anyLabel}</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value={ANY} closeOnClick>
+            {anyLabel}
+          </DropdownMenuRadioItem>
           <DropdownMenuSeparator />
           {options.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
+            <DropdownMenuRadioItem
+              key={option.value}
+              value={option.value}
+              closeOnClick
+            >
               <span className="truncate">{option.label}</span>
             </DropdownMenuRadioItem>
           ))}

@@ -127,6 +127,8 @@ export const OPERATION_DEFINITIONS = {
   "thread_delivery.accept": tool("threads:participate", "none"),
   "thread_delivery.progress": tool("threads:participate", "none"),
   "thread_delivery.fail": tool("threads:participate", "none"),
+  // Posts replies on comments, so it also needs to write them.
+  "thread_delivery.reply": tool("annotations:write", "workspace"),
   "guidance.format_spec": tool(null, "none"),
   "guidance.drawings": tool(null, "none"),
   // Preview only.
@@ -304,6 +306,7 @@ export const WORKTABLE_TOOL_ROUTES: Record<
     accept: "thread_delivery.accept",
     progress: "thread_delivery.progress",
     fail: "thread_delivery.fail",
+    reply: "thread_delivery.reply",
   },
   worktable_delete: {
     document: "documents.delete",

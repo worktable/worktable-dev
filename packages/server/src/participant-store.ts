@@ -244,9 +244,33 @@ function unchangedBinding(
     : undefined
 }
 
+/**
+ * The member each credential resolved to in this process. Comments name
+ * their author by credential; this finds the member behind an agent's.
+ */
+const participantByPrincipal = new Map<string, string>()
+
+/** The member an agent's credential last resolved to, if it has since start. */
+export function participantForPrincipal(principalId: string): string | undefined {
+  return participantByPrincipal.get(principalId)
+}
+
 export async function resolveParticipant(
   identity: Pick<TokenIdentity, "agent" | "principal">,
   options: ResolveParticipantOptions = {}
+): Promise<{
+  participant: ParticipantRef
+  defaultSpaceId?: string
+  threadLocationVersion?: 2
+}> {
+  const resolved = await resolveParticipantBinding(identity, options)
+  participantByPrincipal.set(identity.principal.id, resolved.participant.id)
+  return resolved
+}
+
+async function resolveParticipantBinding(
+  identity: Pick<TokenIdentity, "agent" | "principal">,
+  options: ResolveParticipantOptions
 ): Promise<{
   participant: ParticipantRef
   defaultSpaceId?: string

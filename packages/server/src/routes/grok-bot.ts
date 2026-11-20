@@ -21,6 +21,7 @@ import {
   retryGrokBotDelivery,
 } from "../thread-delivery-store.ts"
 import {
+  commentRequestOpen,
   postThreadMessageWithStored,
   readThreadMessage,
 } from "../thread-service.ts"
@@ -212,6 +213,17 @@ grokBotRouter.post("/:id/check", async (c) => {
   notifyWorkspaceChange({ type: "participants" })
   return c.json({ ok: true, probe })
 })
+async function threadRequestOpen(
+  identity: Parameters<typeof readThreadMessage>[0],
+  delivery: Parameters<typeof readThreadMessage>[1] & { identityId: string }
+): Promise<boolean> {
+  const { message } = await readThreadMessage(identity, delivery)
+  return (
+    message.responseRequest?.status === "open" &&
+    message.responseRequest.identityId === delivery.identityId
+  )
+}
+
 grokBotRouter.post("/:id/retry", async (c) => {
   const connection = (await readGrokBots()).find(
     (entry) => entry.connectionId === c.req.param("id")
@@ -230,10 +242,16 @@ grokBotRouter.post("/:id/retry", async (c) => {
       assertSpaceAccess(uncertain.location.spaceId, "edit")
     else if (!canAccessWorktableThreads("edit"))
       return c.json({ error: "Forbidden", code: "FORBIDDEN" }, 403)
-    const { message } = await readThreadMessage(c.get("identity"), uncertain)
     if (
-      message.responseRequest?.status !== "open" ||
-      message.responseRequest.identityId !== uncertain.identityId
+      uncertain.comment
+        ? uncertain.location.kind !== "space" ||
+          !(await commentRequestOpen(
+            uncertain.location.spaceId,
+            uncertain.threadId,
+            uncertain.messageId,
+            connection.participantId
+          ))
+        : !(await threadRequestOpen(c.get("identity"), uncertain))
     ) {
       return c.json(
         { error: "This assignment is no longer open", code: "CONFLICT" },

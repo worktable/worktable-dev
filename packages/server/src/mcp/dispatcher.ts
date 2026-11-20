@@ -312,6 +312,7 @@ import {
   RenameThreadInput,
   AssignResponseRequestInput,
   ClaimThreadDeliveryInput,
+  ReplyThreadDeliveryInput,
   AcceptThreadDeliveryInput,
   ProgressThreadDeliveryInput,
   FailThreadDeliveryInput,
@@ -340,7 +341,8 @@ import {
 import {
   acceptDelivery,
   assignResponseRequest,
-  claimNextThreadDelivery,
+  claimNextDelivery,
+  replyToCommentBatch,
   failDelivery,
   listThreadParticipants,
   isSummaryArchived,
@@ -1263,10 +1265,18 @@ async function _dispatchOperationInner(
     case "thread_delivery.claim": {
       const parsed = ClaimThreadDeliveryInput.parse(args)
       return {
-        delivery: await claimNextThreadDelivery(
+        // Comments come to runtimes that ask, on the preview surface.
+        delivery: await claimNextDelivery(
           identity,
           parsed.waitSeconds,
-          parsed.threadLocationVersion
+          parsed.threadLocationVersion,
+          {
+            // Comment text goes only to credentials that may read comments.
+            comments:
+              parsed.comments === true &&
+              context.surface === "preview" &&
+              hasScope(identity.scopes, "annotations:read"),
+          }
         ),
       }
     }
@@ -1291,6 +1301,10 @@ async function _dispatchOperationInner(
       return {
         activity: await failDelivery(identity, parsed),
       }
+    }
+    case "thread_delivery.reply": {
+      const parsed = ReplyThreadDeliveryInput.parse(args)
+      return { activity: await replyToCommentBatch(identity, parsed) }
     }
     case "spaces.create": {
       const rawName = args["name"] as string

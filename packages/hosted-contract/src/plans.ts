@@ -13,6 +13,13 @@
 export const CLOUD_PLAN_IDS = ["solo", "team", "business"] as const
 export type CloudPlanId = (typeof CLOUD_PLAN_IDS)[number]
 
+/**
+ * What a Worktable's files may take on each plan, in bytes. Every plan has
+ * the proven size until a larger one is proven with backups and exports
+ * (Plan 22a rule 10); a tenant takes no more than that whatever it is sent.
+ */
+const PROVEN_PLAN_STORAGE_BYTES = 2 * 1024 * 1024 * 1024
+
 export const PLAN_TERMS = {
   currency: "usd",
   interval: "month",
@@ -27,6 +34,7 @@ export const CLOUD_PLANS = {
     name: "Solo",
     amount: 0,
     peopleLimit: 1,
+    storageBytes: PROVEN_PLAN_STORAGE_BYTES,
     linkedDevices: 1,
     ...PLAN_TERMS,
   },
@@ -35,6 +43,7 @@ export const CLOUD_PLANS = {
     name: "Team",
     amount: 4900,
     peopleLimit: 12,
+    storageBytes: PROVEN_PLAN_STORAGE_BYTES,
     linkedDevices: 3,
     ...PLAN_TERMS,
   },
@@ -43,6 +52,7 @@ export const CLOUD_PLANS = {
     name: "Business",
     amount: 19900,
     peopleLimit: 50,
+    storageBytes: PROVEN_PLAN_STORAGE_BYTES,
     linkedDevices: 5,
     ...PLAN_TERMS,
   },

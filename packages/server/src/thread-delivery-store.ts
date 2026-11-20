@@ -1015,6 +1015,38 @@ export async function getThreadActivities(
   return [...(await readDeliveryState()).lookup(location, threadId)]
 }
 
+/**
+ * A page whose comments are being worked on holds its new ones, so they come
+ * out together once that batch ends instead of as turns of their own in the
+ * same conversation. Maps each busy page to when its lease runs out.
+ */
+function busyCommentPages(
+  deliveries: readonly DeliveryRecord[],
+  participantId: string,
+  nowMs: number
+): Map<string, number> {
+  const pages = new Map<string, number>()
+  for (const record of deliveries) {
+    if (
+      record.participantId !== participantId ||
+      !record.comment ||
+      record.state === "queued" ||
+      !active(record) ||
+      !record.leaseExpiresAt
+    )
+      continue
+    const expires = Date.parse(record.leaseExpiresAt)
+    if (expires <= nowMs) continue
+    const key = commentPageKey(record.comment)
+    pages.set(key, Math.max(pages.get(key) ?? 0, expires))
+  }
+  return pages
+}
+
+function commentPageKey(comment: CommentDeliveryRef): string {
+  return `${comment.spaceId}\0${comment.page}`
+}
+
 export async function nextThreadDeliveryEligibleAt(
   participantId: string,
   options: {
@@ -1037,7 +1069,11 @@ export async function nextThreadDeliveryEligibleAt(
   }
   let next: number | undefined
   const blockedThreads = new Set<string>()
-  for (const record of (await readDeliveryState()).deliveries) {
+  const { deliveries } = await readDeliveryState()
+  const busyPages = options.allowComments
+    ? busyCommentPages(deliveries, participantId, now)
+    : new Map<string, number>()
+  for (const record of deliveries) {
     if (
       record.participantId !== participantId ||
       (record.managedBy === "grok-bot" && !policy) ||
@@ -1053,8 +1089,13 @@ export async function nextThreadDeliveryEligibleAt(
     const threadKey = `${threadLocationKey(record.location)}\0${record.threadId}\0${record.identityId}`
     if (blockedThreads.has(threadKey)) continue
     blockedThreads.add(threadKey)
+    const heldUntil = record.comment
+      ? busyPages.get(commentPageKey(record.comment))
+      : undefined
     const boundary =
-      record.nextAttemptAt && Date.parse(record.nextAttemptAt) > now
+      heldUntil !== undefined && record.state === "queued"
+        ? heldUntil
+        : record.nextAttemptAt && Date.parse(record.nextAttemptAt) > now
         ? Date.parse(record.nextAttemptAt)
         : record.state !== "queued" &&
             record.leaseExpiresAt &&
@@ -1104,28 +1145,14 @@ export async function claimThreadDelivery(
       if ((options.authenticatedPrincipalId && options.authenticatedPrincipalId !== policy.principalId) || !policy.enabled || policy.error || file.deliveries.some((r) => r.participantId === participantId &&
         (active(r) || r.error?.code === "REMOTE_EXECUTION_UNCONFIRMED"))) return null
     }
-    // A page whose comments are being worked on holds its new ones, so they
-    // come out together once that batch ends instead of as turns of their
-    // own in the same conversation.
-    const busyPages = new Set(
-      file.deliveries.flatMap((record) =>
-        record.participantId === participantId &&
-        record.comment &&
-        record.state !== "queued" &&
-        active(record) &&
-        record.leaseExpiresAt &&
-        Date.parse(record.leaseExpiresAt) > nowMs
-          ? [`${record.comment.spaceId}\0${record.comment.page}`]
-          : []
-      )
-    )
+    const busyPages = busyCommentPages(file.deliveries, participantId, nowMs)
     for (const record of file.deliveries) {
       if (record.participantId !== participantId) continue
       if (record.managedBy === "grok-bot" && !policy) continue
       if (record.comment && !options.allowComments) continue
       if (
         record.comment &&
-        busyPages.has(`${record.comment.spaceId}\0${record.comment.page}`)
+        busyPages.has(commentPageKey(record.comment))
       )
         continue
       if (policy && !policy.verifiedAt && policy.probe?.messageId !== record.messageId) continue
@@ -1551,6 +1578,9 @@ export async function closeCommentDelivery(
       return
     const now = new Date().toISOString()
     if (reason === "replied") {
+      // The runtime may still report the batch it was holding; this lets that
+      // report find the comment answered rather than a lost lease.
+      if (record.leaseId) record.repliedUnder = record.leaseId
       record.state = "replied"
       record.leaseId = undefined
       record.leaseExpiresAt = undefined

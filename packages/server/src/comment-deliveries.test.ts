@@ -18,7 +18,10 @@ import { annotationsRouter } from "./routes/annotations.ts"
 import { grokBotRouter } from "./routes/grok-bot.ts"
 import { readGrokBots, updateGrokBot } from "./grok-bot-store.ts"
 import { startGrokBotRuntime } from "./grok-bot-runtime.ts"
-import { commentDeliveryStates } from "./thread-delivery-store.ts"
+import {
+  commentDeliveryStates,
+  nextThreadDeliveryEligibleAt,
+} from "./thread-delivery-store.ts"
 import { claimNextDelivery, claimNextThreadDelivery } from "./thread-service.ts"
 import { writeDoc, writeSpace } from "./store.ts"
 import { readFile, writeFile } from "node:fs/promises"
@@ -255,23 +258,46 @@ describe("comments delivered to an agent's runtime", () => {
       await comment("notes", agentId, "Also add a summary.")
       await comment("notes", agentId, "And a link.")
       expect(await claim(preview.call)).toBeNull()
+      // A waiting runtime sleeps until the batch ends, not on held comments.
+      const wakeAt = await nextThreadDeliveryEligibleAt(agentId, {
+        allowWorktable: true,
+        allowComments: true,
+      })
+      expect(wakeAt).toBeGreaterThan(Date.now() + 30_000)
+      const held = claim(preview.call, 10)
+      await new Promise((r) => setTimeout(r, 200))
       await preview.call("worktable_thread_delivery", {
         action: "reply",
         messageId: busy.messageId,
         leaseId: busy.leaseId,
         body: "Added the date.",
       })
-      const joined = (await claim(preview.call))!
+      const joined = (await held)!
       expect(joined.comments.map((c) => c.body).sort()).toEqual([
         "Also add a summary.",
         "And a link.",
       ])
+      // The agent answers every comment itself; its runtime's report still
+      // goes through, and adds nothing.
+      for (const annotationId of new Set(
+        joined.comments.map((c) => (c as unknown as { annotationId: string }).annotationId)
+      ))
+        await preview.call("worktable_annotations_write", {
+          action: "reply",
+          spaceId: "demo",
+          annotationId,
+          body: "Answered directly.",
+        })
       await preview.call("worktable_thread_delivery", {
         action: "reply",
         messageId: joined.messageId,
         leaseId: joined.leaseId,
         body: "Done.",
       })
+      for (const c of joined.comments as unknown as Array<{ annotationId: string }>)
+        expect(
+          (await readAnnotation("demo", c.annotationId)).thread.map((m) => m.body)
+        ).toEqual(["Answered directly."])
 
       // A comment that arrives while the runtime waits wakes it at once.
       await new Promise((r) => setTimeout(r, 2_100))
@@ -397,5 +423,26 @@ describe("comments delivered to an agent's runtime", () => {
     while (rings === 0 && Date.now() < deadline)
       await new Promise((r) => setTimeout(r, 50))
     expect(rings).toBeGreaterThan(0)
+
+    // A comment Grok's run failed on can be retried from its connection.
+    const failing = (await claimNextDelivery(grok, 0, 2, { comments: true }))!
+    const again = await runtime(grok, "preview")
+    await again.call("worktable_thread_delivery", {
+      action: "fail",
+      messageId: failing.messageId,
+      leaseId: failing.leaseId,
+      retryable: false,
+      code: "TURN_FAILED",
+      message: "The run failed",
+    })
+    await again.close()
+    const requestId = failing.messageId
+    expect((await commentDeliveryStates()).get(requestId)?.state).toBe("failed")
+    const connectionId = (await readGrokBots())[0]!.connectionId
+    const retried = await app.request(`/grok/${encodeURIComponent(connectionId)}/retry`, {
+      method: "POST",
+    })
+    expect(retried.status).toBe(200)
+    expect((await commentDeliveryStates()).get(requestId)?.state).toBe("queued")
   }, 30_000)
 })

@@ -1832,6 +1832,8 @@ export async function claimNextDelivery(
     })
     if (claim?.comments) {
       const handed = await commentClaim(claim, participant.id)
+      // A page that can't be read now waits for a later claim, not this one.
+      if (handed === "unavailable") return null
       if (handed) return handed
       continue
     }
@@ -1970,7 +1972,7 @@ export async function claimNextDelivery(
 async function commentClaim(
   claim: ClaimedDelivery,
   participantId: string
-): Promise<ClaimedCommentDelivery | null> {
+): Promise<ClaimedCommentDelivery | "unavailable" | null> {
   const refs = claim.comments!
   const spaceId = refs[0]!.spaceId
   const comments: ClaimedComment[] = []
@@ -1993,7 +1995,7 @@ async function commentClaim(
           code: "COMMENT_UNAVAILABLE",
           message: "A comment couldn't be read just now.",
         })
-        return null
+        return "unavailable"
       }
       annotation = null
     }
@@ -2144,6 +2146,28 @@ onPendingChange((change) => {
  * answered itself during the turn are left out. A retry after a lost answer
  * finds the batch done and posts nothing again.
  */
+/** Whether a comment still asks this agent to answer it. */
+export async function commentRequestOpen(
+  spaceId: string,
+  annotationId: string,
+  requestId: string,
+  participantId: string
+): Promise<boolean> {
+  const annotation = await readAnnotation(spaceId, annotationId).catch(
+    (error: unknown) => {
+      if (commentMissing(error)) return null
+      throw error
+    }
+  )
+  const request = annotation?.requests?.find((r) => r.id === requestId)
+  return (
+    !!annotation &&
+    annotation.status !== "resolved" &&
+    request?.status === "open" &&
+    request.to.id === participantId
+  )
+}
+
 export async function replyToCommentBatch(
   identity: ThreadIdentity,
   input: { messageId: string; leaseId: string; body: string }

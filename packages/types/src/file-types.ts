@@ -39,6 +39,7 @@ export type FileSurface =
   | "paste"
   | "import"
   | "diff"
+  | "picture"
 
 /** A broad kind of file, for grouping; each surface has its own policy. */
 export type FileFamily =
@@ -90,6 +91,11 @@ export interface FileSurfacePolicies {
   import: boolean
   /** Whether a text diff between its versions is offered. */
   diff: boolean
+  /**
+   * What a picture of it is made from: the image itself, scaled down, one of
+   * its pages, or nothing.
+   */
+  picture: "image" | "pages" | "none"
 }
 
 export interface FileTypeEntry {
@@ -111,6 +117,7 @@ const NONE = {
   paste: false,
   import: false,
   diff: false,
+  picture: "none",
 } as const
 
 const RASTER = {
@@ -123,6 +130,7 @@ const RASTER = {
   paste: true,
   import: false,
   diff: false,
+  picture: "image",
 } as const
 
 const CODE = {
@@ -184,6 +192,7 @@ export const FILE_TYPES = {
       agent: "text",
       share: "placeholder",
       drawing: false,
+      picture: "none",
     },
   },
   heic: {
@@ -361,7 +370,12 @@ export const FILE_TYPES = {
     extensions: ["pdf"],
     mediaType: "application/pdf",
     family: "document",
-    surfaces: { ...BINARY, serve: "download", icon: "document" },
+    surfaces: {
+      ...BINARY,
+      serve: "download",
+      icon: "document",
+      picture: "pages",
+    },
   },
   rtf: {
     extensions: ["rtf"],
@@ -490,6 +504,7 @@ export const UNKNOWN_FILE_POLICIES: FileSurfacePolicies = {
   paste: false,
   import: false,
   diff: false,
+  picture: "none",
 }
 
 const ENTRIES = FILE_TYPES as Readonly<Record<FileTypeId, FileTypeEntry>>

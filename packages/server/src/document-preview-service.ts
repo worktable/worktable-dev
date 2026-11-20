@@ -5,8 +5,16 @@ import {
   QuickdrawDocumentSchema,
   type DocumentPreviewOptions,
 } from "@worktable/types"
+import { readCurrentFileSource } from "./current-file-source.ts"
 import { readRegisteredDocumentSource } from "./document-write-service.ts"
 import { renderDrawing } from "./drawing-render.ts"
+import {
+  FilePictureError,
+  filePictureKind,
+  renderFilePicture,
+} from "./file-pictures.ts"
+import { OpenFileRevision } from "./file-revision.ts"
+import { namesAFile } from "./file-uploads.ts"
 import { withResultMedia } from "./mcp/media.ts"
 import { hasScope } from "./token-store.ts"
 import {
@@ -113,6 +121,10 @@ export async function renderDocumentPreview(input: {
   signal?: AbortSignal
   /** HTML convenience entry preserves its own widgets:read scope. */
   html?: boolean
+  /** A PDF's page, from 1. */
+  page?: number
+  /** Whether pictures of plain files are made: held on the MCP preview surface. */
+  filePictures?: boolean
 }) {
   const scope = input.html ? "widgets:read" : "documents:read"
   if (!hasScope(input.scopes, scope))
@@ -126,6 +138,10 @@ export async function renderDocumentPreview(input: {
       options,
       input.signal
     )
+  }
+  if (input.filePictures && namesAFile(input.path)) {
+    const picture = await renderFilePreview({ ...input, options })
+    if (picture) return picture
   }
   const source = await readRegisteredDocumentSource(input)
   if (
@@ -206,5 +222,114 @@ export async function renderDocumentPreview(input: {
     )
   } catch (error) {
     return { ...base, preview: previewFailure(source.sourceRevision, error) }
+  }
+}
+
+/**
+ * A plain file's picture as a preview: an image scaled down, or a PDF's
+ * page. Null when `path` names no plain file. The file is read at one
+ * revision, a piece at a time, so a change while it is drawn fails the
+ * preview and never mixes two revisions.
+ */
+async function renderFilePreview(input: {
+  spaceId: string
+  path: string
+  expectedRevision?: string
+  page?: number
+  options: DocumentPreviewOptions
+  signal?: AbortSignal
+}) {
+  const file = await readCurrentFileSource({
+    spaceId: input.spaceId,
+    path: input.path,
+  })
+  if (!file) return null
+  const { current, sourceRevision } = file
+  if (input.expectedRevision && input.expectedRevision !== sourceRevision)
+    throw Object.assign(
+      new Error("Document changed; read the current revision before rendering."),
+      { code: "REVISION_CONFLICT" }
+    )
+  const base = {
+    documentId: current.documentId,
+    path: current.path,
+    sourceRevision,
+  }
+  const kind = filePictureKind(current.path)
+  if (kind === "none")
+    return {
+      ...base,
+      preview: {
+        status: "unavailable" as const,
+        kind: "saved" as const,
+        sourceRevision,
+        error: "No preview for this file type.",
+      },
+    }
+  const { options } = input
+  // A file's picture has no theme: one asked for changes nothing.
+  if (options.clip || options.fullPage || options.height)
+    throw new Error(
+      kind === "pages"
+        ? "A PDF's preview accepts page and width."
+        : "An image's preview accepts width."
+    )
+  const opened = await OpenFileRevision.open(
+    current.pinned.path,
+    current.pinned.revision
+  )
+  try {
+    const picture = await renderFilePicture(
+      {
+        name: current.path,
+        size: opened.size,
+        read: (position, length) => opened.read(position, length),
+      },
+      {
+        page: input.page,
+        width: options.width,
+        timeoutMs: options.timeoutMs,
+        signal: input.signal,
+      }
+    )
+    const { bytes, ...metadata } = picture
+    return withResultMedia(
+      {
+        ...base,
+        preview: {
+          ...metadata,
+          status: "ready" as const,
+          kind: "saved" as const,
+          sourceRevision,
+          contentHash: createHash("sha256").update(bytes).digest("hex"),
+          contentBlockIndex: 1,
+          capturedAt: new Date().toISOString(),
+        },
+      },
+      [
+        {
+          type: "image",
+          mimeType: picture.mimeType,
+          data: Buffer.from(bytes).toString("base64"),
+        },
+      ]
+    )
+  } catch (error) {
+    if (error instanceof FilePictureError)
+      return {
+        ...base,
+        preview: {
+          status: "unavailable" as const,
+          kind: "saved" as const,
+          sourceRevision,
+          error: error.message,
+          ...(error.pageCount !== undefined
+            ? { pageCount: error.pageCount }
+            : {}),
+        },
+      }
+    return { ...base, preview: previewFailure(sourceRevision, error) }
+  } finally {
+    await opened.close()
   }
 }

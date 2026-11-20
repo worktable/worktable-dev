@@ -2882,7 +2882,7 @@
   {
     "name": "worktable_files_render",
     "title": "Render a Worktable file preview",
-    "description": "Render a drawing or HTML Doc as a PNG preview you can see. Read-only; reports incomplete loads, and needs Records read access for an HTML Doc's Records data.",
+    "description": "Render a file as a PNG preview you can see: a drawing, an HTML Doc, one page of a PDF (set page; the result gives pageCount) or an image scaled down to preview.width. Read-only; reports incomplete loads, and needs Records read access for an HTML Doc's Records data. A file with no preview says why.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2962,6 +2962,12 @@
             }
           },
           "additionalProperties": false
+        },
+        "page": {
+          "description": "For a PDF: the page to render, from 1 (default 1)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
         }
       },
       "required": [

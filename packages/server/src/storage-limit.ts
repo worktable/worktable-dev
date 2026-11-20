@@ -523,6 +523,9 @@ let known: {
 function dueBytes(reclaimable: number): number {
   const usage = storageUsage()
   if (!usage || reclaimable <= 0) return 0
+  // The limit can change while a pass plans (a plan's, per request): a
+  // lower one keeps what the Worktable holds before anything is due.
+  followLimit(usage)
   const limit = totalCeiling()
   // Under a lower limit, no headroom: it would be history removed for the
   // lower limit itself.

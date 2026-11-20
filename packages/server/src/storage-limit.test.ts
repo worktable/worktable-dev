@@ -831,6 +831,24 @@ describe("storage limit", () => {
     await createDoc("small", 1 * KB)
   })
 
+  it("keeps what the Worktable holds when its limit goes down while pruning plans", async () => {
+    const doc = await docWithVersions("kept", 5, 16 * KB)
+    await limitsAbove(4 * KB)
+    // A write needs room; while pruning plans what could go, a request
+    // lowers the plan's limit far under what the Worktable holds.
+    setStoragePruningHooksForTests({
+      afterPlanned: () =>
+        setStorageLimitForTests(1 * KB, { promptPruneMs: 10_000, totalBytes: 2 * KB, lowered: true }),
+    })
+    const before = await generations(doc)
+    await createDoc("next", 2 * KB).catch(() => undefined)
+    setStoragePruningHooksForTests({})
+    await settled()
+    // Only what the write needed went, if anything; not all that could.
+    expect((await generations(doc)).length).toBeGreaterThanOrEqual(before.length - 1)
+    expect(storageSummary()!.limit.totalLimitBytes).toBeGreaterThan(2 * KB)
+  })
+
   it("takes the plan's limit from requests the gateway admitted, at most the proven size", () => {
     const saved = {
       hosted: process.env[ENV.HOSTED],

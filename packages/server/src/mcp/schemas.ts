@@ -762,6 +762,13 @@ export const RenameThreadInput = z.object({
 export const ClaimThreadDeliveryInput = z.object({
   waitSeconds: z.number().min(0).max(25).optional(),
   threadLocationVersion: z.literal(2).optional(),
+  // Taken from any caller; honoured on the preview surface only.
+  comments: z
+    .boolean()
+    .optional()
+    .describe(
+      "Also claim comments sent to you. Comments on one page come together, as kind comments; answer them with status replied."
+    ),
 })
 
 export const ThreadManagementBaseInput = z.object({
@@ -782,6 +789,15 @@ export const AcceptThreadDeliveryInput = z.object({
 export const ProgressThreadDeliveryInput = AcceptThreadDeliveryInput.extend({
   phase: z.enum(["working", "receiving"]),
   receivedCharacters: z.number().int().nonnegative().optional(),
+})
+
+/** A runtime's answer to a page of comments it claimed. */
+export const ReplyThreadDeliveryInput = AcceptThreadDeliveryInput.extend({
+  body: z
+    .string()
+    .min(1)
+    .max(100_000)
+    .describe("Posted as your reply on each claimed comment you haven't answered yet."),
 })
 
 export const FailThreadDeliveryInput = AcceptThreadDeliveryInput.extend({
@@ -1485,6 +1501,7 @@ export const ThreadDeliveryInput = z.strictObject({
     actionSchema("accept", AcceptThreadDeliveryInput.shape),
     actionSchema("progress", ProgressThreadDeliveryInput.shape),
     actionSchema("fail", FailThreadDeliveryInput.shape),
+    actionSchema("reply", ReplyThreadDeliveryInput.shape),
   ]),
 })
 

@@ -441,11 +441,17 @@ describe("released tool surface", () => {
     const released = (await listTools()).tools
     const preview = (await listTools("preview")).tools
     // Waiting in preview: the thread list leaves archived threads out unless
-    // asked, and a render takes a PDF's page. Orientation also says when
+    // asked, a render takes a PDF's page, and runtimes may claim comments and
+    // answer them. Orientation also says when
     // storage is nearly full, and a file's versions when older ones were
     // removed at the limit; those two tools are otherwise the same. Every
     // other tool is listed the same on both.
-    const waiting = ["worktable_threads_read", "worktable_files_render"]
+    const waiting = [
+      "worktable_threads_read",
+      "worktable_files_render",
+      "worktable_delivery_claim",
+      "worktable_delivery_report",
+    ]
     const storageNotes: Record<string, string> = {
       worktable_state: "storage",
       worktable_files_read: "pruned",
@@ -484,6 +490,10 @@ describe("released tool surface", () => {
     expect(threadsRead(released).inputSchema.properties).not.toHaveProperty(
       "includeArchived"
     )
+    const claim = (tools: typeof released) =>
+      tools.find((tool) => tool.name === "worktable_delivery_claim")!
+    expect(claim(preview).inputSchema.properties).toHaveProperty("comments")
+    expect(claim(released).inputSchema.properties).not.toHaveProperty("comments")
     // The Library is released: state lists the skills, and agents read and
     // propose them with their own tools.
     const state = released.find((tool) => tool.name === "worktable_state")!

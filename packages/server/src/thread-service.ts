@@ -51,6 +51,10 @@ import {
   progressThreadDelivery,
   queueThreadDelivery,
   readThreadActivities,
+  closeCommentDelivery,
+  commentBatchReplied,
+  commitCommentBatchReply,
+  reconcileCommentDeliveries,
   reconcileThreadDeliveries,
   requireThreadDeliveryLease,
   requiresManagedDeliveryLease,
@@ -83,13 +87,23 @@ import {
   resolveParticipant,
 } from "./participant-store.ts"
 import { getSpaceArchiveInfo, listSpaces, readSpace } from "./store.ts"
-import { pendingFor, pendingFrom } from "./pending-list.ts"
+import {
+  markPendingDelivered,
+  onPendingChange,
+  pendingFor,
+  pendingFrom,
+} from "./pending-list.ts"
+import { ownerIdentity } from "./auth.ts"
+import { readDocumentIdentities } from "./document-query.ts"
+import { readAnnotation, replyAnnotation } from "./annotation-store.ts"
+import { wsManager } from "./ws.ts"
 import {
   listAgentConnections,
   signInPresentations,
 } from "./agent-connection-store.ts"
 import {
   inboxSignalRevision,
+  signalInbox,
   threadSignalRevision,
   waitForInboxSignal,
   waitForThreadSignal,
@@ -1693,6 +1707,24 @@ export async function reconcileParticipantDeliveries(
       })
     }
   }
+  // Comments sent to this participant join its deliveries.
+  await reconcileCommentDeliveries(
+    participantId,
+    (await pendingFor(participantId)).flatMap((entry) =>
+      entry.source.kind === "comment"
+        ? [
+            {
+              spaceId: entry.source.spaceId,
+              annotationId: entry.source.annotationId,
+              requestId: entry.source.requestId,
+              page: entry.source.documentId ?? entry.source.path,
+              authorId: entry.source.from.id,
+              createdAt: entry.createdAt,
+            },
+          ]
+        : []
+    )
+  )
   return reconcileThreadDeliveries(participantId, deliveries, {
     retireMissing: scan.complete,
     scannedLocations: scan.locations,
@@ -1705,11 +1737,57 @@ export async function reconcileParticipantDeliveries(
   })
 }
 
+/** One comment in a batch, with what an agent needs to act on it. */
+export interface ClaimedComment {
+  annotationId: string
+  requestId: string
+  /** The commented passage, when the comment is on one. */
+  quote?: string
+  /** The words that asked: the comment, or the reply that asked again. */
+  body: string
+  /** Who asked, as a thread member, so the owner rule reads it as it does a message. */
+  from: { id: string; kind: "human" | "agent" | "system"; name: string }
+  replies: Array<{ from: string; body: string }>
+}
+
+/**
+ * The comments waiting for an agent on one page, handed out together under
+ * one lease: one turn answers them, through worktable_delivery_report.
+ */
+export interface ClaimedCommentDelivery
+  extends Omit<ClaimedDelivery, "comments"> {
+  kind: "comments"
+  page: { spaceId: string; path: string; title: string }
+  comments: ClaimedComment[]
+  connectedBy: ConnectedBy
+}
+
+type ClaimedThreadMessage = Exclude<
+  Awaited<ReturnType<typeof claimNextDelivery>>,
+  ClaimedCommentDelivery | null
+>
+
+/** A thread message for this identity, never a comment. */
 export async function claimNextThreadDelivery(
   identity: ThreadIdentity,
   waitSeconds = MAX_WAIT_SECONDS,
   supportedThreadLocationVersion?: 2
+): Promise<ClaimedThreadMessage | null> {
+  return (await claimNextDelivery(
+    identity,
+    waitSeconds,
+    supportedThreadLocationVersion
+  )) as ClaimedThreadMessage | null
+}
+
+/** The next thread message or, when the runtime takes them, page of comments. */
+export async function claimNextDelivery(
+  identity: ThreadIdentity,
+  waitSeconds = MAX_WAIT_SECONDS,
+  supportedThreadLocationVersion?: 2,
+  options: { comments?: boolean } = {}
 ): Promise<
+  | ClaimedCommentDelivery
   | (ClaimedDelivery & {
       thread: ThreadReadResult["thread"]
       message: ThreadReadResult["messages"][number]
@@ -1748,7 +1826,13 @@ export async function claimNextThreadDelivery(
       allowWorktable,
       isDeliverable,
       authenticatedPrincipalId: identity.principal.id,
+      allowComments: options.comments === true,
     })
+    if (claim?.comments) {
+      const handed = await commentClaim(claim, participant.id)
+      if (handed) return handed
+      continue
+    }
     if (claim) {
       let thread: Awaited<ReturnType<typeof readThread>>
       try {
@@ -1856,6 +1940,7 @@ export async function claimNextThreadDelivery(
     const eligibleAt = await nextThreadDeliveryEligibleAt(participant.id, {
       allowWorktable,
       isDeliverable,
+      allowComments: options.comments === true,
     })
     if (eligibleAt !== undefined && eligibleAt <= Date.now()) continue
     const waitMs = Math.min(
@@ -1872,6 +1957,182 @@ export async function claimNextThreadDelivery(
       signalRevision = inboxSignalRevision(participant.id)
       await reconcileParticipantDeliveries(participant.id)
     }
+  }
+}
+
+/**
+ * The comments a claim leased, each checked as a thread claim is: still
+ * open, still for this agent. Ones that no longer apply are retired; null
+ * when none is left.
+ */
+async function commentClaim(
+  claim: ClaimedDelivery,
+  participantId: string
+): Promise<ClaimedCommentDelivery | null> {
+  const refs = claim.comments!
+  const spaceId = refs[0]!.spaceId
+  const comments: ClaimedComment[] = []
+  const gone: string[] = []
+  let path: string | undefined
+  for (const ref of refs) {
+    const annotation = await readAnnotation(spaceId, ref.annotationId).catch(
+      () => null
+    )
+    const request = annotation?.requests?.find((r) => r.id === ref.requestId)
+    if (
+      !annotation ||
+      annotation.status === "resolved" ||
+      request?.status !== "open" ||
+      request.to.id !== participantId
+    ) {
+      gone.push(ref.requestId)
+      continue
+    }
+    const target = annotation.target as { docPath?: string; widgetId?: string }
+    path ??= target.docPath ?? target.widgetId
+    const asked = request.requestedIn
+      ? annotation.thread.find((message) => message.id === request.requestedIn)
+      : undefined
+    const author = asked?.author ?? annotation.author
+    const quote = (annotation.target as { quote?: string }).quote
+    comments.push({
+      annotationId: annotation.id,
+      requestId: request.id,
+      ...(quote ? { quote } : {}),
+      body: asked?.body ?? annotation.body,
+      from: await commentAuthor(author),
+      replies: annotation.thread.map((message) => ({
+        from: message.author.name ?? message.author.id,
+        body: message.body,
+      })),
+    })
+  }
+  for (const requestId of gone)
+    await closeCommentDelivery(participantId, requestId, "withdrawn")
+  if (!comments.length || !path) {
+    if (comments.length)
+      for (const comment of comments)
+        await closeCommentDelivery(participantId, comment.requestId, "withdrawn")
+    return null
+  }
+  const { identities } = await readDocumentIdentities(spaceId).catch(() => ({
+    identities: null,
+  }))
+  const title =
+    [...(identities?.current.values() ?? [])].find(
+      (document) => document.path === path
+    )?.title ?? path
+  // Shown to the agent's runtime now: Delivered, as a notice would mark it.
+  markPendingDelivered(
+    comments.map((comment) => `cmt:${comment.annotationId}:${comment.requestId}`)
+  )
+  const rest: Omit<ClaimedDelivery, "comments"> = { ...claim }
+  delete (rest as Partial<ClaimedDelivery>).comments
+  const lead = comments[0]!
+  return {
+    ...rest,
+    // The lease is reported against the first comment still in the batch.
+    messageId: lead.requestId,
+    threadId: lead.annotationId,
+    kind: "comments",
+    page: { spaceId, path, title },
+    comments,
+    connectedBy: await deliveryConnectedBy(
+      participantId,
+      lead.from.kind === "agent" ? lead.from.id : null
+    ),
+  }
+}
+
+/** A comment's author as a thread member, when they are one. */
+async function commentAuthor(author: {
+  type: string
+  id: string
+  name?: string
+}): Promise<ClaimedComment["from"]> {
+  const kind =
+    author.type === "user" ? "human" : author.type === "agent" ? "agent" : "system"
+  const name = author.name ?? (kind === "human" ? "Owner" : author.id)
+  if (kind === "human" && currentTeamWorktable()) {
+    const member = listTeamMembers().find((m) => m.actorId === author.id)
+    if (member) {
+      const { participant } = await resolveParticipant(
+        identityForTeamMember(member)
+      )
+      return { id: participant.id, kind, name: member.name }
+    }
+  }
+  if (kind === "human" && !currentTeamWorktable()) {
+    const { participant } = await resolveParticipant(ownerIdentity())
+    return { id: participant.id, kind, name }
+  }
+  return { id: author.id, kind, name }
+}
+
+// A comment sent to an agent wakes its waiting claim at once, and one that
+// stops waiting closes its delivery with the reason.
+onPendingChange((change) => {
+  if (change.entry.kind !== "comment") return
+  const participantId = change.entry.recipient.participantId
+  if (change.type === "added") {
+    signalInbox(participantId)
+    return
+  }
+  const source = change.entry.source
+  if (source.kind !== "comment") return
+  void closeCommentDelivery(participantId, source.requestId, change.reason).catch(
+    () => {
+      console.error("[Worktable] A comment delivery could not be closed")
+    }
+  )
+})
+
+/**
+ * A runtime's answer to a page of comments: posted as its reply on each one
+ * its lease still holds open, then the batch is done. Comments the agent
+ * answered itself during the turn are left out. A retry after a lost answer
+ * finds the batch done and posts nothing again.
+ */
+export async function replyToCommentBatch(
+  identity: ThreadIdentity,
+  input: { messageId: string; leaseId: string; body: string }
+): Promise<ThreadActivity> {
+  const { participant } = await participantForIdentity(identity)
+  const author = {
+    type: "agent" as const,
+    id: identity.principal.id,
+    name: participant.name,
+  }
+  try {
+    return await commitCommentBatchReply(
+      { participantId: participant.id, ...input },
+      async (waiting) => {
+        for (const ref of waiting) {
+          const result = await replyAnnotation(
+            ref.spaceId,
+            ref.annotationId,
+            input.body,
+            author,
+            { replier: { participantId: participant.id, kind: "agent" } }
+          )
+          wsManager.broadcast(ref.spaceId, {
+            type: "annotation_update",
+            spaceId: ref.spaceId,
+            data: {
+              annotationId: ref.annotationId,
+              annotation: result.annotation,
+              event: "replied",
+            },
+          })
+        }
+      }
+    )
+  } catch (error) {
+    if (error instanceof ThreadDeliveryError && error.code === "LEASE_LOST") {
+      const done = await commentBatchReplied(participant.id, input.leaseId)
+      if (done) return done
+    }
+    throw error
   }
 }
 

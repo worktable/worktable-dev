@@ -199,6 +199,53 @@ const PortableThreadSchema = ThreadV3Schema.meta({ id: "Thread" })
 const PortableThreadActivitySchema = ThreadActivitySchema.loose().meta({
   id: "ThreadActivity",
 })
+const DELIVERY_ACTIVITY_OUTPUT = [
+  z.looseObject({ activity: PortableThreadActivitySchema }),
+] as const
+
+/** A comment's delivery: keyed by its request, not a thread message. */
+const CommentActivityOutput = z.looseObject({
+  activity: z.looseObject({
+    messageId: z.string().regex(/^req_/),
+    participantId: z.string(),
+    state: z.enum(["queued", "working", "receiving", "replied", "failed"]),
+    revision: z.number().int().nonnegative(),
+    attempts: z.number().int().nonnegative(),
+    updatedAt: z.string(),
+  }),
+})
+
+/** A page of comments handed to a runtime that asked for them. */
+const ClaimedCommentsOutput = z.looseObject({
+  delivery: z.looseObject({
+    kind: z.literal("comments"),
+    messageId: z.string(),
+    threadId: z.string(),
+    leaseId: z.string(),
+    leaseExpiresAt: z.string(),
+    attempt: z.number().int().positive(),
+    page: z.looseObject({
+      spaceId: z.string(),
+      path: z.string(),
+      title: z.string(),
+    }),
+    comments: z
+      .array(
+        z.looseObject({
+          annotationId: z.string(),
+          requestId: z.string(),
+          body: z.string(),
+          from: z.looseObject({
+            id: z.string(),
+            kind: z.enum(["human", "agent", "system"]),
+            name: z.string(),
+          }),
+        })
+      )
+      .min(1),
+  }),
+})
+
 const PortableThreadResponseRequestSchema =
   ThreadResponseRequestSchema.loose().meta({ id: "ThreadResponseRequest" })
 
@@ -1135,9 +1182,10 @@ export const PUBLIC_OPERATION_OUTPUT_VARIANTS = {
   "thread_delivery.claim": [
     z.looseObject({ delivery: ClaimedDeliverySchema.nullable() }),
   ],
-  "thread_delivery.accept": [
-    z.looseObject({ activity: PortableThreadActivitySchema }),
-  ],
+  "thread_delivery.accept": DELIVERY_ACTIVITY_OUTPUT,
+  // The same listed shape as the other reports; a page of comments' activity
+  // is held below, with the preview surface.
+  "thread_delivery.reply": DELIVERY_ACTIVITY_OUTPUT,
   "thread_delivery.progress": [
     z.looseObject({ activity: PortableThreadActivitySchema }),
   ],
@@ -1783,6 +1831,12 @@ const HtmlUploadLinkOutputSchema = z.looseObject({
 const HELD_OPERATION_OUTPUT_VARIANTS: Partial<Record<OperationId, readonly z.ZodObject[]>> = {
   "html.create": [HtmlUploadLinkOutputSchema],
   "html.update": [HtmlUploadLinkOutputSchema],
+  // Comments delivered to runtimes, on the preview surface.
+  "thread_delivery.claim": [ClaimedCommentsOutput],
+  "thread_delivery.accept": [CommentActivityOutput],
+  "thread_delivery.progress": [CommentActivityOutput],
+  "thread_delivery.fail": [CommentActivityOutput],
+  "thread_delivery.reply": [CommentActivityOutput],
 }
 
 export function assertPublicOperationOutput(

@@ -34,6 +34,14 @@ interface DeliveryRecord {
   leaseExpiresAt?: string
   /** Persisted fencing survives disconnects, restarts, and routine edits. */
   managedBy?: "grok-bot"
+  /**
+   * A comment sent to this agent, delivered like a thread message. threadId
+   * is the comment's id and messageId the request's. Comments on one page
+   * are handed out together, under one lease.
+   */
+  comment?: CommentDeliveryRef
+  /** The lease whose reply answered this comment, so a retry finds it done. */
+  repliedUnder?: string
   receivedCharacters?: number
   error?: {
     code: string
@@ -49,6 +57,17 @@ interface DeliveryFile {
   version: 4
   deliveries: DeliveryRecord[]
   canonicalRevisions: Record<string, number>
+  /** Agents whose runtime has asked for comments; only these get them. */
+  commentParticipants?: string[]
+}
+
+/** A comment request delivered to an agent, and the page it is on. */
+export interface CommentDeliveryRef {
+  spaceId: string
+  annotationId: string
+  requestId: string
+  /** The page: its durable id, or its path when it has none. */
+  page: string
 }
 
 export class ThreadDeliveryError extends Error {
@@ -71,6 +90,8 @@ export interface ClaimedDelivery {
   leaseExpiresAt: string
   attempt: number
   identityId: string
+  /** Comments on one page, leased together, instead of a thread message. */
+  comments?: CommentDeliveryRef[]
 }
 
 const LEASE_MS = 60_000
@@ -143,6 +164,7 @@ async function loadFile(): Promise<DeliveryFile> {
     const stored = value as {
       version: 1 | 2 | 3 | 4
       canonicalRevisions?: Record<string, number>
+      commentParticipants?: string[]
       deliveries: Array<
         | DeliveryRecord
         | (Omit<DeliveryRecord, "location"> & {
@@ -154,6 +176,7 @@ async function loadFile(): Promise<DeliveryFile> {
       type: "worktable.thread-deliveries",
       version: 4,
       canonicalRevisions: stored.canonicalRevisions ?? {},
+      commentParticipants: stored.commentParticipants ?? [],
       deliveries: stored.deliveries.map((delivery) =>
         "location" in delivery
           ? {
@@ -184,6 +207,7 @@ interface DeliveryReadState {
   key: string | null
   racy: boolean
   deliveries: readonly DeliveryRecord[]
+  commentParticipants: ReadonlySet<string>
   lookup: ThreadActivityLookup
 }
 
@@ -214,12 +238,13 @@ async function readDeliveryState(): Promise<DeliveryReadState> {
   ) {
     return readState
   }
-  const { deliveries } = await loadFile()
+  const { deliveries, commentParticipants } = await loadFile()
   readState = {
     path,
     key,
     racy: fingerprint?.racy ?? false,
     deliveries,
+    commentParticipants: new Set(commentParticipants),
     lookup: activityLookup(deliveries),
   }
   return readState
@@ -302,12 +327,21 @@ function requireLease(
   leaseId: string,
   participantId: string
 ): DeliveryRecord {
-  const record = file.deliveries.find(
-    (delivery) =>
-      delivery.messageId === messageId &&
-      delivery.leaseId === leaseId &&
-      delivery.participantId === participantId
-  )
+  // A page of comments shares one lease: once the agent has answered the
+  // comment the lease was reported against, another one still holds it.
+  const record =
+    file.deliveries.find(
+      (delivery) =>
+        delivery.messageId === messageId &&
+        delivery.leaseId === leaseId &&
+        delivery.participantId === participantId
+    ) ??
+    file.deliveries.find(
+      (delivery) =>
+        delivery.comment !== undefined &&
+        delivery.leaseId === leaseId &&
+        delivery.participantId === participantId
+    )
   if (
     !record ||
     !record.leaseExpiresAt ||
@@ -490,6 +524,7 @@ export async function grokBotDeliveries(participantId: string) {
       leaseExpiresAt: record.leaseExpiresAt,
       nextAttemptAt: record.nextAttemptAt,
       error: record.error,
+      comment: record.comment !== undefined,
     }))
 }
 
@@ -749,8 +784,10 @@ export async function reconcileThreadDeliveries(
     const scannedKeys = options.scannedLocations
       ? new Set(options.scannedLocations.map(threadLocationKey))
       : null
-    const observed = (location: ThreadLocation) =>
-      !scannedKeys || scannedKeys.has(threadLocationKey(location))
+    // Comment records follow the pending list instead.
+    const observed = (location: ThreadLocation, record?: DeliveryRecord) =>
+      !record?.comment &&
+      (!scannedKeys || scannedKeys.has(threadLocationKey(location)))
     const removedTerminal: DeliveryRecord[] = []
     if (retireMissing) {
       file.deliveries = file.deliveries.filter((record) => {
@@ -764,7 +801,7 @@ export async function reconcileThreadDeliveries(
         )
         const highWatermark = file.canonicalRevisions[canonicalKey] ?? 0
         const snapshotRevision = snapshot?.revision ?? Number.MAX_SAFE_INTEGER
-        if (!observed(record.location)) return true
+        if (!observed(record.location, record)) return true
         if (snapshotRevision < highWatermark) return true
         if (
           record.participantId !== participantId ||
@@ -811,7 +848,7 @@ export async function reconcileThreadDeliveries(
       if (
         !retireMissing ||
         record.participantId !== participantId ||
-        !observed(record.location) ||
+        !observed(record.location, record) ||
         snapshotRevision < highWatermark ||
         record.state === "replied" ||
         record.state === "failed" ||
@@ -984,6 +1021,7 @@ export async function nextThreadDeliveryEligibleAt(
     allowWorktable?: boolean
     /** Deliveries the caller cannot currently act on wait, unexpired. */
     isDeliverable?: (location: ThreadLocation) => boolean
+    allowComments?: boolean
   } = {
     allowWorktable: true,
   }
@@ -1003,6 +1041,7 @@ export async function nextThreadDeliveryEligibleAt(
     if (
       record.participantId !== participantId ||
       (record.managedBy === "grok-bot" && !policy) ||
+      (record.comment && !options.allowComments) ||
       (policy && !policy.verifiedAt && policy.probe?.messageId !== record.messageId) ||
       (!options.allowWorktable && record.location.kind === "worktable") ||
       (options.isDeliverable && !options.isDeliverable(record.location)) ||
@@ -1033,6 +1072,8 @@ export async function claimThreadDelivery(
     allowWorktable?: boolean
     isDeliverable?: (location: ThreadLocation) => boolean
     authenticatedPrincipalId?: string
+    /** The runtime takes comments as well as thread messages. */
+    allowComments?: boolean
   } = {
     allowWorktable: true,
   }
@@ -1045,6 +1086,15 @@ export async function claimThreadDelivery(
     const exhausted: DeliveryRecord[] = []
     const blockedThreads = new Set<string>()
     let candidate: DeliveryRecord | undefined
+    // From now on this agent can be woken for comments too.
+    let learned = false
+    if (
+      options.allowComments &&
+      !(file.commentParticipants ??= []).includes(participantId)
+    ) {
+      file.commentParticipants.push(participantId)
+      learned = true
+    }
     if (policy) {
       const expired = expireManaged(file, participantId, nowMs, true)
       if (expired.length) {
@@ -1057,6 +1107,7 @@ export async function claimThreadDelivery(
     for (const record of file.deliveries) {
       if (record.participantId !== participantId) continue
       if (record.managedBy === "grok-bot" && !policy) continue
+      if (record.comment && !options.allowComments) continue
       if (policy && !policy.verifiedAt && policy.probe?.messageId !== record.messageId) continue
       if (!options.allowWorktable && record.location.kind === "worktable") {
         continue
@@ -1103,7 +1154,10 @@ export async function claimThreadDelivery(
       candidate = record
       break
     }
-    if (!candidate && exhausted.length === 0) return null
+    if (!candidate && exhausted.length === 0) {
+      if (learned) await saveFile(file)
+      return null
+    }
 
     if (candidate) {
       candidate.state = "leased"
@@ -1120,10 +1174,36 @@ export async function claimThreadDelivery(
       candidate.revision += 1
       candidate.updatedAt = now
     }
+    // A comment brings every comment waiting for this agent on its page,
+    // under the same lease, so one turn answers them all.
+    const batch: DeliveryRecord[] = candidate ? [candidate] : []
+    if (candidate?.comment) {
+      for (const record of file.deliveries) {
+        if (
+          record === candidate ||
+          record.participantId !== participantId ||
+          record.comment?.page !== candidate.comment.page ||
+          record.comment.spaceId !== candidate.comment.spaceId ||
+          record.state !== "queued" ||
+          (record.nextAttemptAt && Date.parse(record.nextAttemptAt) > nowMs)
+        )
+          continue
+        record.state = "leased"
+        record.leaseId = candidate.leaseId
+        record.leaseExpiresAt = candidate.leaseExpiresAt
+        if (candidate.managedBy) record.managedBy = candidate.managedBy
+        record.attempts += 1
+        record.nextAttemptAt = undefined
+        record.error = undefined
+        record.revision += 1
+        record.updatedAt = now
+        batch.push(record)
+      }
+    }
     await saveFile(file)
     for (const record of exhausted) notify(record)
     if (!candidate) return null
-    notify(candidate)
+    for (const record of batch) notify(record)
     return {
       messageId: candidate.messageId,
       threadId: candidate.threadId,
@@ -1135,8 +1215,23 @@ export async function claimThreadDelivery(
       leaseExpiresAt: candidate.leaseExpiresAt!,
       attempt: candidate.attempts,
       identityId: candidate.identityId,
+      ...(candidate.comment
+        ? { comments: batch.map((record) => record.comment!) }
+        : {}),
     }
   })
+}
+
+/** Every delivery a lease covers: one thread message, or a page of comments. */
+function leaseGroup(file: DeliveryFile, record: DeliveryRecord): DeliveryRecord[] {
+  return record.comment
+    ? file.deliveries.filter(
+        (candidate) =>
+          candidate.participantId === record.participantId &&
+          candidate.leaseId === record.leaseId &&
+          candidate.comment !== undefined
+      )
+    : [record]
 }
 
 export async function acceptThreadDelivery(input: {
@@ -1153,12 +1248,15 @@ export async function acceptThreadDelivery(input: {
       input.participantId
     )
     const nowMs = Date.now()
-    record.state = "accepted"
-    record.revision += 1
-    record.updatedAt = new Date(nowMs).toISOString()
-    renewLease(record, nowMs)
+    const group = leaseGroup(file, record)
+    for (const member of group) {
+      member.state = "accepted"
+      member.revision += 1
+      member.updatedAt = new Date(nowMs).toISOString()
+      renewLease(member, nowMs)
+    }
     await saveFile(file)
-    notify(record)
+    for (const member of group) notify(member)
     return activityFor(record)
   })
 }
@@ -1182,20 +1280,23 @@ export async function progressThreadDelivery(input: {
     const shouldNotify =
       record.state !== input.phase ||
       nowMs - Date.parse(record.updatedAt) >= PROGRESS_COALESCE_MS
-    record.state = input.phase
-    if (input.receivedCharacters !== undefined) {
-      record.receivedCharacters = Math.max(
-        record.receivedCharacters ?? 0,
-        input.receivedCharacters
-      )
-    }
-    renewLease(record, nowMs)
-    if (shouldNotify) {
-      record.revision += 1
-      record.updatedAt = new Date(nowMs).toISOString()
+    const group = leaseGroup(file, record)
+    for (const member of group) {
+      member.state = input.phase
+      if (input.receivedCharacters !== undefined) {
+        member.receivedCharacters = Math.max(
+          member.receivedCharacters ?? 0,
+          input.receivedCharacters
+        )
+      }
+      renewLease(member, nowMs)
+      if (shouldNotify) {
+        member.revision += 1
+        member.updatedAt = new Date(nowMs).toISOString()
+      }
     }
     await saveFile(file)
-    if (shouldNotify) notify(record)
+    if (shouldNotify) for (const member of group) notify(member)
     return activityFor(record)
   })
 }
@@ -1235,27 +1336,34 @@ export async function failThreadDelivery(input: {
     }
     const nowMs = Date.now()
     const refund = input.retryable && input.spendAttempt === false
-    if (refund) record.attempts = Math.max(0, record.attempts - 1)
-    const retry = refund || (record.managedBy !== "grok-bot" && input.retryable && record.attempts < MAX_ATTEMPTS)
-    record.state = retry ? "queued" : "failed"
-    record.error = {
-      code: input.code,
-      message: input.message.slice(0, 500),
-      retryable: retry,
+    const group = leaseGroup(file, record)
+    for (const member of group) {
+      if (refund) member.attempts = Math.max(0, member.attempts - 1)
+      const retry =
+        refund ||
+        (member.managedBy !== "grok-bot" &&
+          input.retryable &&
+          member.attempts < MAX_ATTEMPTS)
+      member.state = retry ? "queued" : "failed"
+      member.error = {
+        code: input.code,
+        message: input.message.slice(0, 500),
+        retryable: retry,
+      }
+      member.leaseId = undefined
+      member.leaseExpiresAt = undefined
+      member.nextAttemptAt = refund
+        ? new Date(nowMs).toISOString()
+        : retry
+          ? new Date(
+              nowMs + 1_000 * 2 ** Math.max(0, member.attempts - 1)
+            ).toISOString()
+          : undefined
+      member.revision += 1
+      member.updatedAt = new Date(nowMs).toISOString()
     }
-    record.leaseId = undefined
-    record.leaseExpiresAt = undefined
-    record.nextAttemptAt = refund
-      ? new Date(nowMs).toISOString()
-      : retry
-        ? new Date(
-            nowMs + 1_000 * 2 ** Math.max(0, record.attempts - 1)
-          ).toISOString()
-        : undefined
-    record.revision += 1
-    record.updatedAt = new Date(nowMs).toISOString()
     await saveFile(file)
-    notify(record)
+    for (const member of group) notify(member)
     return activityFor(record)
   })
 }
@@ -1293,6 +1401,219 @@ export async function markThreadDeliveryReplied(input: {
     notify(record)
     return activityFor(record)
   })
+}
+
+// ── Comments sent to an agent ─────────────────────────────
+
+export interface CommentDeliveryInput extends CommentDeliveryRef {
+  authorId: string
+  createdAt: string
+}
+
+/**
+ * Make one agent's comment deliveries match the comments open for it. New
+ * ones queue. One no longer open that is still waiting stops; its close
+ * reason, when the pending list reports it, says whether it was answered.
+ * Thread deliveries are left alone.
+ */
+export async function reconcileCommentDeliveries(
+  participantId: string,
+  inputs: readonly CommentDeliveryInput[]
+): Promise<void> {
+  const mine = (await readDeliveryState()).deliveries.filter(
+    (record) => record.comment && record.participantId === participantId
+  )
+  const open = new Set(inputs.map((input) => input.requestId))
+  const known = new Set(mine.map((record) => record.comment!.requestId))
+  const stale = mine.some(
+    (record) =>
+      !open.has(record.comment!.requestId) &&
+      record.state !== "replied" &&
+      record.state !== "failed"
+  )
+  if (!stale && inputs.every((input) => known.has(input.requestId))) return
+  await serialized(async () => {
+    const file = await loadFile()
+    const changed: DeliveryRecord[] = []
+    const now = new Date().toISOString()
+    for (const record of file.deliveries) {
+      if (!record.comment || record.participantId !== participantId) continue
+      if (open.has(record.comment.requestId)) continue
+      if (record.state === "replied" || record.state === "failed") continue
+      retireComment(record, now)
+      changed.push(record)
+    }
+    const present = new Set(
+      file.deliveries.flatMap((record) =>
+        record.comment && record.participantId === participantId
+          ? [record.comment.requestId]
+          : []
+      )
+    )
+    for (const input of inputs) {
+      if (present.has(input.requestId)) continue
+      const record: DeliveryRecord = {
+        messageId: input.requestId,
+        threadId: input.annotationId,
+        location: { kind: "space", spaceId: input.spaceId },
+        authorId: input.authorId,
+        participantId,
+        identityId: `idt_${participantId.replace(/^ptc_/, "")}`,
+        state: "queued",
+        revision: 0,
+        attempts: 0,
+        createdAt: input.createdAt,
+        updatedAt: now,
+        comment: {
+          spaceId: input.spaceId,
+          annotationId: input.annotationId,
+          requestId: input.requestId,
+          page: input.page,
+        },
+      }
+      file.deliveries.push(record)
+      changed.push(record)
+    }
+    if (!changed.length) return
+    await saveFile(file)
+    for (const record of changed) notify(record)
+  })
+}
+
+function retireComment(record: DeliveryRecord, now: string): void {
+  record.state = "failed"
+  record.leaseId = undefined
+  record.leaseExpiresAt = undefined
+  record.nextAttemptAt = undefined
+  record.error = {
+    code: "DELIVERY_RETIRED",
+    message: "This comment no longer waits on this agent.",
+    retryable: false,
+  }
+  record.revision += 1
+  record.updatedAt = now
+}
+
+/**
+ * A comment stopped waiting on its agent: replied when they answered it, by
+ * any route, else retired.
+ */
+export async function closeCommentDelivery(
+  participantId: string,
+  requestId: string,
+  reason: "replied" | "resolved" | "withdrawn"
+): Promise<void> {
+  const known = (await readDeliveryState()).deliveries.some(
+    (record) =>
+      record.participantId === participantId &&
+      record.comment?.requestId === requestId &&
+      record.state !== "replied" &&
+      record.state !== "failed"
+  )
+  if (!known) return
+  await serialized(async () => {
+    const file = await loadFile()
+    const record = file.deliveries.find(
+      (candidate) =>
+        candidate.participantId === participantId &&
+        candidate.comment?.requestId === requestId
+    )
+    if (!record || record.state === "replied" || record.state === "failed")
+      return
+    const now = new Date().toISOString()
+    if (reason === "replied") {
+      record.state = "replied"
+      record.leaseId = undefined
+      record.leaseExpiresAt = undefined
+      record.nextAttemptAt = undefined
+      record.error = undefined
+      record.revision += 1
+      record.updatedAt = now
+    } else retireComment(record, now)
+    await saveFile(file)
+    notify(record)
+  })
+}
+
+/**
+ * Post a runtime's answer to the comments its lease still holds open, and
+ * close the batch, in one step against expiry and retry. `append` gets the
+ * comments still waiting; ones the agent already answered are left out.
+ */
+export async function commitCommentBatchReply(
+  input: { participantId: string; messageId: string; leaseId: string },
+  append: (waiting: CommentDeliveryRef[]) => Promise<void>
+): Promise<ThreadActivity> {
+  return serialized(async () => {
+    const file = await loadFile()
+    const record = requireLease(
+      file,
+      input.messageId,
+      input.leaseId,
+      input.participantId
+    )
+    if (!record.comment)
+      throw new ThreadDeliveryError(
+        "LEASE_LOST",
+        "This lease is for a thread message; reply in its thread"
+      )
+    if (record.managedBy === "grok-bot" && record.state === "leased")
+      throw new ThreadDeliveryError(
+        "LEASE_LOST",
+        "Accept the Grok Bot delivery before posting its reply"
+      )
+    const group = leaseGroup(file, record)
+    await append(group.map((member) => member.comment!))
+    const now = new Date().toISOString()
+    for (const member of group) {
+      member.repliedUnder = input.leaseId
+      member.state = "replied"
+      member.leaseId = undefined
+      member.leaseExpiresAt = undefined
+      member.nextAttemptAt = undefined
+      member.error = undefined
+      member.revision += 1
+      member.updatedAt = now
+    }
+    await saveFile(file)
+    for (const member of group) notify(member)
+    return activityFor(record)
+  })
+}
+
+/** Whether a lease's reply already went through, for a retry after a lost answer. */
+export async function commentBatchReplied(
+  participantId: string,
+  leaseId: string
+): Promise<ThreadActivity | null> {
+  const record = (await readDeliveryState()).deliveries.find(
+    (candidate) =>
+      candidate.participantId === participantId &&
+      candidate.repliedUnder === leaseId
+  )
+  return record ? activityFor(record) : null
+}
+
+/** Whether this agent's runtime has asked for comments. */
+export async function takesComments(participantId: string): Promise<boolean> {
+  return (await readDeliveryState()).commentParticipants.has(participantId)
+}
+
+/** How far each of an agent's comment deliveries has got, by request. */
+export async function commentDeliveryStates(): Promise<
+  ReadonlyMap<string, { state: ThreadActivity["state"]; attempts: number }>
+> {
+  const states = new Map<
+    string,
+    { state: ThreadActivity["state"]; attempts: number }
+  >()
+  for (const record of (await readDeliveryState()).deliveries)
+    if (record.comment)
+      states.set(record.comment.requestId, {
+        state: publicState(record),
+        attempts: record.attempts,
+      })
+  return states
 }
 
 onWorkspaceChange((event) => {

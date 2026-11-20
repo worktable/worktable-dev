@@ -297,10 +297,12 @@ function replaceGroups(
   current: ListState,
   prefix: string,
   groups: ReadonlyMap<string, readonly Derived[]>,
-  reasonFor: (group: string, itemId: string) => PendingCloseReason
+  reasonFor: (group: string, itemId: string) => PendingCloseReason,
+  /** Groups a newer write owns, which this replacement leaves alone. */
+  keep: (group: string) => boolean = () => false
 ): void {
   for (const group of [...current.groups.keys()]) {
-    if (group.startsWith(prefix) && !groups.has(group)) {
+    if (group.startsWith(prefix) && !groups.has(group) && !keep(group)) {
       replaceGroup(current, group, [], (itemId) => reasonFor(group, itemId))
     }
   }
@@ -319,6 +321,14 @@ function excerpt(text: string): string {
 function commentGroup(spaceId: string, annotationId: string): string {
   return `cmt:${spaceId}:${annotationId}`
 }
+
+/**
+ * When each comment group was last changed by a write, in a count that only
+ * goes up. A rescan that read the files before a write leaves that comment
+ * as the write left it, rather than closing it with its older view.
+ */
+let commentChanges = 0
+const commentChangedAt = new Map<string, number>()
 
 /** What the list needs of a comment, in either storage layout. */
 export interface IndexedComment {
@@ -416,6 +426,8 @@ export function noteCommentChanged(
 ): void {
   const current = state
   if (!current || current.root !== getWorkspaceRoot()) return
+  const group = commentGroup(spaceId, annotation.id)
+  commentChangedAt.set(group, ++commentChanges)
   // A rebuild in progress picks the change up from the files it reads.
   void current.ready.then(() => {
     if (state !== current) return
@@ -452,6 +464,7 @@ async function rebuildSpaceComments(
   spaceId: string
 ): Promise<void> {
   const { openCommentsWithRequests } = await import("./annotation-store.ts")
+  const started = commentChanges
   const comments = await openCommentsWithRequests(spaceId)
   const groups = new Map<string, Derived[]>()
   for (const { annotation, place } of comments) {
@@ -460,7 +473,20 @@ async function rebuildSpaceComments(
       commentItems(spaceId, annotation, place)
     )
   }
-  replaceGroups(current, `cmt:${spaceId}:`, groups, () => "resolved")
+  // Comments written since the files were read keep what the write said.
+  const newer = (group: string) => (commentChangedAt.get(group) ?? 0) > started
+  for (const group of [...groups.keys()]) if (newer(group)) groups.delete(group)
+  replaceGroups(
+    current,
+    `cmt:${spaceId}:`,
+    groups,
+    () => "resolved",
+    newer
+  )
+  // This rescan has seen every write before it started.
+  for (const [group, at] of commentChangedAt)
+    if (at <= started && group.startsWith(`cmt:${spaceId}:`))
+      commentChangedAt.delete(group)
 }
 
 // ── Thread requests ────────────────────────────────────────

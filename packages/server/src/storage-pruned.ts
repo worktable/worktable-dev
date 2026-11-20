@@ -144,6 +144,71 @@ export function prunedHistoryFor(
   }
 }
 
+// ── The total limit in force ────────────────────────────────
+//
+// The most everything may take, as storage-limit.ts last remembered it: so
+// a limit lowered while the server was stopped is noticed at start, and
+// nothing is pruned for it (Plan 22a rule 13).
+
+function keptPath(appDir = getAppDir(), key = workspaceCacheKey()): string {
+  return join(appDir, "storage-pruned", `${key}.kept.json`)
+}
+
+/**
+ * The most everything may take; `kept` when that is what a Worktable held
+ * as its limit went down, rather than a limit.
+ */
+export interface KeptRecord {
+  totalBytes: number
+  kept: boolean
+}
+
+/** What was remembered for the served workspace; null when nothing was. */
+export async function loadKeptRecord(): Promise<KeptRecord | null> {
+  try {
+    const parsed = JSON.parse(await readFile(keptPath(), "utf8")) as {
+      version?: number
+      totalBytes?: unknown
+      kept?: unknown
+    }
+    return parsed?.version === 1 &&
+      Number.isSafeInteger(parsed.totalBytes) &&
+      (parsed.totalBytes as number) > 0
+      ? { totalBytes: parsed.totalBytes as number, kept: parsed.kept === true }
+      : null
+  } catch {
+    return null
+  }
+}
+
+let keptWrite: Promise<void> = Promise.resolve()
+
+/** Remember the most everything may take. In order; never throws. */
+export function saveKeptRecord(record: KeptRecord): Promise<void> {
+  // The path is taken now, for the workspace served now.
+  let path: string
+  try {
+    path = keptPath(ensureAppDir())
+  } catch (error) {
+    console.error("[storage-limit] could not remember the storage limit:", logError(error))
+    return keptWrite
+  }
+  keptWrite = keptWrite.then(async () => {
+    try {
+      await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+      await atomicWriteText(path, `${JSON.stringify({ version: 1, ...record })}\n`)
+    } catch (error) {
+      console.error("[storage-limit] could not remember the storage limit:", logError(error))
+    }
+  })
+  return keptWrite
+}
+
+/** Resolves once what was remembered so far is saved. */
+export function keptRecordSaved(): Promise<void> {
+  return keptWrite
+}
+
 export function resetPrunedRecordForTests(): void {
   record = emptyRecord()
   recordKey = null

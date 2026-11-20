@@ -660,6 +660,19 @@ copy of a file's current version is stored once (package version 3). Past
 2 GiB. Cloud can pass a plan's limit the same way, but passes none today, so
 every Cloud Worktable has the default.
 
+A lower limit never removes history (Plan 22a rule 13). When the limit goes
+down, whether from a smaller plan, one that lapsed or a wrong setting, the
+Worktable may keep what it holds: what it held in all then stays its total
+limit until it fits the lower one again. Pruning keeps it within that, oldest
+first, as at any limit but with no headroom, so nothing goes for the lower
+limit itself. That figure doesn't follow use down: pruning frees whole
+versions, a little more than a write needs, and following that would shed
+history write by write. Its files meet the lower limit at once, so writes
+that add files are refused until they fit. The total limit in force is
+remembered in app data (`storage-pruned/<workspace>.kept.json`), so a limit
+lowered while the server was stopped is noticed at start, before anything
+is pruned.
+
 **Why:** a Worktable that fills its disk, or grows past what its backup and
 export can carry, can't be recovered.
 

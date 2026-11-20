@@ -80,6 +80,8 @@ Reading, deleting, moving and exporting keep working, and so do typing in an
 open Doc and drawing, which can take the Worktable slightly over its
 limit. Files written straight into the folder
 are never refused; they count, and the Worktable then acts as at its limit.
+A lower limit removes nothing: the Worktable keeps what it holds, and writes
+that add files are refused until they fit.
 
 ## Portable content
 

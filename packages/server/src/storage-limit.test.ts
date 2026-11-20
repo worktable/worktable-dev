@@ -730,6 +730,83 @@ describe("storage limit", () => {
     expect(storageSummary()!.pruned).toBeNull()
   })
 
+  it("prunes nothing for a lower limit, and keeps what the Worktable holds until it fits", async () => {
+    let written = await createDoc("kept", 16 * KB)
+    const replace = async (text: string) => {
+      written = await replaceRegisteredDocument({
+        spaceId: "notes",
+        path: "kept",
+        bytes: bytes(16 * KB, text),
+        expectedRevision: written.sourceRevision,
+        updatedBy: "test",
+        source: "test",
+        separateVersion: true,
+      })
+    }
+    for (const text of ["one", "two", "three"]) await replace(text)
+    const doc = written.documentId as DocumentId
+    const folder = join(workspace, "spaces", "notes", "exports")
+    mkdirSync(folder, { recursive: true })
+    const dump = join(folder, "dump.bin")
+    const writeOnDisk = async (write: () => void) => {
+      write()
+      noteStorageChange(folder)
+      await settled()
+    }
+    await writeOnDisk(() => writeFileSync(dump, new Uint8Array(32 * KB)))
+    const before = await generations(doc)
+    const summary = () => storageSummary()!.limit
+
+    // The limit goes down to well under what the Worktable holds, as when a
+    // plan lapses: nothing is pruned, and it may keep what it holds.
+    setStorageLimitForTests(8 * KB, { promptPruneMs: 1_000, totalBytes: 20 * KB, lowered: true })
+    await writeOnDisk(() => undefined)
+    expect(summary().totalLimitBytes).toBe(summary().totalBytes)
+    const held = summary().totalLimitBytes
+    expect(held).toBeGreaterThan(20 * KB)
+    const refused = await createDoc("more", 1 * KB).catch((error) => error)
+    expect(refused).toBeInstanceOf(StorageLimitError)
+    expect(refused.message).toContain("is over its")
+    expect(await generations(doc)).toEqual(before)
+    expect(storageSummary()!.pruned).toBeNull()
+
+    // A write that adds only history gets room within what is kept, from
+    // the oldest version, though the count catches up while pruning runs;
+    // and what is kept neither rises with it nor falls with what pruning
+    // freed.
+    setStoragePruningHooksForTests({
+      afterVersions: async () => {
+        await activeStorageAccount()!.settled()
+      },
+    })
+    await replace("four")
+    setStoragePruningHooksForTests({})
+    await settled()
+    expect(summary().totalLimitBytes).toBe(held)
+    expect(summary().totalBytes).toBeLessThanOrEqual(held)
+    expect(storageSummary()!.pruned!.versions).toBeGreaterThan(0)
+    expect((await generations(doc)).length).toBeLessThanOrEqual(before.length)
+
+    // A server started again keeps the same figure, and a write that needs
+    // room right after start gets it within that: a restore, which keeps a
+    // checkpoint as well.
+    for (const stop of stops) await stop()
+    stops = [startStorageLimits(), startStorageAccounting({ firstCountDelayMs: 60_000 })]
+    const versions = await generations(doc)
+    await restoreDocVersion("notes", "kept", versions.at(-1)!)
+    await settled()
+    expect((await generations(doc)).length).toBeGreaterThanOrEqual(versions.length)
+    expect(summary().totalLimitBytes).toBe(held)
+    expect(summary().totalBytes).toBeLessThanOrEqual(held)
+    expect(summary().totalBytes).toBeGreaterThan(20 * KB)
+
+    // Back up: the limit applies as before.
+    setStorageLimitForTests(null, { lowered: true })
+    await writeOnDisk(() => undefined)
+    expect(summary().totalLimitBytes).toBe(storageTotalLimitBytes())
+    await createDoc("more", 1 * KB)
+  })
+
   it("refuses a write that doesn't fit from the first moment after start", async () => {
     await createDoc("big", 32 * KB)
     // A server just started: nothing counted yet, the first count still a

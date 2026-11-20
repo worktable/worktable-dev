@@ -23,6 +23,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Storage counts your files:** A Worktable's limit now counts its Docs, files, Records and threads, not their version history: a 2 GB Worktable holds 2 GB of files. Worktable keeps history, deleted items and indexes within an allowance of its own, removing the oldest first, and Settings shows your files against the limit with the rest below. Exports can now hold everything a Worktable keeps, up to 5.25 GiB.
+- **A lower limit keeps your history:** When a Worktable's storage limit goes down, nothing is removed to make it fit. Everything it holds stays, and new files wait until you've made room.
 - **Smaller exports:** A file and the copy of it kept in its version history are stored once in an export, so a Worktable of uploaded files exports at about half the size. Exports from this version need this version of Worktable or later to import; older exports still import.
 - **Search:** Search opens over the page with Cmd+K, Ctrl+K or `/`, on a phone from the header. It shows what you opened recently, takes you to a Space or Settings by name, narrows by File Type and Space, and lists archived results below the rest.
 - **HTML Docs:** When an agent saves a new version of a page you have open, it opens where you were: the same scroll position, and a deck on the same slide if it keeps the slide number in its address. The loading placeholder no longer covers the page while the new version loads, and a deck's arrow keys work as soon as it fills the screen.

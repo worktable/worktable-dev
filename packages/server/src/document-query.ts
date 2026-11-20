@@ -164,8 +164,19 @@ export type DocumentHandleResolution =
 
 /** One current catalog entry of a Space, as seen by the search index. */
 export interface SearchProjectionCandidate {
-  /** Path comparison key; stable across case-only renames. */
+  /** Unique per candidate: the path key, marked when it is the live view. */
   key: string
+  /** Path comparison key; stable across case-only renames. */
+  pathKey: string
+  /**
+   * Which searches see the entry: every search, only one that leaves archived
+   * documents out ("live"), or only one that includes them ("archived"). An
+   * archived document is "archived". A path that an archived and a current
+   * document both claim is a conflict to a search that includes archived
+   * documents and the current document to one that doesn't, so it has one
+   * candidate for each.
+   */
+  view: "all" | "live" | "archived"
   /** Changes whenever the catalog's view of the entry changes. */
   revision: string
   /** Source modification time reported by the catalog, when known. */
@@ -812,7 +823,12 @@ async function searchCandidate(
   item: ClassifiedEntry
 ): Promise<SearchProjectionCandidate> {
   if (item.kind === "conflict") {
-    return { key: item.item.pathKey, revision: JSON.stringify(item.item) }
+    return {
+      key: item.item.pathKey,
+      pathKey: item.item.pathKey,
+      view: "all",
+      revision: JSON.stringify(item.item),
+    }
   }
   let revision = JSON.stringify([item.item, item.claim.source])
   let updatedAt = item.item.updatedAt
@@ -833,11 +849,43 @@ async function searchCandidate(
       updatedAt = page.mtime.toISOString()
     }
   }
+  const pathKey =
+    analyzeDocumentPath(item.item.path).comparisonKey ?? item.item.path
   return {
-    key: analyzeDocumentPath(item.item.path).comparisonKey ?? item.item.path,
+    key: pathKey,
+    pathKey,
+    view: item.item.archived ? "archived" : "all",
     revision,
     ...(updatedAt ? { updatedAt } : {}),
   }
+}
+
+/**
+ * One catalog entry as searches see it, archived documents included. A path
+ * that archived and current documents both claim reads differently with the
+ * archived ones left out, so it is given once for each view.
+ */
+function searchViews(
+  entry: DocumentCatalogEntry,
+  context: DocumentQueryContext
+): Array<{ item: ClassifiedEntry; view?: "live" | "archived" }> {
+  const item = classifyEntry(entry, context, true)
+  if (!item) return []
+  if (
+    item.kind !== "conflict" ||
+    !item.item.claims.some(
+      (claim) => claim.kind === "document" && claim.archived
+    )
+  ) {
+    return [{ item }]
+  }
+  const live = classifyEntry(entry, context, false)
+  return live
+    ? [
+        { item, view: "archived" },
+        { item: live, view: "live" },
+      ]
+    : [{ item, view: "archived" }]
 }
 
 /**
@@ -851,7 +899,6 @@ async function searchCandidate(
  */
 export async function projectDocumentsForSearch(options: {
   spaceId: string
-  includeArchived?: boolean
   shouldProject?: (candidate: SearchProjectionCandidate) => boolean
   projectionMs?: number
 }): Promise<{ candidates: SearchProjectionCandidate[]; complete: boolean }> {
@@ -860,14 +907,9 @@ export async function projectDocumentsForSearch(options: {
   return withDocPathLock(options.spaceId, async () => {
     const startedAt = performance.now()
     const context = await documentQueryContext(options.spaceId)
-    const classified = context.catalog.entries.flatMap((entry) => {
-      const item = classifyEntry(
-        entry,
-        context,
-        options.includeArchived ?? false
-      )
-      return item ? [item] : []
-    })
+    const classified = context.catalog.entries.flatMap((entry) =>
+      searchViews(entry, context)
+    )
     // Project for at least as long as discovery took, so a sliced build is
     // not dominated by repeating discovery for every slice.
     const discoveredAt = performance.now()
@@ -879,8 +921,12 @@ export async function projectDocumentsForSearch(options: {
     const candidates: SearchProjectionCandidate[] = []
     let projected = 0
     let complete = true
-    for (const item of classified) {
+    for (const { item, view } of classified) {
       const candidate = await searchCandidate(options.spaceId, item)
+      if (view) {
+        candidate.view = view
+        if (view === "live") candidate.key = `${candidate.pathKey}\0live`
+      }
       candidates.push(candidate)
       if (options.shouldProject && !options.shouldProject(candidate)) continue
       if (projected > 0 && performance.now() >= deadline) {
@@ -895,7 +941,7 @@ export async function projectDocumentsForSearch(options: {
               {
                 spaceId: options.spaceId,
                 path: item.item.path,
-                includeArchived: options.includeArchived,
+                includeArchived: candidate.view !== "live",
               },
               { context, classified: item }
             )

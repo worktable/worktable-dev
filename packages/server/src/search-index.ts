@@ -1,8 +1,9 @@
 // ============================================================
 // MiniSearch-based full-text search index for Worktable
-// Indexes documents and records. The common mode projects every authorized
-// document format inertly; the legacy mode preserves the historical Doc-only
-// result set for callers without documents:read.
+// Indexes documents and records, archived ones included: a search leaves
+// them out or takes them in when it runs. The common mode projects every
+// authorized document format inertly; the legacy mode preserves the
+// historical Doc-only result set for callers without documents:read.
 // ============================================================
 
 import MiniSearch from "minisearch";
@@ -37,7 +38,9 @@ import {
   recordTitleFieldKey,
   type DocumentFormatClaim,
   type DocumentHealth,
+  searchResultKind,
   type RecordFile,
+  type SearchKind,
   type SearchResult,
 } from "@worktable/types";
 import { logError } from "./debug-log.ts";
@@ -57,6 +60,10 @@ interface DocEntry {
   sourceVersion?: number;
   health?: DocumentHealth;
   archiveOn?: string;
+  /** The searches that see this entry, when not every one does. */
+  view?: "live" | "archived";
+  /** The document itself is archived. */
+  archived?: true;
 }
 
 interface RecordEntry {
@@ -71,6 +78,14 @@ interface RecordEntry {
 }
 
 type IndexEntry = DocEntry | RecordEntry;
+
+function entryKind(entry: IndexEntry): SearchKind {
+  return searchResultKind(
+    entry.type === "doc" && entry.formatId
+      ? { type: "doc", format: { id: entry.formatId } }
+      : { type: entry.type },
+  );
+}
 
 /** `titleKey` is the collection's title field (recordTitleFieldKey). */
 export function recordTitle(record: RecordFile, collectionName: string, titleKey: string | null = null): string {
@@ -228,9 +243,10 @@ export function makeExcerpt(body: string, terms: string[]): string | undefined {
 
 // ── Incremental index ────────────────────────────────────────
 //
-// One MiniSearch per variant: document access mode, archive visibility, and
-// whether records live in MiniSearch. Each variant is divided into Space
-// segments. Change events mark a segment dirty, and document events also name
+// One MiniSearch per variant: document access mode and whether records live
+// in MiniSearch. Archived documents and Spaces are in it too, marked, so a
+// search with them and one without share one copy. Each variant is divided
+// into Space segments. Change events mark a segment dirty, and document events also name
 // the document. The next search that covers the Space re-checks its catalog
 // and re-reads only documents whose revision changed or that an event named,
 // replacing their entries in place. Space-scoped searches use the same index,
@@ -252,6 +268,8 @@ interface SpaceSegment {
   documents: Map<string, IndexedDocument>;
   recordIds: string[];
   built: boolean;
+  /** The Space is archived, as of the latest listing. */
+  archivedSpace: boolean;
   dirty: boolean;
   recordsDirty: boolean;
   /** Document keys to re-read even when their revision looks unchanged. */
@@ -263,7 +281,6 @@ interface SpaceSegment {
 
 interface IndexVariant {
   documentAccess: DocumentSearchAccess;
-  includeArchived: boolean;
   includesRecords: boolean;
   idx: MiniSearch<IndexEntry>;
   // Display bodies for excerpt extraction, keyed by index entry id.
@@ -322,6 +339,8 @@ function createIndex(): MiniSearch<IndexEntry> {
       "formatId",
       "sourceVersion",
       "health",
+      "view",
+      "archived",
     ],
     searchOptions: {
       boost: { title: 3 },
@@ -333,28 +352,23 @@ function createIndex(): MiniSearch<IndexEntry> {
 
 function variantKey(
   documentAccess: DocumentSearchAccess,
-  includeArchived: boolean,
   includesRecords: boolean,
 ): string {
-  return JSON.stringify([documentAccess, includeArchived, includesRecords]);
+  return JSON.stringify([documentAccess, includesRecords]);
 }
 
 function variantFor(
   documentAccess: DocumentSearchAccess,
-  includeArchivedOption: boolean,
   includesRecords: boolean,
 ): IndexVariant {
-  // Legacy search keeps archived content and filters it per query.
-  const includeArchived = documentAccess === "common" && includeArchivedOption;
-  const key = variantKey(documentAccess, includeArchived, includesRecords);
+  const key = variantKey(documentAccess, includesRecords);
   let variant = variants.get(key);
   if (!variant) {
     // Records move to the record index once it is ready (or back, through its
     // kill switch). Keep one copy of the documents, not one per record mode.
-    variants.delete(variantKey(documentAccess, includeArchived, !includesRecords));
+    variants.delete(variantKey(documentAccess, !includesRecords));
     variant = {
       documentAccess,
-      includeArchived,
       includesRecords,
       idx: createIndex(),
       displayBodies: new Map(),
@@ -592,6 +606,7 @@ function commonProjectedBody(
 function commonEntry(
   spaceId: string,
   { result, documentView }: DocumentReadWithView,
+  view: "all" | "live" | "archived",
 ): { entry: DocEntry; displayBody: string; transient: boolean } {
   const document =
     result.kind === "document" ? result.document : result.conflict;
@@ -625,7 +640,8 @@ function commonEntry(
   );
   return {
     entry: {
-      id: `doc:${spaceId}:${path}`,
+      // A path with a view of its own for each kind of search has two entries.
+      id: `doc:${spaceId}:${path}${view === "live" ? "\0live" : ""}`,
       spaceId,
       path,
       type: "doc",
@@ -645,6 +661,10 @@ function commonEntry(
       health: document.health,
       ...(result.kind === "document" && result.document.archiveOn
         ? { archiveOn: result.document.archiveOn }
+        : {}),
+      ...(view !== "all" ? { view } : {}),
+      ...(result.kind === "document" && result.document.archived
+        ? { archived: true as const }
         : {}),
     },
     displayBody:
@@ -674,11 +694,10 @@ async function syncCommonDocuments(
     const sliceStarted = performance.now();
     const pass = await projectDocumentsForSearch({
       spaceId,
-      includeArchived: variant.includeArchived,
       projectionMs: sliceMs(),
       shouldProject: (candidate) =>
         !projected.has(candidate.key) &&
-        (forced.has(candidate.key) ||
+        (forced.has(candidate.pathKey) ||
           !canReuseDerived(
             segment.documents.get(candidate.key),
             candidate.revision,
@@ -697,7 +716,11 @@ async function syncCommonDocuments(
         segment.documents.delete(candidate.key);
         continue;
       }
-      const { entry, displayBody, transient } = commonEntry(spaceId, candidate.read);
+      const { entry, displayBody, transient } = commonEntry(
+        spaceId,
+        candidate.read,
+        candidate.view,
+      );
       if (previous && previous.id !== entry.id) dropEntry(variant, previous.id);
       putEntry(variant, entry, displayBody);
       segment.documents.set(candidate.key, {
@@ -718,7 +741,7 @@ async function syncCommonDocuments(
       const revision = projected.get(candidate.key);
       if (revision !== undefined && revision !== candidate.revision) {
         // Changed again after an earlier slice projected it.
-        segment.forced.add(candidate.key);
+        segment.forced.add(candidate.pathKey);
         segment.dirty = true;
       }
     }
@@ -850,22 +873,25 @@ function listVariantSpaces(variant: IndexVariant): Promise<void> {
       // A Space event during the listing clears this again.
       variant.spacesListed = true;
       try {
-        const listed = (await listSpaces()).filter(
-          (space) =>
-            variant.documentAccess === "legacy" ||
-            variant.includeArchived ||
-            !getSpaceArchiveInfo(space),
+        const listed = await listSpaces();
+        const archived = new Map(
+          listed.map((space) => [space.id, Boolean(getSpaceArchiveInfo(space))]),
         );
-        const ids = new Set(listed.map((space) => space.id));
         for (const [spaceId, segment] of variant.segments) {
-          if (!ids.has(spaceId)) retireSegment(variant, spaceId, segment);
+          if (!archived.has(spaceId)) retireSegment(variant, spaceId, segment);
         }
-        for (const spaceId of [...ids].sort()) {
-          if (variant.segments.has(spaceId)) continue;
+        for (const spaceId of [...archived.keys()].sort()) {
+          const archivedSpace = archived.get(spaceId) === true;
+          const existing = variant.segments.get(spaceId);
+          if (existing) {
+            existing.archivedSpace = archivedSpace;
+            continue;
+          }
           variant.segments.set(spaceId, {
             documents: new Map(),
             recordIds: [],
             built: false,
+            archivedSpace,
             dirty: true,
             recordsDirty: variant.includesRecords,
             forced: new Set(),
@@ -915,13 +941,12 @@ function segmentsInScope(
 
 async function freshVariant(
   documentAccess: DocumentSearchAccess,
-  includeArchived: boolean,
   includesRecords: boolean,
   spaceId: string | undefined,
 ): Promise<IndexVariant> {
   for (let round = 1; ; round += 1) {
     const epoch = resetEpoch;
-    const variant = variantFor(documentAccess, includeArchived, includesRecords);
+    const variant = variantFor(documentAccess, includesRecords);
     // Another search may be listing; its segments are not there yet.
     if (!variant.spacesListed || variant.listing) {
       await listVariantSpaces(variant);
@@ -953,15 +978,15 @@ const WARMUP_LATEST_MS = 30_000;
 const WARMUP_QUIET_CPU = 0.05;
 
 /**
- * Build the index the app and agents search (common documents, archive
- * hidden), one Space at a time, as background work: small slices with pauses
+ * Build the index the app and agents search (common documents), one Space at
+ * a time, as background work: small slices with pauses
  * between them. A search that arrives meanwhile joins the Space being synced.
  * Spaces created or changed while it runs are picked up by another pass, up to
  * the rounds a search would wait for.
  */
 export async function warmSearchIndex(stopped: () => boolean = () => false): Promise<void> {
   for (let round = 1; round <= MAX_SYNC_ROUNDS; round += 1) {
-    const variant = variantFor("common", false, recordSearchMode() === "files");
+    const variant = variantFor("common", recordSearchMode() === "files");
     if (!variant.spacesListed || variant.listing) await listVariantSpaces(variant);
     let synced = false;
     for (const [id, segment] of [...variant.segments]) {
@@ -1034,11 +1059,10 @@ export function setSearchWaitForTests(ms: number | null): void {
  */
 async function indexForSearch(
   documentAccess: DocumentSearchAccess,
-  includeArchived: boolean,
   includesRecords: boolean,
   spaceId: string | undefined,
 ): Promise<{ variant: IndexVariant; complete: boolean }> {
-  const syncing = freshVariant(documentAccess, includeArchived, includesRecords, spaceId);
+  const syncing = freshVariant(documentAccess, includesRecords, spaceId);
   let timer: ReturnType<typeof setTimeout> | undefined;
   waitingSearches += 1;
   try {
@@ -1060,7 +1084,7 @@ async function indexForSearch(
     );
   });
   return {
-    variant: variantFor(documentAccess, includeArchived, includesRecords),
+    variant: variantFor(documentAccess, includesRecords),
     complete: false,
   };
 }
@@ -1083,6 +1107,13 @@ export async function searchWithStatus(
     searchBlocks?: boolean;
     maxResults?: number;
     includeArchived?: boolean;
+    /**
+     * With includeArchived: mark each archived result and put them after the
+     * rest, each part in its own order of relevance.
+     */
+    archivedLast?: boolean;
+    /** Only results of these kinds. */
+    kinds?: readonly SearchKind[];
     /** Select only after caller authorization; common projection needs documents:read. */
     documentAccess?: DocumentSearchAccess;
   }
@@ -1098,15 +1129,17 @@ export async function searchWithStatus(
   const maxResults = opts?.maxResults ?? 50;
   const includeArchived = opts?.includeArchived ?? false;
   const documentAccess = opts?.documentAccess ?? "legacy";
+  const kinds = opts?.kinds && opts.kinds.length > 0 ? new Set(opts.kinds) : null;
   const {
-    variant: { idx, displayBodies },
+    variant: { idx, displayBodies, segments },
     complete: indexComplete,
   } = await runWithoutTeamIdentity(() => indexForSearch(
     documentAccess,
-    includeArchived,
     recordMode === "files",
     opts?.spaceId,
   ));
+  const inArchivedSpace = (spaceId: string) =>
+    segments.get(spaceId)?.archivedSpace === true;
 
   // Take each hit's display body now: later syncs update the index in place
   // while the archive checks below await.
@@ -1116,6 +1149,13 @@ export async function searchWithStatus(
         const entry = result as unknown as IndexEntry;
         if (!canAccessSpace(entry.spaceId)) return false;
         if (opts?.spaceId && entry.spaceId !== opts.spaceId) return false;
+        if (kinds && !kinds.has(entryKind(entry))) return false;
+        if (entry.type === "doc" && documentAccess === "common") {
+          // Each kind of search has its own view of a path that archived and
+          // current documents both claim.
+          if (entry.view === (includeArchived ? "live" : "archived")) return false;
+          if (!includeArchived && inArchivedSpace(entry.spaceId)) return false;
+        }
         return true;
       },
     })
@@ -1173,7 +1213,7 @@ export async function searchWithStatus(
     }
 
     if (entry.type === "doc" && documentAccess === "common") {
-      // Common candidates were filtered before projection and ranking.
+      // Archived documents and Spaces were left out before ranking.
       filtered.push(hit);
       continue;
     }
@@ -1193,7 +1233,22 @@ export async function searchWithStatus(
     if (!archived) filtered.push(hit);
   }
 
-  const results: SearchResult[] = filtered.slice(0, maxResults).map(({ result: r, displayBody }) => {
+  const isArchived = (entry: IndexEntry) =>
+    (entry.type === "doc" && entry.archived === true) || inArchivedSpace(entry.spaceId);
+  // In the app's order, current and archived work are each ranked up to the
+  // limit, and the limit is applied once records have joined them, so
+  // archived matches never crowd current Docs or Records out.
+  const docHits = opts?.archivedLast
+    ? [
+        ...filtered
+          .filter((hit) => !isArchived(hit.result as unknown as IndexEntry))
+          .slice(0, maxResults),
+        ...filtered
+          .filter((hit) => isArchived(hit.result as unknown as IndexEntry))
+          .slice(0, maxResults),
+      ]
+    : filtered.slice(0, maxResults);
+  const results: SearchResult[] = docHits.map(({ result: r, displayBody }) => {
     const entry = r as unknown as IndexEntry;
     // r.terms holds the document-side matched terms (prefix/fuzzy already
     // expanded, e.g. query "pair" → term "pairing"), so they locate in the body.
@@ -1224,38 +1279,76 @@ export async function searchWithStatus(
         : {}),
       ...(excerpt !== undefined ? { excerpt } : {}),
       ...(entry.type === "record" ? { collectionId: entry.collectionId, recordId: entry.recordId } : {}),
+      ...(opts?.archivedLast && isArchived(entry) ? { archived: true as const } : {}),
     };
   });
 
   // Record hits come from the record index (FTS5) when it is active; MiniSearch
   // holds docs only in that mode. Appended after doc hits with positional
   // scores — record and doc relevance scores are not comparable across engines.
-  if (recordsViaIndex) {
+  if (recordsViaIndex && (!kinds || kinds.has("record"))) {
     // The space scope is applied inside the query (before its LIMIT), so a
-    // scoped search can't lose in-space hits to other spaces' matches.
-    const hits = recordIndex.searchRecords(query, maxResults, opts?.spaceId, allowedSpaces) ?? [];
+    // scoped search can't lose in-space hits to other spaces' matches. The
+    // same holds for archived Spaces: a search without them asks only current
+    // Spaces, and one that puts them last asks current and archived Spaces
+    // apart, so archived matches never take current ones' places.
+    const spacesWhere = (archived: boolean): string[] =>
+      [...segments]
+        .filter(
+          ([spaceId, segment]) =>
+            segment.archivedSpace === archived &&
+            (!allowedSpaces || allowedSpaces.includes(spaceId)),
+        )
+        .map(([spaceId]) => spaceId);
+    // Until the index has listed the Spaces, every readable Space is asked
+    // and archived ones are told apart per hit below.
+    const scopes: Array<readonly string[] | undefined> =
+      segments.size === 0
+        ? [allowedSpaces ?? undefined]
+        : opts?.archivedLast
+          ? [spacesWhere(false), spacesWhere(true)]
+          : includeArchived
+            ? [allowedSpaces ?? undefined]
+            : [spacesWhere(false)];
     // FTS matches on query-token prefixes, so the raw tokens locate in the text.
     const queryTerms = query.trim().split(/\s+/);
-    for (const [i, hit] of hits.entries()) {
-      if (!canAccessSpace(hit.spaceId)) continue;
-      if (results.length >= maxResults) break;
-      // The record index keeps a deleted Space's rows until its sweep: a
-      // Space that is gone shows none of them, archived ones included.
-      const { data: space } = await spaceOf(hit.spaceId);
-      if (!space || (!includeArchived && getSpaceArchiveInfo(space))) continue;
-      const excerpt = makeExcerpt(recordDisplayText(hit.collectionName, hit.data), queryTerms);
-      results.push({
-        spaceId: hit.spaceId,
-        type: "record",
-        path: `${hit.collectionId}/${hit.recordId}`,
-        title: hit.title,
-        score: Math.max(hits.length - i, 1),
-        collectionId: hit.collectionId,
-        recordId: hit.recordId,
-        ...(excerpt !== undefined ? { excerpt } : {}),
-      });
+    for (const scope of scopes) {
+      const hits = recordIndex.searchRecords(query, maxResults, opts?.spaceId, scope) ?? [];
+      let records = 0;
+      for (const [i, hit] of hits.entries()) {
+        if (!canAccessSpace(hit.spaceId)) continue;
+        if ((opts?.archivedLast ? records : results.length) >= maxResults) break;
+        // The record index keeps a deleted Space's rows until its sweep: a
+        // Space that is gone shows none of them, archived ones included.
+        const { data: space } = await spaceOf(hit.spaceId);
+        if (!space || (!includeArchived && getSpaceArchiveInfo(space))) continue;
+        const excerpt = makeExcerpt(recordDisplayText(hit.collectionName, hit.data), queryTerms);
+        results.push({
+          spaceId: hit.spaceId,
+          type: "record",
+          path: `${hit.collectionId}/${hit.recordId}`,
+          title: hit.title,
+          score: Math.max(hits.length - i, 1),
+          collectionId: hit.collectionId,
+          recordId: hit.recordId,
+          ...(excerpt !== undefined ? { excerpt } : {}),
+          ...(opts?.archivedLast && getSpaceArchiveInfo(space)
+            ? { archived: true as const }
+            : {}),
+        });
+        records += 1;
+      }
     }
   }
 
-  return { results, complete: indexComplete && recordMode !== "building" };
+
+  return {
+    results: opts?.archivedLast
+      ? [
+          ...results.filter((result) => !result.archived),
+          ...results.filter((result) => result.archived),
+        ].slice(0, maxResults)
+      : results,
+    complete: indexComplete && recordMode !== "building",
+  };
 }

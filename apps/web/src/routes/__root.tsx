@@ -49,6 +49,7 @@ import {
   MoreVertical,
   Pencil,
   Loader2,
+  Search,
 } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { THEME_SHELL_COLORS } from "@worktable/ui/theme"
@@ -76,6 +77,7 @@ const SettingsDialog = lazy(() =>
 )
 import type { SettingsSectionId } from "@/components/settings/sections"
 import { onOpenSettings } from "@/lib/settings-open"
+import { isSearchShortcut, openSearch } from "@/lib/search-open"
 import { onOpenWelcome } from "@/lib/help/welcome-open"
 import { UpdateNudge } from "@/components/update-nudge"
 import { BillingRoot } from "@/components/billing/billing-root"
@@ -84,7 +86,7 @@ import { ShareDocumentAction } from "@/components/share-document-action"
 import { WorktableAppIcon } from "@/components/worktable-app-icon"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useMobileVisualViewport } from "@/hooks/use-mobile-visual-viewport"
-import { SidebarContext } from "@/hooks/use-sidebar"
+import { SidebarContext, useSidebar } from "@/hooks/use-sidebar"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useWorkspace } from "@/lib/queries"
 import { bootFactsJson } from "@/lib/boot-facts"
@@ -404,6 +406,38 @@ function MobileSidebarToggle({ onClick }: { onClick: () => void }) {
       {updateAvailable ? (
         <UpdateIndicatorDot className="absolute top-1.5 right-1.5" />
       ) : null}
+    </Button>
+  )
+}
+
+/**
+ * Opens search from the header, where the sidebar's own field is out of
+ * sight: on a phone, and beside a closed sidebar.
+ */
+function SearchButton() {
+  // The shortcut belongs to the shell, so it works before the sidebar and
+  // its search have loaded, and never on the bare login page.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isSearchShortcut(event)) return
+      event.preventDefault()
+      openSearch()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [])
+  const { open } = useSidebar()
+  const isMobile = useIsMobile()
+  if (open && !isMobile) return null
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={openSearch}
+      aria-label="Search"
+      className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+    >
+      <Search className="size-4" />
     </Button>
   )
 }
@@ -761,6 +795,7 @@ function RootLayout() {
                     <PanelLeft className="size-4" />
                   </Button>
                 )}
+                {!isMobile && <SearchButton />}
 
                 {/* Logo icon (mobile only) */}
                 {isMobile && (
@@ -781,6 +816,7 @@ function RootLayout() {
 
                 <PageHeaderActions isMobile={isMobile} />
 
+                {isMobile && <SearchButton />}
                 {/* Mobile hamburger on the right */}
                 {isMobile && <MobileSidebarToggle onClick={toggle} />}
               </header>

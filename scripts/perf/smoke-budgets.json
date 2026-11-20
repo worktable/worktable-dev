@@ -277,7 +277,8 @@
       "max": 1
     },
     "dom, first, search": {
-      "max": 1724
+      "max": 3016,
+      "why": "Search opens over the page (#556) instead of replacing the sidebar's tree, so the page and the sidebar stay in the document under it, beside up to 50 results with their filters. Rows draw the matched words, the place as one line, and no wrapper per text run. CI run of ab2fcd29 measured 2741; 10% headroom."
     },
     "requests, warm, open a Space in the sidebar": {
       "max": 3

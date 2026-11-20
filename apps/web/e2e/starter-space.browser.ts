@@ -886,14 +886,16 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     /\/spaces\/welcome\/documents\/what-agents-can-make$/
   )
 
-  await page
-    .getByRole("textbox", { name: "Search workspace" })
-    .fill("heliograph")
-  const searchResult = page.getByRole("link", {
-    name: /Live Status/i,
-  })
-  await expect(searchResult).toBeVisible()
-  await searchResult.click()
+  // Search opens over the page and is worked from the keyboard.
+  await page.getByRole("button", { name: "Search", exact: true }).click()
+  const search = page.getByRole("combobox", { name: "Search" })
+  await expect(search).toBeFocused()
+  await search.fill("heliograph")
+  await expect(
+    page.getByRole("option", { name: /Live Status/i })
+  ).toBeVisible()
+  await search.press("Enter")
+  await expect(search).toBeHidden()
 
   await expect(page).toHaveURL(/\/spaces\/welcome\/documents\/roadmaps$/)
   await expect(

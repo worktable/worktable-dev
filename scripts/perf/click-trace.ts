@@ -1642,6 +1642,9 @@ function openThread(pass: Pass, thread: ThreadTarget): Action {
   }
 }
 
+const searchField = (session: Session) =>
+  session.page.locator('input[role="combobox"][aria-label="Search"]')
+
 function search(pass: Pass, query: string): Action {
   return {
     pass,
@@ -1656,21 +1659,23 @@ function search(pass: Pass, query: string): Action {
     ],
     contentKey: "content",
     gate: /\/api\/search/,
+    // Search opens over the page: from the header on a phone, where the
+    // sidebar is a drawer, and from the sidebar's field elsewhere.
     prepare: async (session) => {
-      await showSidebar(session)
-      await sidebar(session)
-        .locator('input[aria-label="Search workspace"]')
-        .click()
+      if (session.network.phone) {
+        await session.page.locator('header button[aria-label="Search"]').tap()
+      } else {
+        await sidebar(session).locator('button[aria-label="Search"]').click()
+      }
+      await searchField(session).waitFor()
     },
-    act: (session) =>
-      sidebar(session)
-        .locator('input[aria-label="Search workspace"]')
-        .fill(query),
+    act: (session) => searchField(session).fill(query),
     t0: "input",
+    // Search keeps what was typed for its next opening; each run types anew.
     cleanup: async (session) => {
-      await sidebar(session)
-        .locator('button[aria-label="Clear search"]')
-        .click()
+      await searchField(session).fill("")
+      await session.page.keyboard.press("Escape")
+      await searchField(session).waitFor({ state: "detached" })
     },
   }
 }

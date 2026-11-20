@@ -49,6 +49,7 @@ beforeEach(() => {
   local = storage({
     "worktable:drawing-draft:ws/member:wt_a:mem_1/plan": "{}",
     "worktable:drawing-draft:ws/member:wt_b:mem_9/plan": "{}",
+    "worktable-recent-opens:member:wt_a:mem_1": "[]",
   })
   Object.defineProperty(globalThis, "window", {
     configurable: true,

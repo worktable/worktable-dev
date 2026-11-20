@@ -13,8 +13,9 @@
 // What ends a parse decides what is kept. A reader's contents, and a file it
 // refused (encrypted, damaged) or stopped on (time, memory, output), are
 // kept for that version, so the next read needn't parse again. A lane that
-// was busy, a file that couldn't be read, or a reader switched off are
-// answered as they are and tried again on the next read.
+// was busy, a file that couldn't be read, a reader switched off, or a
+// Worktable with no room left to keep the output are answered as they are
+// and tried again on the next read.
 
 import { contentsPageFromStore } from "./contents-pages.ts"
 import { parseInLane, type ParsingResult } from "./contents-lane.ts"
@@ -26,6 +27,7 @@ import { readCurrentFileSource, type CurrentFileSource } from "./current-file-so
 import { derivedStore, type DerivedKey } from "./derived-store.ts"
 import type { ContentsPage } from "./file-contents.ts"
 import { contentHashOf, pinnedFileStream, sha256Check, type PinnedFile } from "./file-revision.ts"
+import { StorageLimitError, admitStorageWrite } from "./storage-limit.ts"
 
 /** How long a read waits for a parse before it answers pending. */
 export const PARSE_WAIT_MS = 20_000
@@ -34,6 +36,17 @@ const parsing = new Map<string, Promise<ParsingResult>>()
 
 function keyId(key: DerivedKey): string {
   return JSON.stringify([key.documentId, key.version, key.maker, key.makerVersion])
+}
+
+const NO_ROOM =
+  "This Worktable is too full to keep this file's contents. Free some space, then ask again."
+
+/** About what keeping a parse's outcome adds to the store. */
+function keptBytes(result: ParsingResult): number {
+  if (result.kind !== "ok") return 1024
+  let bytes = 1024 + JSON.stringify(result.output.facts).length + JSON.stringify(result.output.gaps).length
+  for (const part of result.output.parts) bytes += Buffer.byteLength(part.text) + part.label.length + 64
+  return bytes
 }
 
 /** Whether how a parse ended belongs to the file, so it is kept for it. */
@@ -65,8 +78,19 @@ export function parseVersion(
       }
     },
   })
-    .then((result) => {
-      if (keptFor(result)) {
+    .then((result): ParsingResult => {
+      if (!keptFor(result)) return result
+      // Output is kept only with room for it under the Worktable's total
+      // limit, which derived output counts toward; a file whose contents
+      // don't fit is answered as such and read again once there is room.
+      let room
+      try {
+        room = admitStorageWrite(keptBytes(result), { files: 0 })
+      } catch (error) {
+        if (!(error instanceof StorageLimitError)) throw error
+        return { kind: "failed", why: "busy", message: NO_ROOM }
+      }
+      try {
         const store = derivedStore()
         store.putContents(
           key,
@@ -77,6 +101,8 @@ export function parseVersion(
               : { state: "failed", message: result.message }
         )
         store.keepOnlyVersion(key.spaceId, key.documentId, key.version)
+      } finally {
+        room.release()
       }
       return result
     })

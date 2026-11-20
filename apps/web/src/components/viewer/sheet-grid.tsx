@@ -97,13 +97,23 @@ export function SheetGrid({
   const numberWidth = 20 + String(rows.length).length * 8
   const headerHeight = LETTER_HEIGHT + NAME_HEIGHT
   const view = useScrollView(scrollElement)
+  // A new search or sort starts from the top. Until the scroll position
+  // catches up, draw from where the shorter list can actually scroll to,
+  // so a narrowed list never shows an empty stretch.
+  useLayoutEffect(() => {
+    if (scrollElement) scrollElement.scrollTop = 0
+  }, [scrollElement, order])
+  const top = Math.min(
+    view.top,
+    Math.max(0, headerHeight + order.length * ROW_HEIGHT - view.height)
+  )
   const first = Math.max(
     0,
-    Math.floor((view.top - headerHeight) / ROW_HEIGHT) - OVERSCAN
+    Math.floor((top - headerHeight) / ROW_HEIGHT) - OVERSCAN
   )
   const end = Math.min(
     order.length,
-    Math.ceil((view.top + view.height) / ROW_HEIGHT) + OVERSCAN
+    Math.ceil((top + view.height) / ROW_HEIGHT) + OVERSCAN
   )
   const before = first * ROW_HEIGHT
   const after = Math.max(0, order.length - end) * ROW_HEIGHT
@@ -324,10 +334,11 @@ const COLLATOR = new Intl.Collator(undefined, {
 })
 
 /**
- * The shown rows in the chosen order. Numbers compare as numbers; other
- * text compares as a person reads it, so "Item 9" comes before "Item 10"
- * and dates written year first sort by date. Blank cells go last either
- * way, and rows that compare equal keep the file's order.
+ * The shown rows in the chosen order. In a number column, numbers compare
+ * as numbers and come before any text further down that isn't one, such
+ * as "N/A". Other text compares as a person reads it, so "Item 9" comes
+ * before "Item 10" and dates written year first sort by date. Blank cells
+ * go last either way, and rows that compare equal keep the file's order.
  */
 function sortedRows(
   rows: readonly (readonly string[])[],
@@ -343,11 +354,24 @@ function sortedRows(
     const a = rows[left]![column]?.trim() ?? ""
     const b = rows[right]![column]?.trim() ?? ""
     if (!a || !b) return a === b ? left - right : a ? -1 : 1
-    const compared = asNumber
-      ? Number(a) - Number(b)
-      : COLLATOR.compare(a, b)
+    const compared = asNumber ? compareNumbers(a, b) : COLLATOR.compare(a, b)
     return compared === 0 ? left - right : compared * sign
   })
+}
+
+/**
+ * Two cells of a number column: numbers by value, a number before text,
+ * and text against text as a person reads it. Which columns hold numbers
+ * is judged from the first rows, so a later cell may not be one.
+ */
+function compareNumbers(a: string, b: string): number {
+  const x = NUMBER.test(a) ? Number(a) : Number.NaN
+  const y = NUMBER.test(b) ? Number(b) : Number.NaN
+  const xNumber = Number.isFinite(x)
+  const yNumber = Number.isFinite(y)
+  if (xNumber && yNumber) return x - y
+  if (xNumber !== yNumber) return xNumber ? -1 : 1
+  return COLLATOR.compare(a, b)
 }
 
 /**

@@ -50,6 +50,18 @@ describe("the parsing lane", () => {
       why: "output",
     })
     expect(await parse("crash")).toMatchObject({ kind: "failed", why: "crashed" })
+    // Bytes that stop coming end at the deadline too, and say so.
+    let told = false
+    const stalled: ParsingJob["bytes"] = async (write, signal) => {
+      await write(new TextEncoder().encode("a"))
+      signal.addEventListener("abort", () => (told = true))
+      await new Promise(() => {})
+    }
+    expect(await parse("echo", { bytes: stalled, limits: { timeMs: 500 } })).toMatchObject({
+      kind: "failed",
+      why: "time",
+    })
+    expect(told).toBe(true)
     // The lane is still there for the next file.
     expect(await parse("echo")).toMatchObject({ kind: "ok" })
   }, 30_000)

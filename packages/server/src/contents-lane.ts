@@ -65,8 +65,15 @@ export interface ParsingJob {
   reader: string
   /** waiting: someone asked and waits; background: made ahead of asking. */
   priority: "waiting" | "background"
-  /** Writes the file's bytes, a chunk at a time, through `write`. */
-  bytes: (write: (chunk: Uint8Array) => Promise<void>) => Promise<void>
+  /**
+   * Writes the file's bytes, a chunk at a time, through `write`. `signal`
+   * aborts when the worker has ended, and `write` then throws: the job
+   * ends with the worker whether or not the bytes keep coming.
+   */
+  bytes: (
+    write: (chunk: Uint8Array) => Promise<void>,
+    signal: AbortSignal
+  ) => Promise<void>
   limits?: Partial<ParsingLimits>
   /** The worker to start; the server's own executable unless given. */
   command?: readonly string[]
@@ -154,22 +161,27 @@ async function runWorker(job: ParsingJob): Promise<ParsingResult> {
     }
     return Buffer.concat(chunks).toString("utf8")
   })()
+  const ended = new AbortController()
+  void child.exited.then(() => ended.abort())
   try {
     const header: WorkerJobHeader = { reader: job.reader }
     const sink = child.stdin
     const write = async (chunk: Uint8Array) => {
-      if (stopped) throw new Error("worker stopped")
+      if (ended.signal.aborted) throw new Error("worker ended")
       sink.write(chunk)
       await sink.flush()
     }
-    try {
+    const sending = (async () => {
       await write(new TextEncoder().encode(`${JSON.stringify(header)}\n`))
-      await job.bytes(write)
+      await job.bytes(write, ended.signal)
       await sink.end()
-    } catch {
+    })().catch(() => {
       // A worker that exits or is stopped early closes its input; what it
       // wrote back, or why it was stopped, still says how the job ended.
-    }
+    })
+    // Bytes that stop coming can't hold the lane: a worker stopped at its
+    // deadline ends the job.
+    await Promise.race([sending, child.exited])
     const [text] = await Promise.all([reading, child.exited])
     if (stopped) return failed(stopped)
     let reply: WorkerReply
@@ -184,6 +196,7 @@ async function runWorker(job: ParsingJob): Promise<ParsingResult> {
   } finally {
     clearTimeout(deadline)
     clearInterval(watching)
+    ended.abort()
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
     await rm(workDir, { recursive: true, force: true })
   }

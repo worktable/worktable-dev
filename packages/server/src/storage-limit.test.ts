@@ -730,6 +730,53 @@ describe("storage limit", () => {
     expect(storageSummary()!.pruned).toBeNull()
   })
 
+  it("prunes nothing for a lower limit, and keeps what the Worktable holds until it fits", async () => {
+    const doc = await docWithVersions("kept", 4, 16 * KB)
+    const folder = join(workspace, "spaces", "notes", "exports")
+    mkdirSync(folder, { recursive: true })
+    const dump = join(folder, "dump.bin")
+    const writeOnDisk = async (write: () => void) => {
+      write()
+      noteStorageChange(folder)
+      await settled()
+    }
+    await writeOnDisk(() => writeFileSync(dump, new Uint8Array(32 * KB)))
+    const before = await generations(doc)
+    const summary = () => storageSummary()!.limit
+
+    // The limit goes down to well under what the Worktable holds, as when a
+    // plan lapses: nothing is pruned, and it may keep what it holds.
+    setStorageLimitForTests(8 * KB, { promptPruneMs: 1_000, totalBytes: 20 * KB, lowered: true })
+    await writeOnDisk(() => undefined)
+    expect(summary().totalLimitBytes).toBe(summary().totalBytes)
+    const held = summary().totalLimitBytes
+    expect(held).toBeGreaterThan(20 * KB)
+    const refused = await createDoc("more", 1 * KB).catch((error) => error)
+    expect(refused).toBeInstanceOf(StorageLimitError)
+    expect(refused.message).toContain("is over its")
+
+    // What it may keep follows its use down, and not back up.
+    await writeOnDisk(() => rmSync(dump))
+    expect(summary().totalLimitBytes).toBeLessThanOrEqual(held - 32 * KB)
+    const lower = summary().totalLimitBytes
+    await writeOnDisk(() => writeFileSync(dump, new Uint8Array(32 * KB)))
+    expect(summary().totalLimitBytes).toBe(lower)
+
+    // A server started again with the lower limit remembers it.
+    for (const stop of stops) await stop()
+    stops = [startStorageLimits(), startStorageAccounting()]
+    await writeOnDisk(() => undefined)
+    expect(summary().totalLimitBytes).toBe(lower)
+    expect(await generations(doc)).toEqual(before)
+    expect(storageSummary()!.pruned).toBeNull()
+
+    // Back up: the limit applies as before.
+    setStorageLimitForTests(null, { lowered: true })
+    await writeOnDisk(() => undefined)
+    expect(summary().totalLimitBytes).toBe(storageTotalLimitBytes())
+    await createDoc("more", 1 * KB)
+  })
+
   it("refuses a write that doesn't fit from the first moment after start", async () => {
     await createDoc("big", 32 * KB)
     // A server just started: nothing counted yet, the first count still a

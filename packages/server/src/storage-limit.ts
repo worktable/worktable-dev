@@ -47,8 +47,11 @@ import { ENV } from "@worktable/hosted-contract"
 import { logError } from "./debug-log.ts"
 import { isHosted } from "./hosted.ts"
 import {
+  keptRecordSaved,
+  loadKeptRecord,
   loadPrunedRecord,
   prunedSummary,
+  saveKeptRecord,
   type PrunedSummary,
 } from "./storage-pruned.ts"
 import {
@@ -101,6 +104,60 @@ export function storageLimitBytes(): number {
  */
 export function storageTotalLimitBytes(limit = storageLimitBytes()): number {
   return totalOverride ?? Math.round(limit * STORAGE_CEILING_RATIO)
+}
+
+// ── A lower limit ───────────────────────────────────────────
+//
+// When the limit goes down (a smaller plan, one that lapsed, a wrong
+// setting), nothing is pruned because of it (Plan 22a rule 13). The
+// Worktable may keep what it held: `kept`, the most it may hold in all,
+// starts at what it held when the limit went down and follows its use down
+// as people delete, never up, until it fits the lower total limit again.
+// Its files meet the lower limit at once, so writes that add files are
+// refused until they fit. A write that adds only history still gets room
+// the usual way, its oldest history going first, but only within `kept`,
+// and the count never prunes on its own meanwhile.
+//
+// The total limit in force is remembered in app data (storage-pruned.ts),
+// so a limit lowered while the server was stopped is noticed at start.
+
+/** The most everything may take while a lower limit is in force; null otherwise. */
+let kept: number | null = null
+/** The total limit last remembered, or what was kept; null until read. */
+let remembered: number | null = null
+/** Pruning freed room since `kept` last followed use, for a write to take. */
+let prunedSinceFollow = false
+/** Reading what was remembered, at start. */
+let keptLoaded: Promise<void> = Promise.resolve()
+
+/** The most everything may take now: the total limit, or what is kept past it. */
+function totalCeiling(): number {
+  return Math.max(storageTotalLimitBytes(), kept ?? 0)
+}
+
+/**
+ * After each count: notice a lower limit, follow use down while one is in
+ * force, and remember the result.
+ */
+function followLimit(usage: StorageUsage): void {
+  const total = storageTotalLimitBytes()
+  if (kept === null && remembered !== null && total < remembered) {
+    kept = remembered
+    console.warn(
+      `[storage-limit] the limit went down to ${formatStorageBytes(storageLimitBytes())}; keeping what this Worktable holds, and pruning nothing for it`
+    )
+  }
+  if (kept !== null) {
+    // Room pruning just made is for the write that waited for it.
+    if (prunedSinceFollow) prunedSinceFollow = false
+    else kept = Math.min(kept, usedBytes(usage))
+    if (kept <= total) kept = null
+  }
+  const next = kept ?? total
+  if (next !== remembered) {
+    remembered = next
+    void saveKeptRecord(next)
+  }
 }
 
 function configuredLimit(): number {
@@ -165,7 +222,7 @@ export class StorageLimitError extends Error {
 
 export function storageLimitMessage(
   limitBytes = storageLimitBytes(),
-  where: "at" | "close to" = "at"
+  where: "at" | "over" | "close to" = "at"
 ): string {
   const limit = formatStorageBytes(limitBytes)
   return isHosted()
@@ -284,9 +341,13 @@ export function admitStorageWrite(
   const grace = options.grace ? storageGraceBytes(limit) : 0
   const now = used(usage)
   if (files > 0 && now.files + files > limit + grace) {
-    throw new StorageLimitError(limit, now.files)
+    throw new StorageLimitError(
+      limit,
+      now.files,
+      storageLimitMessage(limit, now.files > limit ? "over" : "at")
+    )
   }
-  const ceiling = storageTotalLimitBytes(limit) + grace
+  const ceiling = totalCeiling() + grace
   if (bytes > 0 && now.bytes + bytes > ceiling) {
     // The files fit, but what Worktable keeps with them doesn't, even after
     // pruning: the versions replaces must keep fill the history allowance.
@@ -311,7 +372,7 @@ export function storageFits(bytes: number, files = bytes): boolean {
   const now = used(usage)
   return (
     (files <= 0 || now.files + files <= storageLimitBytes()) &&
-    (bytes <= 0 || now.bytes + bytes <= storageTotalLimitBytes())
+    (bytes <= 0 || now.bytes + bytes <= totalCeiling())
   )
 }
 
@@ -440,10 +501,12 @@ let known: {
 function dueBytes(reclaimable: number): number {
   const usage = storageUsage()
   if (!usage || reclaimable <= 0) return 0
-  const limit = storageTotalLimitBytes()
-  const target = Math.round(limit * PRUNE_TARGET_RATIO)
+  const limit = totalCeiling()
+  // Under a lower limit, only what waiting writes need, with no headroom:
+  // headroom would be history removed for the lower limit.
+  const target = kept === null ? Math.round(limit * PRUNE_TARGET_RATIO) : limit
   const used = usedBytes(usage)
-  let due = used >= limit ? Math.min(used - target, reclaimable) : 0
+  let due = used >= limit && kept === null ? Math.min(used - target, reclaimable) : 0
   let fitting = 0
   for (const write of waiting) {
     // One that can't fit even if all of it went isn't pruned for.
@@ -472,6 +535,12 @@ function runPruning(): Promise<void> {
   pruning = (async () => {
     try {
       const { planPruning, prunePlanned } = await import("./storage-pruning.ts")
+      if (remembered === null) {
+        // Nothing is pruned before a lower limit can be noticed.
+        await keptLoaded
+        const usage = storageUsage()
+        if (usage) followLimit(usage)
+      }
       do {
         again = false
         if ((await knownIsCurrent()) && dueBytes(known!.reclaimable) <= 0) continue
@@ -486,6 +555,7 @@ function runPruning(): Promise<void> {
           deferred ||= result.deferred
           if (freed > 0) {
             settling.push({ bytes: -freed, files: 0, sequence: storageNoteSequences().noted })
+            prunedSinceFollow = true
           }
         }
         known = deferred
@@ -525,11 +595,15 @@ async function waitForRoom(bytes: number, ceiling: number): Promise<void> {
   }
 }
 
-/** After each count: past the limit, from writes on disk too, prune. */
+/**
+ * After each count: past the limit, from writes on disk too, prune. Never
+ * under a lower limit, which prunes nothing on its own.
+ */
 function pruneWhenOver(): void {
   const usage = storageUsage()
   if (!usage) return
-  if (usedBytes(usage) >= storageTotalLimitBytes()) void runPruning()
+  followLimit(usage)
+  if (kept === null && usedBytes(usage) >= storageTotalLimitBytes()) void runPruning()
 }
 
 /** Start enforcing for the served workspace. Returns its stop. */
@@ -540,12 +614,26 @@ export function startStorageLimits(): () => Promise<void> {
   settling = []
   waiting.clear()
   known = null
+  kept = null
+  remembered = null
+  prunedSinceFollow = false
   void loadPrunedRecord().catch(() => undefined)
-  const unsubscribe = onStorageApplied(pruneWhenOver)
+  keptLoaded = loadKeptRecord()
+    .then((bytes) => {
+      remembered ??= bytes
+    })
+    .catch(() => undefined)
+  const unsubscribe = onStorageApplied(() => {
+    // The first count waits for what was remembered, so a limit lowered
+    // while the server was stopped is noticed before anything is pruned.
+    if (remembered === null) void keptLoaded.then(pruneWhenOver)
+    else pruneWhenOver()
+  })
   return async () => {
     unsubscribe()
     stopped = true
     await pruning
+    await keptRecordSaved()
   }
 }
 
@@ -577,7 +665,7 @@ export function storageSummary(): StorageSummary | null {
       warnAt: STORAGE_WARNING_RATIO,
       countedBytes: filesBytes(usage),
       totalBytes: countedBytes(usage),
-      totalLimitBytes: storageTotalLimitBytes(),
+      totalLimitBytes: totalCeiling(),
     },
     pruned: prunedSummary(),
   }
@@ -585,15 +673,23 @@ export function storageSummary(): StorageSummary | null {
 
 // ── Tests ───────────────────────────────────────────────────
 
+/**
+ * Set the limit as if it had always been this, so nothing counts as a lower
+ * limit; `lowered` keeps what was remembered, so a lower one does.
+ */
 export function setStorageLimitForTests(
   bytes: number | null,
-  options: { promptPruneMs?: number; totalBytes?: number } = {}
+  options: { promptPruneMs?: number; totalBytes?: number; lowered?: boolean } = {}
 ): void {
   override = bytes
   totalOverride = options.totalBytes ?? null
   configured = null
   promptPruneMs = options.promptPruneMs ?? PROMPT_PRUNE_MS
   known = null
+  if (!options.lowered) {
+    kept = null
+    remembered = null
+  }
 }
 
 /** Resolves once pruning started so far has finished. */

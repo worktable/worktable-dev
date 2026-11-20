@@ -144,6 +144,61 @@ export function prunedHistoryFor(
   }
 }
 
+// ── The total limit in force ────────────────────────────────
+//
+// The most everything may take, as storage-limit.ts last remembered it: so
+// a limit lowered while the server was stopped is noticed at start, and
+// nothing is pruned for it (Plan 22a rule 13).
+
+function keptPath(appDir = getAppDir(), key = workspaceCacheKey()): string {
+  return join(appDir, "storage-pruned", `${key}.kept.json`)
+}
+
+/** What was remembered for the served workspace; null when nothing was. */
+export async function loadKeptRecord(): Promise<number | null> {
+  try {
+    const parsed = JSON.parse(await readFile(keptPath(), "utf8")) as {
+      version?: number
+      totalBytes?: unknown
+    }
+    return parsed?.version === 1 &&
+      Number.isSafeInteger(parsed.totalBytes) &&
+      (parsed.totalBytes as number) > 0
+      ? (parsed.totalBytes as number)
+      : null
+  } catch {
+    return null
+  }
+}
+
+let keptWrite: Promise<void> = Promise.resolve()
+
+/** Remember the most everything may take. In order; never throws. */
+export function saveKeptRecord(totalBytes: number): Promise<void> {
+  // The path is taken now, for the workspace served now.
+  let path: string
+  try {
+    path = keptPath(ensureAppDir())
+  } catch (error) {
+    console.error("[storage-limit] could not remember the storage limit:", logError(error))
+    return keptWrite
+  }
+  keptWrite = keptWrite.then(async () => {
+    try {
+      await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+      await atomicWriteText(path, `${JSON.stringify({ version: 1, totalBytes })}\n`)
+    } catch (error) {
+      console.error("[storage-limit] could not remember the storage limit:", logError(error))
+    }
+  })
+  return keptWrite
+}
+
+/** Resolves once what was remembered so far is saved. */
+export function keptRecordSaved(): Promise<void> {
+  return keptWrite
+}
+
 export function resetPrunedRecordForTests(): void {
   record = emptyRecord()
   recordKey = null

@@ -32,7 +32,7 @@ TASK_DIR=$PWD
 WORK=$HOME/perf-click-trace
 TOOLS=$HOME/toolchains
 BUN_DIR=$TOOLS/bun-1.3.14
-NODE_DIR=$TOOLS/node-v24.15.0-linux-x64
+NODE_DIR=$TOOLS/node-v24.22.3-linux-x64
 CADDY_DIR=$TOOLS/caddy-2.11.7
 mkdir -p "$TOOLS" "$WORK/src" "$WORK/results" "$TASK_DIR/click-results"
 
@@ -46,7 +46,7 @@ if [ ! -x "$BUN_DIR/bun-linux-x64/bun" ]; then
   chmod +x "$BUN_DIR/bun-linux-x64/bun"
 fi
 if [ ! -x "$NODE_DIR/bin/node" ]; then
-  curl -fsSL https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz |
+  curl -fsSL https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.xz |
     tar -xJ -C "$TOOLS"
 fi
 if [ ! -x "$CADDY_DIR/caddy" ]; then

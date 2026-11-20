@@ -75,7 +75,7 @@ jobs:
           bun-version: 1.3.14
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          node-version: 24.15.0
+          node-version: 24.22.3
       - name: Use Ubuntu archive mirrors
         # The runner's preferred Azure mirror can stall package downloads.
         run: sudo sed -i '\|^http://azure\.archive\.ubuntu\.com/ubuntu/|d' /etc/apt/apt-mirrors.txt

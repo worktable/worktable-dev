@@ -5,7 +5,7 @@ This guide covers production builds, release archives, and their source identity
 
 ## Build the application
 
-Use Node 24.15.0 and the Bun version in `package.json`. From a fresh checkout:
+Use Node 24.22.3 and the Bun version in `package.json`. From a fresh checkout:
 
 ```sh
 bun install --frozen-lockfile

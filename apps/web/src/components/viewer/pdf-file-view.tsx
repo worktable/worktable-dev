@@ -180,12 +180,18 @@ export default function PdfFileView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-1">
-        <div className="min-w-0 flex-1 text-sm text-muted-foreground">
-          {leading}
-        </div>
+      <div className="flex min-h-11 shrink-0 flex-wrap items-start gap-x-3 gap-y-1 border-b border-border px-4 py-1.5">
+        {/* On a phone the byline takes the whole line, so its lists open at full
+            width, and the tools sit on the line below. */}
+        {leading ? (
+          <div className="min-h-8 min-w-0 basis-full self-center text-sm text-muted-foreground sm:flex-1 sm:basis-0">
+            {leading}
+          </div>
+        ) : (
+          <div className="flex-1" />
+        )}
         {shown ? (
-          <div className="flex shrink-0 items-center gap-0.5">
+          <div className="flex max-w-full shrink-0 items-center gap-0.5 overflow-x-auto">
             {shown.pages > 1 ? (
               <>
                 <Button

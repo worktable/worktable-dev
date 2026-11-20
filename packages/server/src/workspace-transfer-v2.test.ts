@@ -1,4 +1,9 @@
 import { WorkspaceExportPathError } from "./workspace-package-path.ts"
+import {
+  STORAGE_LIMIT_CEILING_BYTES,
+  storageGraceBytes,
+  storageLimitBytes,
+} from "./storage-limit.ts"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   chmod,
@@ -352,7 +357,17 @@ describe("workspace export v2", () => {
   })
 
   it("publishes the supported transfer envelope as one coherent contract", () => {
-    expect(WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES).toBe(2 * 1024 ** 3)
+    // A Worktable at its limit fits in a package with all its history: its
+    // counted bytes, what a person's drawing saves may add past the limit,
+    // the offline viewer, and ZIP headers for every entry an archive holds.
+    const limit = storageLimitBytes()
+    expect(WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES).toBeGreaterThanOrEqual(
+      limit +
+        storageGraceBytes(limit) +
+        64 * 1024 ** 2 +
+        WORKSPACE_EXPORT_V2_MAX_ARCHIVE_ENTRIES * 200
+    )
+    expect(STORAGE_LIMIT_CEILING_BYTES).toBe(limit)
     expect(WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES).toBe(8 * 1024 ** 3)
     expect(WORKSPACE_EXPORT_V2_MAX_FILE_BYTES).toBe(2 * 1024 ** 3)
     expect(WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES).toBe(100_000)

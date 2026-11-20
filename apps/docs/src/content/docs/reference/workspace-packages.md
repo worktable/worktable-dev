@@ -34,14 +34,14 @@ Keep the source package until the destination has opened successfully. See
 
 Current import limits are:
 
-| Boundary                   |   Limit |
-| -------------------------- | ------: |
-| Compressed archive         |   2 GiB |
-| Portable workspace content |   8 GiB |
-| One file                   |   2 GiB |
-| Workspace entries          | 100,000 |
-| Total archive entries      | 200,000 |
-| Manifest                   |  32 MiB |
+| Boundary                   |    Limit |
+| -------------------------- | -------: |
+| Compressed archive         | 2.25 GiB |
+| Portable workspace content |    8 GiB |
+| One file                   |    2 GiB |
+| Workspace entries          |  100,000 |
+| Total archive entries      |  200,000 |
+| Manifest                   |   32 MiB |
 
 Cloud transfers use 8 MiB upload chunks and an unfinished transfer expires
 after 24 hours of inactivity. A valid package must also pass path, entry-type,

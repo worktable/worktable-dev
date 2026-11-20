@@ -589,7 +589,11 @@ that they are refused like any write. At its limit a Worktable
 still opens, reads, deletes and exports. What people delete leaves the
 backed-up folder at once and is removed after the history window.
 
-The default limit is 2 GiB, the most today's export can carry.
+The default limit is 2 GiB (`PROVEN_WORKTABLE_BYTES` in `worktable-size.ts`).
+An export holds up to that plus 256 MiB (`EXPORT_HEADROOM_BYTES`): room for
+what a person's drawing saves may add past the limit, the offline viewer and
+ZIP headers, so a Worktable within its limit always exports with all its
+history.
 `WORKTABLE_STORAGE_LIMIT_BYTES` sets another; outside Cloud it is capped at
 2 GiB. Cloud can pass a plan's limit the same way, but passes none today, so
 every Cloud Worktable has the default.
@@ -701,11 +705,13 @@ them.
 - `workspace-transfer-v2.test.ts` "leaves links and special files out of a
   person's export, keeps hidden items, and refuses unsafe destinations".
 
-**Gaps:** export stops at 2 GiB compressed and 8 GiB expanded, and the
-storage limit is a separate 2 GiB figure of uncompressed bytes, so a
-Worktable near its limit with files that don't compress may not export. No
-test exports at the limit. Share links and visitor comments live in app data,
-so an export doesn't carry them.
+**Gaps:** export stops at 2.25 GiB compressed and 8 GiB expanded. A
+Worktable carried well past its limit, by typing in a Doc or by files written
+on disk, may still not export with all its history; it exports with less. A
+Cloud plan's limit, once Cloud passes one, isn't tied to the export cap yet.
+The round trip at the limit is measured on a remote runner, not in a test.
+Share links and visitor comments live in app data, so an export doesn't carry
+them.
 
 ## Hidden files
 

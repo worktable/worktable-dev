@@ -517,6 +517,63 @@ describe("storage limit", () => {
     )
   })
 
+  it("prunes history to fit a person's drawing save within its allowance", async () => {
+    // Old history elsewhere that pruning may remove.
+    const spare = await docWithVersions("spare", 3, 16 * KB)
+    const drawing = (text: string) =>
+      JSON.stringify({
+        ...emptyQuickdrawDocument("Sketch"),
+        snapshot: {
+          document: {
+            store: {
+              note: {
+                id: "note",
+                typeName: "shape",
+                type: "text",
+                x: 0,
+                y: 0,
+                rot: 0,
+                z: 0,
+                props: { color: "black", size: "m", text, font: "draw" },
+              },
+            },
+          },
+        },
+      })
+    const sketch = await createRegisteredDocument({
+      spaceId: "notes",
+      path: "sketch",
+      format: { id: QUICKDRAW_FORMAT, sourceVersion: 1 },
+      bytes: new TextEncoder().encode(drawing("a")),
+      createdBy: "test",
+      source: "test",
+    })
+    setStorageLimitForTests((await settled()) + 1 * KB, { promptPruneMs: 10_000 })
+    const before = await generations(spare)
+    // The save needs more than the room plus the oldest version elsewhere,
+    // so it fits only within its allowance, and only once that version goes.
+    const stroke = "c".repeat(Math.round((17 * KB + storageGraceBytes() / 2) / 2))
+    const api = new Hono()
+      .use("*", async (c, next) => {
+        c.set("identity", ownerIdentity())
+        return next()
+      })
+      .route("/api/spaces/:spaceId/documents", documentsRouter)
+      .onError(apiErrorResponse)
+    const saved = await api.request("/api/spaces/notes/documents", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        path: "sketch",
+        source: drawing(stroke),
+        expectedRevision: sketch.sourceRevision,
+      }),
+    })
+    expect(saved.status).toBe(200)
+    expect(await generations(spare)).toEqual(before.slice(0, 2))
+    expect(await settled()).toBeLessThanOrEqual(storageLimitBytes() + storageGraceBytes())
+  })
+
   it("leaves transfers out, counts a write on disk past the limit, and refuses the next new write", async () => {
     listeners = new Map()
     watcher = new WorkspaceWatcher({

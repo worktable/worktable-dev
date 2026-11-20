@@ -120,17 +120,21 @@ export class StorageLimitError extends Error {
   readonly details: { limitBytes: number; usedBytes: number }
   /** What the refused write asked for; 0 when pruning can't help it. */
   readonly requestedBytes: number
+  /** The most the write may take the Worktable to: the limit, or past it by an allowance. */
+  readonly ceilingBytes: number
 
   constructor(
     limitBytes: number,
     usedBytes: number,
     message?: string,
-    requestedBytes = 0
+    requestedBytes = 0,
+    ceilingBytes = limitBytes
   ) {
     super(message ?? storageLimitMessage(limitBytes))
     this.name = "StorageLimitError"
     this.details = { limitBytes, usedBytes }
     this.requestedBytes = requestedBytes
+    this.ceilingBytes = ceilingBytes
   }
 }
 
@@ -221,10 +225,10 @@ export function admitStorageWrite(
   const usage = storageUsage()
   if (!usage) return NO_RESERVATION
   const limit = storageLimitBytes()
+  const ceiling = limit + (options.grace ? storageGraceBytes(limit) : 0)
   const used = usedBytes(usage)
-  if (used + bytes <= limit + (options.grace ? storageGraceBytes(limit) : 0))
-    return reserve(bytes)
-  throw new StorageLimitError(limit, used, undefined, bytes)
+  if (used + bytes <= ceiling) return reserve(bytes)
+  throw new StorageLimitError(limit, used, undefined, bytes, ceiling)
 }
 
 /** Whether `bytes` more fit now. No side effects; nothing is reserved. */
@@ -304,7 +308,7 @@ export async function retryAfterPruning<T>(write: () => Promise<T>): Promise<T> 
     if (!(error instanceof StorageLimitError) || !(error.requestedBytes > 0)) {
       throw error
     }
-    await waitForRoom(error.requestedBytes)
+    await waitForRoom(error.requestedBytes, error.ceilingBytes)
     return write()
   }
 }
@@ -330,7 +334,7 @@ let again = false
 let stopped = true
 let promptPruneMs = PROMPT_PRUNE_MS
 /** Writes waiting for room, in the order they asked. */
-const waiting = new Set<{ bytes: number }>()
+const waiting = new Set<{ bytes: number; ceiling: number }>()
 /** What the last plan could remove, still; null when it may be stale. */
 let known: {
   epoch: number
@@ -349,7 +353,7 @@ function dueBytes(reclaimable: number): number {
   let fitting = 0
   for (const write of waiting) {
     // One that can't fit even if all of it went isn't pruned for.
-    if (used + fitting + write.bytes - reclaimable > limit) continue
+    if (used + fitting + write.bytes - reclaimable > write.ceiling) continue
     fitting += write.bytes
   }
   if (fitting > 0) {
@@ -405,10 +409,13 @@ function runPruning(): Promise<void> {
   return pruning
 }
 
-/** A write of `bytes` waits, a few seconds at most, while pruning makes room. */
-async function waitForRoom(bytes: number): Promise<void> {
+/**
+ * A write of `bytes` waits, a few seconds at most, while pruning makes room
+ * for it under `ceiling`: the limit, or past it by the write's allowance.
+ */
+async function waitForRoom(bytes: number, ceiling: number): Promise<void> {
   if (stopped) return
-  const write = { bytes }
+  const write = { bytes, ceiling }
   waiting.add(write)
   let timer: ReturnType<typeof setTimeout> | undefined
   try {

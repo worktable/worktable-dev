@@ -1753,17 +1753,21 @@ export async function takesComments(participantId: string): Promise<boolean> {
 
 /** How far each of an agent's comment deliveries has got, by request. */
 export async function commentDeliveryStates(): Promise<
-  ReadonlyMap<string, { state: ThreadActivity["state"]; attempts: number }>
+  ReadonlyMap<
+    string,
+    { state: ThreadActivity["state"]; attempts: number; error?: string }
+  >
 > {
   const states = new Map<
     string,
-    { state: ThreadActivity["state"]; attempts: number }
+    { state: ThreadActivity["state"]; attempts: number; error?: string }
   >()
   for (const record of (await readDeliveryState()).deliveries)
     if (record.comment)
       states.set(record.comment.requestId, {
         state: publicState(record),
         attempts: record.attempts,
+        ...(record.error ? { error: record.error.code } : {}),
       })
   return states
 }

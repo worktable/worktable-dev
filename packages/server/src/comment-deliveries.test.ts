@@ -70,6 +70,15 @@ app.route("/api/spaces/:spaceId/annotations", annotationsRouter)
 app.route("/grok", grokBotRouter)
 app.onError(apiErrorResponse)
 
+/** Each comment's delivery state for its first request, as the comments list shows it. */
+async function listedDelivery(docPath: string) {
+  const response = await app.fetch(
+    new Request(`http://localhost/api/spaces/demo/annotations?docPath=${docPath}`)
+  )
+  const { annotations } = (await response.json()) as { annotations: Annotation[] }
+  return annotations.map((annotation) => (annotation.requests?.[0] as { delivery?: string } | undefined)?.delivery)
+}
+
 async function comment(docPath: string, to: string, body: string) {
   const response = await app.fetch(
     new Request("http://localhost/api/spaces/demo/annotations", {
@@ -359,6 +368,7 @@ describe("comments delivered to an agent's runtime", () => {
         messageId: page.messageId,
         leaseId: page.leaseId,
       })
+      expect(await listedDelivery("deck")).toEqual(["working", "working"])
       // The runtime goes quiet: once the lease expires, the page comes back whole.
       const path = join(appDir, "thread-deliveries", `${workspaceCacheKey()}.json`)
       const file = JSON.parse(await readFile(path, "utf8"))
@@ -404,12 +414,16 @@ describe("comments delivered to an agent's runtime", () => {
       const next = (await claim(preview.call))!
       expect(next.batchId).not.toBe(page.batchId)
       expect(next.comments.map((c) => c.body)).toEqual(["From Atlas: one more."])
+      // A runtime that gives up shows as not answering on its comment.
       await preview.call("worktable_thread_delivery", {
-        action: "reply",
+        action: "fail",
         messageId: next.messageId,
         leaseId: next.leaseId,
-        body: "Done.",
+        retryable: false,
+        code: "TURN_FAILED",
+        message: "The agent could not finish",
       })
+      expect((await listedDelivery("deck")).filter(Boolean)).toEqual(["failed"])
 
       // A person's comment rewritten after it asked isn't theirs any more:
       // it comes without its author, and the runtime's owner rule refuses it.

@@ -124,6 +124,7 @@ import {
   wsAuthRequired,
 } from "./auth.ts"
 import { gatewayAdmits, hostedAgentBase, isHosted } from "./hosted.ts"
+import { notePlanStorage } from "./hosted-billing.ts"
 import { rememberPeer } from "./request-source.ts"
 import { warmAuthServerCaches } from "./oauth-jwt.ts"
 import { verifyRawCookieHeader, hasOwnerPasswordSync } from "./session-store.ts"
@@ -409,6 +410,7 @@ app.use("*", async (c, next) => {
   if (!gatewayAdmits(c.req.raw)) {
     return c.json({ error: "Forbidden", code: "GATEWAY_REQUIRED" }, 403);
   }
+  notePlanStorage(c.req.raw);
   return next();
 });
 

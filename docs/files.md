@@ -681,8 +681,13 @@ one of uploaded files packs at about 1.5 times the limit, since the history
 copy of a file's current version is stored once (package version 3). Past
 4 GiB a package is ZIP64.
 `WORKTABLE_STORAGE_LIMIT_BYTES` sets another; outside Cloud it is capped at
-2 GiB. Cloud can pass a plan's limit the same way, but passes none today, so
-every Cloud Worktable has the default.
+2 GiB. On Cloud, the plan's limit (`CLOUD_PLANS[plan].storageBytes`) comes
+with every request the gateway admits, in the billing header's
+`storageLimitBytes`, so a plan change applies on the next request, as the
+people limit does (`notePlanStorage` in `hosted-billing.ts`; only with the
+gateway's secret, so not from `/health`). The Worktable takes no more than the
+proven size whatever it is sent, and every plan has that size until a larger
+one is proven.
 
 A lower limit never removes history (Plan 22a rule 13). When the limit goes
 down, whether from a smaller plan, one that lapsed or a wrong setting, the

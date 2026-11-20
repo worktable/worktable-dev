@@ -53,6 +53,8 @@ export const PublicPlanDetails = z.object({
   currency: z.literal(PLAN_TERMS.currency),
   interval: z.literal(PLAN_TERMS.interval),
   peopleLimit: z.number().int().positive(),
+  /** What the Worktable's files may take, in bytes; older control planes send none. */
+  storageBytes: z.number().int().positive().optional(),
   linkedDevices: z.number().int().positive(),
   initialRefundDays: z.literal(PLAN_TERMS.initialRefundDays),
   pastDueGraceDays: z.literal(PLAN_TERMS.pastDueGraceDays),
@@ -102,6 +104,8 @@ export const TenantBilling = z.object({
   plan: CloudPlanId,
   /** People the plan holds: members plus pending invitations. Null is no limit. */
   peopleLimit: z.number().int().positive().nullable(),
+  /** What the Worktable's files may take, in bytes; unset leaves the server's limit. */
+  storageLimitBytes: z.number().int().positive().optional(),
   access: BillingAccess,
   graceEndsAt: z.number().int().nonnegative().optional(),
   deletesAt: z.number().int().nonnegative().optional(),

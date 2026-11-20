@@ -8,8 +8,14 @@ import {
   type DocumentId,
   type SpaceFile,
 } from "@worktable/types"
-import { ENV } from "@worktable/hosted-contract"
+import {
+  BILLING_HEADER,
+  encodeTenantBilling,
+  ENV,
+  GATEWAY_HEADER,
+} from "@worktable/hosted-contract"
 import { setAppDirOverride } from "./app-storage.ts"
+import { notePlanStorage } from "./hosted-billing.ts"
 import { runDeletedItemsPass } from "./deleted-items.ts"
 import { listDocumentGenerationsV2 } from "./document-version-store-v2.ts"
 import {
@@ -823,6 +829,71 @@ describe("storage limit", () => {
     expect(Date.now() - started).toBeLessThan(30_000)
     expect(storageUsage()).not.toBeNull()
     await createDoc("small", 1 * KB)
+  })
+
+  it("keeps what the Worktable holds when its limit goes down while pruning plans", async () => {
+    const doc = await docWithVersions("kept", 5, 16 * KB)
+    await limitsAbove(4 * KB)
+    // A write needs room; while pruning plans what could go, a request
+    // lowers the plan's limit far under what the Worktable holds.
+    setStoragePruningHooksForTests({
+      afterPlanned: () =>
+        setStorageLimitForTests(1 * KB, { promptPruneMs: 10_000, totalBytes: 2 * KB, lowered: true }),
+    })
+    const before = await generations(doc)
+    await createDoc("next", 2 * KB).catch(() => undefined)
+    setStoragePruningHooksForTests({})
+    await settled()
+    // Only what the write needed went, if anything; not all that could.
+    expect((await generations(doc)).length).toBeGreaterThanOrEqual(before.length - 1)
+    expect(storageSummary()!.limit.totalLimitBytes).toBeGreaterThan(2 * KB)
+  })
+
+  it("takes the plan's limit from requests the gateway admitted, at most the proven size", () => {
+    const saved = {
+      hosted: process.env[ENV.HOSTED],
+      secret: process.env.WORKTABLE_GATEWAY_SECRET,
+    }
+    process.env[ENV.HOSTED] = "1"
+    process.env.WORKTABLE_GATEWAY_SECRET = "synthetic-gateway-secret-for-storage"
+    const send = (storageLimitBytes: number, path = "/api/state", secret = true) =>
+      notePlanStorage(
+        new Request(`http://tenant.test${path}`, {
+          headers: {
+            ...(secret ? { [GATEWAY_HEADER]: process.env.WORKTABLE_GATEWAY_SECRET! } : {}),
+            [BILLING_HEADER]: encodeTenantBilling({
+              plan: "team",
+              peopleLimit: 12,
+              storageLimitBytes,
+              access: "active",
+            }),
+          },
+        })
+      )
+    try {
+      setStorageLimitForTests(null)
+      send(1024 ** 3)
+      expect(storageLimitBytes()).toBe(1024 ** 3)
+      // A plan change applies on the next request.
+      send(512 * 1024 ** 2)
+      expect(storageLimitBytes()).toBe(512 * 1024 ** 2)
+      // Never past what backups and exports are proven to carry.
+      send(16 * 1024 ** 3)
+      expect(storageLimitBytes()).toBe(DEFAULT_STORAGE_LIMIT_BYTES)
+      // Without the gateway's secret, even where admission needs none, nothing changes.
+      send(64 * 1024 ** 2, "/api/state", false)
+      send(64 * 1024 ** 2, "/health", false)
+      expect(storageLimitBytes()).toBe(DEFAULT_STORAGE_LIMIT_BYTES)
+    } finally {
+      for (const [key, value] of [
+        [ENV.HOSTED, saved.hosted],
+        ["WORKTABLE_GATEWAY_SECRET", saved.secret],
+      ] as const) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+      setStorageLimitForTests(null)
+    }
   })
 
   it("takes its limit from the environment, within the ceiling outside Cloud", () => {

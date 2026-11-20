@@ -88,13 +88,34 @@ const PROMPT_PRUNE_MS = 5_000
 
 let configured: number | null = null
 let override: number | null = null
+/** The plan's storage, as the Cloud gateway last said; null until it says. */
+let planLimit: number | null = null
 let totalOverride: number | null = null
 
 /** This Worktable's storage limit in bytes: what people's files may take. */
 export function storageLimitBytes(): number {
   if (override !== null) return override
+  if (planLimit !== null) return planLimit
   configured ??= configuredLimit()
   return configured
+}
+
+/**
+ * The plan's storage, from the billing header on a request the Cloud gateway
+ * admitted, so a plan change applies on the next request, as the people
+ * limit does. At most the proven size (worktable-size.ts), whatever is sent:
+ * backups and exports are proven to carry no more. A limit lower than before
+ * keeps what the Worktable holds (see "A lower limit" below).
+ */
+export function setPlanStorageLimit(bytes: number): void {
+  const next = Math.min(bytes, PROVEN_WORKTABLE_BYTES)
+  if (next === planLimit) return
+  if (next < bytes) {
+    console.warn(
+      `[storage-limit] the plan's ${formatStorageBytes(bytes)} is above the ${formatStorageBytes(PROVEN_WORKTABLE_BYTES)} proven size; using that`
+    )
+  }
+  planLimit = next
 }
 
 /**
@@ -502,6 +523,9 @@ let known: {
 function dueBytes(reclaimable: number): number {
   const usage = storageUsage()
   if (!usage || reclaimable <= 0) return 0
+  // The limit can change while a pass plans (a plan's, per request): a
+  // lower one keeps what the Worktable holds before anything is due.
+  followLimit(usage)
   const limit = totalCeiling()
   // Under a lower limit, no headroom: it would be history removed for the
   // lower limit itself.
@@ -685,6 +709,7 @@ export function setStorageLimitForTests(
   override = bytes
   totalOverride = options.totalBytes ?? null
   configured = null
+  planLimit = null
   promptPruneMs = options.promptPruneMs ?? PROMPT_PRUNE_MS
   known = null
   if (!options.lowered) {

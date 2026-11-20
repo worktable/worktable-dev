@@ -87,6 +87,8 @@ let testHooks: {
   beforeVersions?: () => void
   /** Awaited once a run has pruned versions, before it records them. */
   afterVersions?: () => Promise<void>
+  /** Called once a plan is made, before it is returned. */
+  afterPlanned?: () => void
 } = {}
 let plansMade = 0
 
@@ -159,6 +161,7 @@ export async function planPruning(
   plan.bytes =
     plan.trash.reduce((total, entry) => total + entry.bytes, 0) +
     plan.versions.reduce((total, version) => total + version.bytes, 0)
+  testHooks.afterPlanned?.()
   return plan
 }
 

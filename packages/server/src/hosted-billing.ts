@@ -7,7 +7,7 @@ import {
   type TenantBilling,
 } from "@worktable/hosted-contract"
 import { withCrossProcessLock } from "./cross-process-lock.ts"
-import { gatewayAdmits, gatewaySecret, isHosted } from "./hosted.ts"
+import { cameThroughGateway, gatewayAdmits, gatewaySecret, isHosted } from "./hosted.ts"
 import { accessSnapshot } from "./team-access.ts"
 import {
   currentTeamWorktable,
@@ -16,6 +16,7 @@ import {
   teamDatabasePath,
 } from "./team-database.ts"
 import { listTeamMembers } from "./team-members.ts"
+import { setPlanStorageLimit } from "./storage-limit.ts"
 import { TeamAccessError } from "./team-policy.ts"
 
 /**
@@ -25,6 +26,23 @@ import { TeamAccessError } from "./team-policy.ts"
 export function requestBilling(request: Request): TenantBilling | null {
   if (!isHosted() || !gatewaySecret() || !gatewayAdmits(request)) return null
   return decodeTenantBilling(request.headers.get(BILLING_HEADER))
+}
+
+let lastBillingHeader: string | null = null
+
+/**
+ * Take the plan's storage from a request the gateway admitted. The header is
+ * the same on nearly every request, so it is decoded only when it changes.
+ */
+export function notePlanStorage(request: Request): void {
+  if (!isHosted() || !gatewaySecret()) return
+  const header = request.headers.get(BILLING_HEADER)
+  if (!header || header === lastBillingHeader) return
+  // Only with the gateway's secret: admission lets /health through without it.
+  if (!cameThroughGateway(request)) return
+  lastBillingHeader = header
+  const bytes = decodeTenantBilling(header)?.storageLimitBytes
+  if (bytes) setPlanStorageLimit(bytes)
 }
 
 function expiresAtMs(value: unknown): number {

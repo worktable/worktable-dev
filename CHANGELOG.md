@@ -12,6 +12,7 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **Agents (preview):** With preview tools on, an agent can look at one page of a PDF, including a scanned one, and at an image too large to read directly, through `worktable_files_render`.
+- **QR codes for share links:** Share shows a link's QR code beside Copy. Download it, copy it as an image, or show it full screen with the link written under it. Links under More links have QR Code in their menu.
 
 ### Changed
 

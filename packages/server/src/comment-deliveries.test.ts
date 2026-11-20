@@ -356,6 +356,22 @@ describe("comments delivered to an agent's runtime", () => {
         if (record.leaseId === page.leaseId)
           record.leaseExpiresAt = new Date(0).toISOString()
       await writeFile(path, JSON.stringify(file))
+      // The agent answered one comment itself; a late report under the lost
+      // lease isn't taken as answering the other.
+      await preview.call("worktable_annotations_write", {
+        action: "reply",
+        spaceId: "demo",
+        annotationId: (page.comments[0] as unknown as { annotationId: string }).annotationId,
+        body: "Totals checked.",
+      })
+      await expect(
+        preview.call("worktable_thread_delivery", {
+          action: "reply",
+          messageId: page.messageId,
+          leaseId: page.leaseId,
+          body: "Late.",
+        })
+      ).rejects.toThrow(/LEASE_LOST|no longer valid/)
       // A comment that came meanwhile doesn't change the retried batch, so
       // the runtime knows it as the turn it already ran.
       await writer.call("worktable_annotations_write", {
@@ -368,7 +384,7 @@ describe("comments delivered to an agent's runtime", () => {
       const again = (await claim(preview.call))!
       expect(again.leaseId).not.toBe(page.leaseId)
       expect(again.batchId).toBe(page.batchId)
-      expect(again.comments).toHaveLength(2)
+      expect(again.comments.map((c) => c.body)).toEqual([page.comments[1]!.body])
       await preview.call("worktable_thread_delivery", {
         action: "reply",
         messageId: again.messageId,
@@ -465,5 +481,32 @@ describe("comments delivered to an agent's runtime", () => {
     })
     expect(retried.status).toBe(200)
     expect((await commentDeliveryStates()).get(requestId)?.state).toBe("queued")
+
+    // A run Grok never confirms holds its other work, until its comment is
+    // resolved.
+    const unconfirmed = (await claimNextDelivery(grok, 0, 2, { comments: true }))!
+    const owner = await runtime(grok, "preview")
+    await owner.call("worktable_thread_delivery", {
+      action: "accept",
+      messageId: unconfirmed.messageId,
+      leaseId: unconfirmed.leaseId,
+    })
+    await owner.close()
+    const path = join(appDir, "thread-deliveries", `${workspaceCacheKey()}.json`)
+    const file = JSON.parse(await readFile(path, "utf8"))
+    for (const record of file.deliveries)
+      if (record.leaseId === unconfirmed.leaseId)
+        record.leaseExpiresAt = new Date(0).toISOString()
+    await writeFile(path, JSON.stringify(file))
+    await comment("notes", grokId, "Unrelated work.")
+    expect(await claimNextDelivery(grok, 0, 2, { comments: true })).toBeNull()
+    const resolved = await app.request(
+      `/api/spaces/demo/annotations/${unconfirmed.threadId}/resolve`,
+      { method: "POST" }
+    )
+    expect(resolved.status).toBe(200)
+    const next = (await claimNextDelivery(grok, 0, 2, { comments: true }))!
+    expect(next.kind).toBe("comments")
+    expect((next as { page: { path: string } }).page.path).toBe("notes")
   }, 30_000)
 })

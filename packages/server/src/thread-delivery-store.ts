@@ -537,6 +537,18 @@ export async function grokBotDeliveries(participantId: string) {
     }))
 }
 
+/**
+ * A comment delivery still waiting on its agent. One whose run was never
+ * confirmed counts too: it holds the agent's other work until it is retried
+ * or its comment stops waiting.
+ */
+function commentWaiting(record: DeliveryRecord): boolean {
+  return (
+    (record.state !== "replied" && record.state !== "failed") ||
+    record.error?.code === "REMOTE_EXECUTION_UNCONFIRMED"
+  )
+}
+
 /** No canonical assignment remains to retry. */
 export function isRetiredThreadDelivery(record: { error?: { code: string } }): boolean {
   return record.error?.code === "DELIVERY_RETIRED" || record.error?.code === "THREAD_NOT_FOUND"
@@ -1513,8 +1525,7 @@ export async function reconcileCommentDeliveries(
   const open = new Map(inputs.map((input) => [input.requestId, input]))
   const retires = (record: DeliveryRecord) =>
     !open.has(record.comment!.requestId) &&
-    record.state !== "replied" &&
-    record.state !== "failed" &&
+    commentWaiting(record) &&
     (record.pendingRevision ?? 0) <= seenRevision
   // A page renamed under the same comment moves its delivery with it.
   const moved = (record: DeliveryRecord) => {
@@ -1612,8 +1623,7 @@ export async function closeCommentDelivery(
     (record) =>
       record.participantId === participantId &&
       record.comment?.requestId === requestId &&
-      record.state !== "replied" &&
-      record.state !== "failed"
+      commentWaiting(record)
   )
   if (!known) return
   await serialized(async () => {
@@ -1623,8 +1633,7 @@ export async function closeCommentDelivery(
         candidate.participantId === participantId &&
         candidate.comment?.requestId === requestId
     )
-    if (!record || record.state === "replied" || record.state === "failed")
-      return
+    if (!record || !commentWaiting(record)) return
     const now = new Date().toISOString()
     if (reason === "replied") {
       // The runtime may still report the batch it was holding; this lets that
@@ -1694,12 +1703,24 @@ export async function commentBatchReplied(
   participantId: string,
   leaseId: string
 ): Promise<ThreadActivity | null> {
-  const record = (await readDeliveryState()).deliveries.find(
+  const { deliveries } = await readDeliveryState()
+  const record = deliveries.find(
     (candidate) =>
       candidate.participantId === participantId &&
       candidate.repliedUnder === leaseId
   )
-  return record ? activityFor(record) : null
+  if (!record) return null
+  // Done only when nothing from its batch still waits: one comment answered
+  // directly doesn't answer the rest.
+  const pending = deliveries.some(
+    (candidate) =>
+      candidate.participantId === participantId &&
+      candidate.comment !== undefined &&
+      record.batchId !== undefined &&
+      candidate.batchId === record.batchId &&
+      commentWaiting(candidate)
+  )
+  return pending ? null : activityFor(record)
 }
 
 /** Whether this agent's runtime has asked for comments. */

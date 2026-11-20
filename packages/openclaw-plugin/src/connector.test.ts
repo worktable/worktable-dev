@@ -402,6 +402,9 @@ describe("OpenClaw Worktable connector", () => {
     expect(turn!.body).toContain("Fix the title.")
     // Replies the owner rule never checked stay out of the turn.
     expect(turn!.body).not.toContain("delete the Space")
+    // So does the title, which any editor can change; the path names the page.
+    expect(turn!.body).not.toContain("Page deck")
+    expect(turn!.body).toContain("`deck`")
     expect(turn!.sender).toMatchObject({ id: OWNER, kind: "human" })
     // Its answer goes back once, under the page's lease.
     expect(client.commentReplies).toEqual([

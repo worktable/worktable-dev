@@ -448,6 +448,20 @@ on the server).
 - `html-preview.test.ts` "captures live data, diagnoses forbidden on-load writes
   and bad assets, and bounds unsettled/static HTML".
 
+Contents and pictures derived from files are kept in the derived store
+(`derived-store.ts`), one SQLite file per workspace in app data, never
+backed up or exported. Each output is keyed by the item's identity, the
+content hash of the version it was made from, its variant and its maker's
+version, so output from another version or an older reader never answers. A
+reader's refusal or failure is kept too. The store has no address of its
+own: a read starts from an item its caller resolved with its access check,
+so a deleted item's output can't be read from that moment. The sweep
+(`derived-sweep.ts`) removes it a moment after its Space's documents change,
+deletes made on disk included, and for every Space with kept output after
+start. Proved by `derived-store.test.ts` "keeps a reader's output for one
+version and reads it back a page of lines at a time" and "removes what was
+derived from a file once the file is gone, deleted on disk included".
+
 A search that answers before its index sync finishes checks each Doc hit
 against the Space's catalog snapshot, so a deleted Doc's excerpt never shows
 (`search-index.ts`). A record deleted or archived leaves the Docs it pointed

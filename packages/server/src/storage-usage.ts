@@ -12,7 +12,8 @@
 //              folder, then the trash in app data (deleted-items.ts)
 //   transfers  uploads being received (staged-file.ts, counted in memory) and
 //              workspace captures, imports and restores in app data
-//   derived    the record index and the Yjs edit caches in app data
+//   derived    the record index, the Yjs edit caches and the contents and
+//              pictures derived from files (derived-store.ts), in app data
 //
 // Live, history and the in-workspace trash together are what an export or a
 // backup captures; `workspaceEntries` counts the files and folders there, as
@@ -139,6 +140,7 @@ export function storageAreas(
     },
     { root: join(appDir, "yjs", key), part: "derived" },
     { root: join(appDir, "records-index", key), part: "derived" },
+    { root: join(appDir, "derived", key), part: "derived" },
   ]
 }
 

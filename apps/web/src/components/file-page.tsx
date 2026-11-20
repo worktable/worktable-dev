@@ -27,7 +27,7 @@ import { DocumentByline } from "@/components/document/document-byline"
 import { TipCard } from "@/components/help/help"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { documentRoute } from "@/lib/document-views"
-import { authenticatedFetch, fetchJSON } from "@/lib/http"
+import { authenticatedFetch, fetchJSON, refusalReason } from "@/lib/http"
 import {
   FileChangedError,
   fileSourceUrl,
@@ -169,7 +169,9 @@ export function FilePage({
         }
         console.error("File upload failed:", error)
         setChanged(null)
-        toast.error("Couldn’t upload the new version. Try again.")
+        toast.error(
+          refusalReason(error) ?? "Couldn’t upload the new version. Try again."
+        )
       } finally {
         setUploading(false)
       }

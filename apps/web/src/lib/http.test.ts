@@ -6,6 +6,7 @@ import {
   fetchJSON,
   getFreshBrowserCsrfToken,
   prefetchBrowserCsrfToken,
+  refusalReason,
 } from "./http.ts"
 import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
 
@@ -271,6 +272,41 @@ describe("fetchJSON", () => {
       fetchJSON("/api/spaces", { signal: controller.signal })
     ).rejects.toThrow()
     expect(requests[2]?.init?.signal).toBe(controller.signal)
+  })
+})
+
+describe("refusalReason", () => {
+  const refused = async (status: number, body: unknown) => {
+    globalThis.fetch = (async () =>
+      Response.json(body, { status })) as unknown as typeof fetch
+    try {
+      await fetchJSON("/api/spaces/lab/docs", { method: "POST", body: "{}" })
+    } catch (error) {
+      return error
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    throw new Error("the request was not refused")
+  }
+
+  it("gives the server's sentence for a full Worktable and a file too large, and nothing for other failures", async () => {
+    const full = "This Worktable is at its 2 GB limit. Delete something to make room."
+    expect(
+      refusalReason(
+        await refused(507, { error: full, code: "STORAGE_LIMIT", limitBytes: 1, usedBytes: 1 })
+      )
+    ).toBe(full)
+    expect(
+      refusalReason(
+        await refused(413, { error: "Files can be up to 64 MiB.", code: "PAYLOAD_TOO_LARGE" })
+      )
+    ).toBe("Files can be up to 64 MiB.")
+    // A failure the person can't act on keeps the caller's own message.
+    expect(refusalReason(await refused(500, { error: "disk I/O error" }))).toBeNull()
+    expect(
+      refusalReason(await refused(409, { error: "changed", code: "REVISION_CHANGED" }))
+    ).toBeNull()
+    expect(refusalReason(new TypeError("Failed to fetch"))).toBeNull()
   })
 })
 

@@ -1,6 +1,8 @@
 import { useMemo } from "react"
 import type { EditorFiles } from "@/components/editor/editor"
+import { toast } from "@worktable/ui/components/sonner"
 import { embedSourceUrl, uploadEmbeddedFile } from "@/lib/file-embeds"
+import { refusalReason } from "@/lib/http"
 import { useDeploymentInfo } from "./use-deployment-info"
 
 /**
@@ -31,7 +33,15 @@ export function useEditorFiles(
             ...(options.upload
               ? {
                   upload: (file: File) =>
-                    uploadEmbeddedFile(spaceId, docPath, file),
+                    uploadEmbeddedFile(spaceId, docPath, file).catch(
+                      (error: unknown) => {
+                        toast.error(
+                          refusalReason(error) ??
+                            "Couldn’t add the file. Try again."
+                        )
+                        throw error
+                      }
+                    ),
                 }
               : {}),
           }

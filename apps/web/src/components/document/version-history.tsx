@@ -40,7 +40,7 @@ import {
   type DocVersionEntry,
 } from "@/lib/docs-api"
 import { documentQueryKeys } from "@/lib/documents-queries"
-import { HttpError } from "@/lib/http"
+import { HttpError, refusalReason } from "@/lib/http"
 import { useSpace, useWorkspace } from "@/lib/queries"
 import { browserTeamMemberId } from "@/lib/team-context"
 import {
@@ -268,8 +268,8 @@ export function VersionHistoryPanel({
           })
         )
       )
-    } catch {
-      toast.error("Couldn’t save this version")
+    } catch (error) {
+      toast.error(refusalReason(error) ?? "Couldn’t save this version")
     } finally {
       setSaving(false)
     }
@@ -524,7 +524,7 @@ function RestoreVersionButton({
         return
       }
       setChangedTo(null)
-      toast.error("Couldn’t restore this version")
+      toast.error(refusalReason(error) ?? "Couldn’t restore this version")
     } finally {
       setRestoring(false)
     }

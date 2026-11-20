@@ -44,15 +44,20 @@ const KEPT_AHEAD_MAX_BYTES = 16 * 1024 * 1024
 /**
  * The file's bytes, a piece at a time, from the page. pdf.js asks for one
  * piece after another when it walks a long table, forwards or, for some
- * files, backwards, each a round trip. When a request lies next to the last
- * one, more is fetched in that direction than was asked for, doubling each
- * time, and later requests inside what was fetched are answered at once.
+ * files, backwards, often many at once. When a request lies next to the
+ * last one, more is fetched in that direction than was asked for, doubling
+ * each time; a request inside a read already on its way waits for it, and
+ * one inside bytes already fetched is answered at once.
  */
 class HostTransport extends pdfjs.PDFDataRangeTransport {
   #length: number
-  /** Reads sent to the page, by where they begin: what pdf.js asked for. */
-  #asked = new Map<number, { begin: number; end: number }>()
-  /** Fetched bytes pdf.js hasn't asked for yet, oldest first. */
+  /** Reads on their way, by where they begin, and the requests they answer. */
+  #reads: {
+    from: number
+    to: number
+    waiting: { begin: number; end: number }[]
+  }[] = []
+  /** Fetched bytes beyond what was asked for, oldest first. */
   #kept: { begin: number; bytes: Uint8Array }[] = []
   #last: { begin: number; end: number } | null = null
   #extra = 0
@@ -73,6 +78,13 @@ class HostTransport extends pdfjs.PDFDataRangeTransport {
       void Promise.resolve().then(() => this.onDataRange(begin, now))
       return
     }
+    const onItsWay = this.#reads.find(
+      (read) => read.from <= begin && read.to >= end
+    )
+    if (onItsWay) {
+      onItsWay.waiting.push({ begin, end })
+      return
+    }
     const forwards = last !== null && begin === last.end
     const backwards = last !== null && end === last.begin
     this.#extra =
@@ -84,18 +96,22 @@ class HostTransport extends pdfjs.PDFDataRangeTransport {
         : 0
     const from = backwards ? Math.max(0, begin - this.#extra) : begin
     const to = forwards ? Math.min(this.#length, end + this.#extra) : end
-    this.#asked.set(from, { begin, end })
+    this.#reads.push({ from, to, waiting: [{ begin, end }] })
     say({ type: "viewer.read", begin: from, end: to })
   }
 
   /** Bytes the page sent for a read that began at `from`. */
   arrived(from: number, data: Uint8Array): void {
-    const asked = this.#asked.get(from) ?? {
-      begin: from,
-      end: from + data.byteLength,
-    }
-    this.#asked.delete(from)
-    if (data.byteLength > asked.end - asked.begin) {
+    // The page answers a read with all of it, so its length names which.
+    const index = this.#reads.findIndex(
+      (each) => each.from === from && each.to - each.from === data.byteLength
+    )
+    const read = index === -1 ? undefined : this.#reads.splice(index, 1)[0]
+    const waiting = read?.waiting ?? [
+      { begin: from, end: from + data.byteLength },
+    ]
+    const asked = waiting.reduce((sum, each) => sum + each.end - each.begin, 0)
+    if (data.byteLength > asked) {
       this.#kept.push({ begin: from, bytes: data })
       let size = this.#kept.reduce(
         (sum, each) => sum + each.bytes.byteLength,
@@ -105,10 +121,12 @@ class HostTransport extends pdfjs.PDFDataRangeTransport {
         size -= this.#kept.shift()!.bytes.byteLength
       }
     }
-    this.onDataRange(
-      asked.begin,
-      data.slice(asked.begin - from, asked.end - from)
-    )
+    for (const each of waiting) {
+      this.onDataRange(
+        each.begin,
+        data.slice(each.begin - from, each.end - from)
+      )
+    }
   }
 }
 

@@ -14,7 +14,18 @@ type Outgoing = ViewerFrameMessage extends infer M
     : never
   : never
 
-const token = crypto.randomUUID()
+/**
+ * A random id. Not `crypto.randomUUID`: a Worktable reached over plain HTTP
+ * on a private network isn't a secure context, and has no such function.
+ */
+function randomId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    ""
+  )
+}
+
+const token = randomId()
 
 /** Tell the page something. */
 export function say(message: Outgoing): void {
@@ -42,7 +53,7 @@ const assets = new Map<
 
 /** One of the viewer's own public files, fetched by the page. */
 export function asset(request: ViewerAssetRequest): Promise<ArrayBuffer> {
-  const id = crypto.randomUUID()
+  const id = randomId()
   return new Promise((resolve, reject) => {
     assets.set(id, { resolve, reject })
     say({ type: "viewer.asset", id, ...request })

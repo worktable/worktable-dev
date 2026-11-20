@@ -55,6 +55,11 @@ import { filePolicy, resolveDocLink } from "@worktable/types"
 /** Inside a link, an image keeps the link's click and focus. */
 const InLink = createContext(false)
 
+/** A Space's PDF the Doc embeds; inside a link, the link keeps the press. */
+function EmbeddedPdf(props: { target: string; href: string }) {
+  return <PdfCard {...props} inLink={useContext(InLink)} />
+}
+
 /**
  * A Doc's image, which opens in the viewer. Once it has loaded as one the
  * viewer shows, it takes focus too, so the keyboard can open it.
@@ -346,7 +351,7 @@ export function MarkdownViewer({
                         "pdf"
                     ) {
                       return (
-                        <PdfCard
+                        <EmbeddedPdf
                           target={src}
                           href={renderDocLinkHref(spaceId, docPath, src)}
                         />

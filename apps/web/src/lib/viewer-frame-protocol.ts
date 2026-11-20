@@ -18,6 +18,8 @@ export type ViewerRefusal =
   | "damaged"
   /** The viewer couldn't start or gave up. */
   | "failed"
+  /** The file is past the size a viewer opens. */
+  | "too-large"
 
 /** Where the reader is in the file, as the viewer reports it. */
 export interface ViewerState {
@@ -91,6 +93,12 @@ export const VIEWER_PIECE_BYTES = 64 * 1024
 
 /** How much of a large file is fetched before its viewer asks for anything. */
 export const VIEWER_FIRST_BYTES = 4 * VIEWER_PIECE_BYTES
+
+/**
+ * The largest file a viewer opens: the size past which a file keeps no
+ * history and its own page shows a card instead.
+ */
+export const VIEWER_MAX_BYTES = 64 * 1024 * 1024
 
 /** Up to this size a file is handed to its viewer whole, in one request. */
 export const VIEWER_WHOLE_FILE_BYTES = 4 * 1024 * 1024

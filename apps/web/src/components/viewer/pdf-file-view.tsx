@@ -61,6 +61,7 @@ const REFUSALS: Record<ViewerRefusal, string> = {
   password: "Password protected",
   damaged: "Couldn’t load preview",
   failed: "Couldn’t load preview",
+  "too-large": "Too large to preview",
 }
 
 /**
@@ -75,6 +76,7 @@ export default function PdfFileView({
   byteLength,
   leading,
   onDismiss,
+  onFileChanged,
   refusal,
 }: {
   spaceId: string
@@ -87,6 +89,11 @@ export default function PdfFileView({
   leading?: ReactNode
   /** Escape while reading, when nothing else in the viewer is open. */
   onDismiss?: () => void
+  /**
+   * The file changed while it was being read. By default its page is
+   * checked again, which opens the new version.
+   */
+  onFileChanged?: () => void
   /**
    * What shows in place of a file the viewer can't show, given why; by
    * default the reason alone, centred.
@@ -426,7 +433,7 @@ export default function PdfFileView({
               setTyped(null)
             }}
             onRefused={setRefused}
-            onChanged={reload}
+            onChanged={onFileChanged ?? reload}
             onFind={setFound}
             onPassword={(retry) => setAsking({ retry })}
             onRail={setRail}

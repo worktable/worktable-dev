@@ -11,6 +11,7 @@ import { authenticatedFetch, BASE_URL } from "@/lib/http"
 import {
   clampViewerRead,
   VIEWER_FIRST_BYTES,
+  VIEWER_MAX_BYTES,
   VIEWER_WHOLE_FILE_BYTES,
   viewerAssetPath,
   viewerFrameMessage,
@@ -186,14 +187,21 @@ export function ViewerFrame({
       }
       return response.arrayBuffer()
     }
+    // Past the largest file a viewer opens, nothing is read.
+    let tooLarge = length > VIEWER_MAX_BYTES
     /** The file's first bytes, or all of them when it is small. */
     const first = async (): Promise<{
       data: ArrayBuffer
       whole: boolean
     } | null> => {
+      if (tooLarge) return null
       if (length < 0) {
         const head = await read(0, VIEWER_FIRST_BYTES)
         if (!head || length < 0) return null
+        if (length > VIEWER_MAX_BYTES) {
+          tooLarge = true
+          return null
+        }
         if (head.byteLength >= length) return { data: head, whole: true }
         if (length > VIEWER_WHOLE_FILE_BYTES)
           return { data: head, whole: false }

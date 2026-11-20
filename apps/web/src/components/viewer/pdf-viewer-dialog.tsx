@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Download } from "lucide-react"
 import { Link } from "@tanstack/react-router"
 import { Button } from "@worktable/ui/components/button"
@@ -23,6 +24,8 @@ export default function PdfViewerDialog({
   pdf: ViewerPdf
 }) {
   const name = pdf.path.slice(pdf.path.lastIndexOf("/") + 1)
+  // A file replaced while it is read opens again at its current version.
+  const [opened, setOpened] = useState({ version: pdf.version, times: 0 })
   const at = pdf.at ? { at: pdf.at } : {}
   return (
     <ViewerDialog open={open} onOpenChange={onOpenChange}>
@@ -64,10 +67,14 @@ export default function PdfViewerDialog({
         </ViewerHeader>
         <div className="min-h-0 flex-1">
           <PdfFileView
+            key={opened.times}
             spaceId={pdf.spaceId}
             path={pdf.path}
             name={name}
-            fileUrl={fileSourceUrl(pdf.spaceId, pdf.path, pdf.version, at)}
+            fileUrl={fileSourceUrl(pdf.spaceId, pdf.path, opened.version, at)}
+            onFileChanged={() =>
+              setOpened(({ times }) => ({ version: null, times: times + 1 }))
+            }
             onDismiss={() => onOpenChange(false)}
           />
         </div>

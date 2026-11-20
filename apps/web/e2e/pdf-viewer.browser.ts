@@ -1,17 +1,28 @@
 import { expect, test } from "@playwright/test"
 import { startWebHarness, type WebHarness } from "./harness"
 
-/** A small valid PDF with one line of text on each page. */
-function pdfOf(pages: string[]): Buffer {
+/**
+ * A valid PDF with one line of text on each page. `padding` adds that many
+ * bytes nothing refers to, ahead of the pages.
+ */
+function pdfOf(pages: string[], padding = 0): Buffer {
+  // Objects are numbered from 1: the catalog, the page list, the font, the
+  // padding if any, then a page and its content for each page.
+  const first = padding > 0 ? 5 : 4
   const objects: string[] = [
     "<< /Type /Catalog /Pages 2 0 R >>",
-    `<< /Type /Pages /Kids [${pages.map((_, index) => `${4 + index * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`,
+    `<< /Type /Pages /Kids [${pages.map((_, index) => `${first + index * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
   ]
+  if (padding > 0) {
+    objects.push(
+      `<< /Length ${padding} >>\nstream\n${"x".repeat(padding)}\nendstream`
+    )
+  }
   for (const [index, text] of pages.entries()) {
     const stream = `BT /F1 24 Tf 72 700 Td (${text}) Tj ET`
     objects.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${5 + index * 2} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${first + 1 + index * 2} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`,
       `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`
     )
   }
@@ -43,6 +54,8 @@ test.beforeAll(async () => {
       "report.pdf",
       pdfOf(["First page of the report", "Second page", "Third and last page"]),
     ],
+    // Past the size a file is handed over whole, so it is read in pieces.
+    ["long.pdf", pdfOf(["A page far into a large file"], 5 * 1024 * 1024)],
     ["damaged.pdf", Buffer.from("This was never a PDF. ".repeat(40))],
   ] as const) {
     const saved = await fetch(
@@ -127,6 +140,27 @@ test("a PDF opens and reads on its page, inside a frame that can reach nothing",
       .subarray(0, 8)
       .toString()
   ).toBe("%PDF-1.4")
+})
+
+test("a large PDF is read in pieces, not whole", async ({ page }) => {
+  const ranges: string[] = []
+  page.on("request", (request) => {
+    const range = request.headers()["range"]
+    if (range && request.url().includes("/documents/file")) ranges.push(range)
+  })
+  await page.goto(`${harness.webUrl}/spaces/papers/documents/long.pdf`)
+  const frame = page.frameLocator('iframe[data-viewer-frame="pdf"]')
+  await expect(frame.getByText("A page far into a large file")).toBeVisible({
+    timeout: 60_000,
+  })
+  // The start, then only what the first page needed: far less than 5 MiB.
+  expect(ranges[0]).toBe("bytes=0-262143")
+  expect(ranges.length).toBeGreaterThan(1)
+  const fetched = ranges.reduce((total, range) => {
+    const [, begin, end] = /^bytes=(\d+)-(\d+)$/.exec(range) ?? []
+    return total + Number(end) - Number(begin) + 1
+  }, 0)
+  expect(fetched).toBeLessThan(1024 * 1024)
 })
 
 test("a file that can't be shown still says so and downloads", async ({

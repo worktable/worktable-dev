@@ -61,7 +61,9 @@ async function open(
   // one here, the file isn't shown and its page offers the download.
   let worker: InstanceType<typeof pdfjs.PDFWorker>
   try {
-    worker = new pdfjs.PDFWorker({ port: await startWorker("viewer-worker") })
+    // pdf.js types the port as null; it takes a started worker.
+    const port = (await startWorker("viewer-worker")) as unknown as null
+    worker = new pdfjs.PDFWorker({ port })
   } catch {
     say({ type: "viewer.refused", reason: "failed" })
     return

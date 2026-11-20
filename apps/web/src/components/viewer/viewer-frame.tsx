@@ -10,7 +10,7 @@ import { buildVersionQuery } from "@/lib/build-version"
 import { authenticatedFetch, BASE_URL } from "@/lib/http"
 import {
   clampViewerRead,
-  VIEWER_PIECE_BYTES,
+  VIEWER_FIRST_BYTES,
   VIEWER_WHOLE_FILE_BYTES,
   viewerAssetPath,
   viewerFrameMessage,
@@ -28,8 +28,6 @@ export interface ViewerFrameHandle {
 
 /** How long a frame has to show the file before the page gives up on it. */
 const SHOW_DEADLINE_MS = 30_000
-/** The most a frame is handed for one read, whatever it asked for. */
-const READ_MAX_BYTES = 16 * VIEWER_PIECE_BYTES
 
 function viewerUrl(viewer: ViewerKey, rest: string, query: string[]): string {
   const version = buildVersionQuery()
@@ -137,7 +135,7 @@ export function ViewerFrame({
     // The file starts loading with the frame, not after it.
     const start = read(
       0,
-      whole ? byteLength : Math.min(VIEWER_PIECE_BYTES, byteLength)
+      whole ? byteLength : Math.min(VIEWER_FIRST_BYTES, byteLength)
     ).catch(() => null)
     const deadline = window.setTimeout(() => refuse("failed"), SHOW_DEADLINE_MS)
 
@@ -169,11 +167,10 @@ export function ViewerFrame({
       switch (message.type) {
         case "viewer.read": {
           const range = clampViewerRead(message.begin, message.end, byteLength)
+          // The whole of what it asked for, or nothing: pdf.js can't use
+          // part of a piece.
           const data = range
-            ? await read(
-                range.begin,
-                Math.min(range.end, range.begin + READ_MAX_BYTES)
-              ).catch(() => null)
+            ? await read(range.begin, range.end).catch(() => null)
             : null
           send(
             { type: "viewer.bytes", begin: message.begin, data },

@@ -71,8 +71,15 @@ export type ViewerFrameMessage = { token: string } & (
   | { type: "viewer.key"; key: string }
 )
 
-/** The size of the pieces a large file is read in. */
-export const VIEWER_PIECE_BYTES = 256 * 1024
+/**
+ * The size of the pieces a large file is read in. Small on purpose: pdf.js
+ * reads whole pieces around each object it needs, so larger ones pull in
+ * far more of a file whose pages are listed flat.
+ */
+export const VIEWER_PIECE_BYTES = 64 * 1024
+
+/** How much of a large file is fetched before its viewer asks for anything. */
+export const VIEWER_FIRST_BYTES = 4 * VIEWER_PIECE_BYTES
 
 /** Up to this size a file is handed to its viewer whole, in one request. */
 export const VIEWER_WHOLE_FILE_BYTES = 4 * 1024 * 1024
@@ -102,10 +109,7 @@ export function viewerFrameMessage(data: unknown): ViewerFrameMessage | null {
   return data as ViewerFrameMessage
 }
 
-/**
- * The part of a file a frame may be given: inside the file, and no larger
- * than a few pieces, whatever it asked for.
- */
+/** The part of a file a frame may be given: only what is inside the file. */
 export function clampViewerRead(
   begin: unknown,
   end: unknown,

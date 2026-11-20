@@ -697,6 +697,13 @@ it("sends visitor comments to an agent as one thread message, and shows how far 
     requestId: "send-with-a-gone-one",
   })
   expect(refused.status).toBe(404)
+  // So is one whose quote cleans to nothing.
+  const blank = await send({
+    comments: [{ id: first.id }, { id: second.id, quote: "\u202E" }],
+    to: agentId,
+    requestId: "send-with-a-blank-quote",
+  })
+  expect(blank.status).toBe(409)
   const untouched = (await (
     await app().request(`/api/spaces/space/visitor-comments?documentId=${documentId}`)
   ).json()) as { comments: Array<{ id: string; status: string }> }

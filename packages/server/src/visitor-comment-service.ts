@@ -234,6 +234,12 @@ export async function sendVisitorComments(
     throw new VisitorCommentPassError("A comment is gone", 404)
   if (new Set(rows.map((row) => row!.document_id)).size !== 1)
     throw new VisitorCommentPassError("Send comments from one page at a time", 409)
+  if (
+    input.comments.some(
+      (item, index) => !cleanVisitorText(item.quote ?? rows[index]!.body!)
+    )
+  )
+    throw new VisitorCommentPassError("Enter a quote", 409)
   const passed: Array<{ row: StoredVisitorComment; annotation: Annotation }> =
     []
   for (const item of input.comments) {

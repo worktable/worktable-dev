@@ -146,6 +146,8 @@ export function VisitorCommentsPanel({
   const queryClient = useQueryClient()
   const [resuming, setResuming] = useState<string | null>(null)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+  // Sent comments aren't offered again before the lists show them sent.
+  const [held, setHeld] = useState<ReadonlySet<string>>(new Set())
   const [sending, setSending] = useState(false)
   const recipients = useCommentRecipients(
     context.spaceId,
@@ -185,6 +187,9 @@ export function VisitorCommentsPanel({
         requestId,
       })
       unsettled.current = null
+      // Added for the team without a recipient, a comment stays sendable.
+      if (to !== NO_RECIPIENT)
+        setHeld((current) => new Set([...current, ...comments.map((c) => c.id)]))
       setSelected(new Set())
       const linkId = list.data?.comments.find(
         (comment) => comment.id === comments[0]?.id
@@ -248,21 +253,33 @@ export function VisitorCommentsPanel({
       </p>
     )
   const { comments, pausedLinks } = list.data
+  const sentOf = (comment: VisitorComment) => {
+    const annotation = comment.passed
+      ? byAnnotation.get(comment.passed.annotationId)
+      : undefined
+    return annotation ? annotationSentTo(annotation) : null
+  }
+  const isHeld = (comment: VisitorComment) =>
+    held.has(comment.id) && !sentOf(comment)
   const fresh = comments.filter(
-    (comment) => comment.status === "new" && comment.body
+    (comment) => comment.status === "new" && comment.body && !isHeld(comment)
   )
   const earlier = comments.filter((comment) => !fresh.includes(comment))
   // Earlier comments that never reached anyone, or whose recipient isn't
   // answering, can still be sent, so the picker stays for them.
   const canSendEarlier = earlier.some((comment) => {
-    if (!comment.body) return false
+    if (!comment.body || isHeld(comment)) return false
     if (!comment.passed) return true
     const annotation = byAnnotation.get(comment.passed.annotationId)
     if (!annotation) return false
     const sent = annotationSentTo(annotation)
     return !sent || sent.state === "failed"
   })
-  const chosen = fresh.filter((comment) => selected.has(comment.id))
+  // A send that went unanswered keeps its comments ticked, those it passed
+  // included, so trying again sends the same ones under the same id.
+  const chosen = comments.filter(
+    (comment) => selected.has(comment.id) && !isHeld(comment)
+  )
   const toggle = (id: string, on: boolean) =>
     setSelected((current) => {
       const next = new Set(current)
@@ -417,6 +434,7 @@ export function VisitorCommentsPanel({
                       }
                       recipients={recipients}
                       recipient={recipient}
+                      held={isHeld(comment)}
                       sending={sending}
                       onSend={send}
                       onViewComment={onViewComment}
@@ -579,6 +597,7 @@ function VisitorRow({
   recipients,
   recipient,
   selected,
+  held,
   selecting,
   onSelect,
   sending,
@@ -592,6 +611,8 @@ function VisitorRow({
   recipients: CommentRecipients | null
   recipient: ReturnType<typeof useRecipient>
   selected?: boolean
+  /** Just sent: not offered again until the lists show it sent. */
+  held?: boolean
   /** Ticked comments are sent from the bar below, not from each row. */
   selecting?: boolean
   onSelect?: (on: boolean) => void
@@ -635,6 +656,7 @@ function VisitorRow({
   // A team comment not loaded here (a page past the comments list's first
   // page) is unknown, not unsent, so it is not offered again.
   const sendable =
+    !held &&
     Boolean(comment.body) &&
     (!comment.passed ||
       (annotation !== undefined &&
@@ -793,6 +815,7 @@ function VisitorRow({
             comment={comment}
             recipients={recipients}
             initialRecipient={recipient.value}
+            onChooseRecipient={recipient.choose}
             busy={sending}
             onCancel={() => setForm(null)}
             onSubmit={async (item, to, includeName) => {
@@ -882,6 +905,7 @@ function NoteForm({
   comment,
   recipients,
   initialRecipient,
+  onChooseRecipient,
   busy,
   onSubmit,
   onCancel,
@@ -889,6 +913,8 @@ function NoteForm({
   comment: VisitorComment
   recipients: CommentRecipients | null
   initialRecipient: string
+  /** A pick made here is remembered like one made in To. */
+  onChooseRecipient: (id: string) => void
   busy: boolean
   onSubmit: (
     item: SendVisitorCommentsInput["comments"][number],
@@ -897,7 +923,13 @@ function NoteForm({
   ) => Promise<void>
   onCancel: () => void
 }) {
-  const [to, setTo] = useState(initialRecipient)
+  const [picked, setTo] = useState(initialRecipient)
+  // One that left the list since it was picked goes nowhere, as the button says.
+  const to =
+    picked === NO_RECIPIENT ||
+    recipients?.options.some((option) => option.id === picked)
+      ? picked
+      : NO_RECIPIENT
   const [note, setNote] = useState("")
   const [quote, setQuote] = useState(comment.body ?? "")
   const [editingQuote, setEditingQuote] = useState(false)
@@ -975,7 +1007,10 @@ function NoteForm({
               <CommentRecipientSelect
                 recipients={recipients}
                 value={to}
-                onChange={setTo}
+                onChange={(next) => {
+                  setTo(next)
+                  onChooseRecipient(next)
+                }}
               />
             </Suspense>
           </div>

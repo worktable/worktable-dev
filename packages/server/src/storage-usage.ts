@@ -148,6 +148,8 @@ const BATCH = 128
 const MAX_NOTES = 20_000
 const NOTE_DELAY_MS = 1_000
 const FIRST_COUNT_DELAY_MS = 5_000
+/** How long a write that needs room waits for the first count before going ahead. */
+const FIRST_COUNT_WAIT_MS = 10_000
 const RECOUNT_INTERVAL_MS = 6 * 60 * 60 * 1000
 /** Free space is sampled at most this often, after applied notes. */
 const DISK_SAMPLE_MS = 60_000
@@ -546,6 +548,33 @@ export class StorageAccount {
     }
   }
 
+  /**
+   * Resolves once the first count is ready, starting it now if it was still
+   * waiting for its delay, or after `timeoutMs` at most.
+   */
+  async firstCount(timeoutMs: number): Promise<void> {
+    if (this.#tree || this.#stopped) return
+    if (this.#firstTimer) {
+      clearTimeout(this.#firstTimer)
+      this.#firstTimer = null
+      this.recount()
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timedOut = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs)
+      timer.unref?.()
+    })
+    try {
+      while (!this.#tree && !this.#stopped) {
+        const work = this.#work
+        if ((await Promise.race([work.then(() => "done"), timedOut.then(() => "late")])) === "late")
+          return
+      }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   /** Resolves once queued notes and counts are applied. For tests. */
   async settled(): Promise<void> {
     if (this.#firstTimer) {
@@ -643,6 +672,15 @@ export function noteStorageChange(path: string): void {
 /** What this Worktable takes on disk, from memory; null until counted. */
 export function storageUsage(): StorageUsage | null {
   return active?.summary() ?? null
+}
+
+/**
+ * Resolves once the first count is ready, so a write that needs room isn't
+ * let through uncounted in the seconds after start. It starts the count at
+ * once if it was still waiting, and gives up after a few seconds.
+ */
+export function storageCounted(timeoutMs = FIRST_COUNT_WAIT_MS): Promise<void> {
+  return active?.firstCount(timeoutMs) ?? Promise.resolve()
 }
 
 /** Notes taken by the running count, and how many its totals include. */

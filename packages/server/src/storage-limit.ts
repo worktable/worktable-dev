@@ -30,8 +30,10 @@
 // limit: pruning starts and Worktable writes that add bytes are refused
 // until it is back under.
 //
-// Until the first count, a few seconds after the server starts, nothing is
-// refused.
+// The first count runs a few seconds after the server starts. A write that
+// needs room before then starts it at once and waits for it, a few seconds
+// at most; only if it takes longer than that is the write let through
+// uncounted.
 
 import { ENV } from "@worktable/hosted-contract"
 import { logError } from "./debug-log.ts"
@@ -43,6 +45,7 @@ import {
 } from "./storage-pruned.ts"
 import {
   onStorageApplied,
+  storageCounted,
   storageNoteSequences,
   storageUsage,
   type StorageUsage,
@@ -247,6 +250,7 @@ export async function reserveStorage(room: {
   replaces?: () => Promise<number>
 }): Promise<StorageReservation> {
   if (!(room.adds > 0)) return NO_RESERVATION
+  if (!storageUsage()) await storageCounted()
   const usage = storageUsage()
   if (!usage) return NO_RESERVATION
   if (usedBytes(usage) + room.adds <= storageLimitBytes()) {
@@ -283,6 +287,8 @@ export function withAdmittedRoom<T>(
   write: (admit: (bytes: number, options?: StorageAdmission) => void) => Promise<T>
 ): Promise<T> {
   return retryAfterPruning(async () => {
+    // Before the first count, start it and wait, rather than admit uncounted.
+    if (!storageUsage()) await storageCounted()
     const room: { reservation: StorageReservation | null } = { reservation: null }
     try {
       return await write((bytes, options) => {

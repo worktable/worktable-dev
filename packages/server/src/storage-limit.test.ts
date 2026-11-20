@@ -687,6 +687,24 @@ describe("storage limit", () => {
     ).toBeInstanceOf(StorageLimitError)
   })
 
+  it("refuses a write that doesn't fit from the first moment after start", async () => {
+    await createDoc("big", 32 * KB)
+    // A server just started: nothing counted yet, the first count still a
+    // minute away.
+    for (const stop of stops) await stop()
+    setStorageLimitForTests(80 * KB, { promptPruneMs: 1_000 })
+    stops = [startStorageLimits(), startStorageAccounting({ firstCountDelayMs: 60_000 })]
+    expect(storageUsage()).toBeNull()
+    const started = Date.now()
+    expect(await createDoc("more", 16 * KB).catch((error) => error)).toBeInstanceOf(
+      StorageLimitError
+    )
+    // The write started the count instead of waiting out its delay.
+    expect(Date.now() - started).toBeLessThan(30_000)
+    expect(storageUsage()).not.toBeNull()
+    await createDoc("small", 1 * KB)
+  })
+
   it("takes its limit from the environment, within the ceiling outside Cloud", () => {
     const saved = { limit: process.env[ENV.STORAGE_LIMIT_BYTES], hosted: process.env[ENV.HOSTED] }
     const limitWith = (value: string | undefined, hosted: boolean) => {

@@ -438,13 +438,14 @@ function PaletteBody({
     rows.findIndex((row) => row.key === activeKey)
   )
   const activeRow = rows[activeAt]
-  const optionId = (row: Row) => `${listId}-${row.key}`
+  // By place in the list: a row's key can hold a path, which an id can't.
+  const optionId = (at: number) => `${listId}-${at}`
 
   const move = (by: number) => {
-    const row = rows[(activeAt + by + rows.length) % rows.length]
-    if (!row) return
-    setActiveKey(row.key)
-    document.getElementById(optionId(row))?.scrollIntoView({ block: "nearest" })
+    if (rows.length === 0) return
+    const to = (activeAt + by + rows.length) % rows.length
+    setActiveKey(rows[to]?.key ?? null)
+    document.getElementById(optionId(to))?.scrollIntoView({ block: "nearest" })
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -461,7 +462,7 @@ function PaletteBody({
       if (!activeRow) return
       // Results still on screen from an earlier query aren't an answer yet.
       if (typed && !settled && activeRow.key.startsWith("result:")) return
-      const element = document.getElementById(optionId(activeRow))
+      const element = document.getElementById(optionId(activeAt))
       if (
         (event.metaKey || event.ctrlKey) &&
         element instanceof HTMLAnchorElement
@@ -495,7 +496,7 @@ function PaletteBody({
           aria-autocomplete="list"
           aria-expanded={rows.length > 0}
           aria-controls={listId}
-          aria-activedescendant={activeRow ? optionId(activeRow) : undefined}
+          aria-activedescendant={activeRow ? optionId(activeAt) : undefined}
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
@@ -561,10 +562,10 @@ function PaletteBody({
         data-worktable-search-results
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 empty:hidden"
       >
-        {rows.map((row) => (
+        {rows.map((row, at) => (
           <PaletteRow
             key={row.key}
-            id={optionId(row)}
+            id={optionId(at)}
             row={row}
             tokens={row.key.startsWith("result:") ? tokens : []}
             active={row === activeRow}

@@ -60,6 +60,24 @@ export class HttpError extends Error {
   }
 }
 
+/** Refusals whose reason the person can act on. */
+const REFUSALS_WITH_A_REASON = new Set(["STORAGE_LIMIT", "PAYLOAD_TOO_LARGE"])
+
+/**
+ * Why the server refused a write, when the person can do something about it:
+ * the Worktable is at its storage limit, or the file is too large. The server
+ * writes the sentence, with the limit it enforces. Anything else is null, and
+ * the caller keeps its own message.
+ */
+export function refusalReason(error: unknown): string | null {
+  if (!(error instanceof HttpError)) return null
+  const body = error.body as { code?: unknown; error?: unknown } | null
+  if (typeof body?.code !== "string" || !REFUSALS_WITH_A_REASON.has(body.code)) {
+    return null
+  }
+  return typeof body.error === "string" && body.error ? body.error : null
+}
+
 /** Exact replacement path supplied when a document moved during a request. */
 export function canonicalConflictPath(
   error: unknown,

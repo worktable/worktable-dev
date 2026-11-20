@@ -54,6 +54,7 @@ import {
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { createRecordCollection } from "@/lib/records-api"
 import { createWidget } from "@/lib/widgets-api"
+import { refusalReason } from "@/lib/http"
 import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 
 const NewCollectionDialog = lazy(() =>
@@ -173,12 +174,14 @@ export function SpaceNewActions({
     }
     const paths: string[] = []
     let failed: File | null = null
+    let reason: string | null = null
     for (const file of files) {
       try {
         paths.push(await upload(spaceId, folder ?? "", file))
       } catch (err) {
         console.error("File upload failed:", err)
         failed = file
+        reason = refusalReason(err)
         break
       }
     }
@@ -193,8 +196,9 @@ export function SpaceNewActions({
     if (failed) {
       toast.error(
         paths.length === 0
-          ? "Couldn’t upload the file. Try again."
-          : `Uploaded ${paths.length} of ${files.length} files. Couldn’t upload ${failed.name}.`
+          ? (reason ?? "Couldn’t upload the file. Try again.")
+          : `Uploaded ${paths.length} of ${files.length} files. Couldn’t upload ${failed.name}.`,
+        paths.length > 0 && reason ? { description: reason } : undefined
       )
       return
     }
@@ -283,7 +287,7 @@ export function SpaceNewActions({
       })
       toast.success("HTML doc shell created")
     } catch (err) {
-      toast.error("Failed to create HTML doc shell")
+      toast.error(refusalReason(err) ?? "Failed to create HTML doc shell")
       console.error("Failed to create HTML doc shell:", err)
       throw err
     }

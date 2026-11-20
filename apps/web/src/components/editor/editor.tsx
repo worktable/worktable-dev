@@ -218,14 +218,40 @@ export interface EditorFiles {
   upload?: (file: File) => Promise<string>
 }
 
+/** What the file handlers need of the editor they were made for. */
+interface PlacedBlocks {
+  getBlock(id: string): { props?: unknown } | undefined
+  removeBlocks(ids: string[]): unknown
+}
+
 /** The file handlers an editor made once reads, always the latest given. */
 class LatestFiles {
   private files: EditorFiles | undefined
+  private editor: PlacedBlocks | null = null
   constructor(files: EditorFiles | undefined) {
     this.files = files
   }
   set(files: EditorFiles | undefined): void {
     this.files = files
+  }
+  /** The editor, once it is made. */
+  attach(editor: PlacedBlocks): void {
+    this.editor = editor
+  }
+  /**
+   * Whether a paste or drop placed this block for the file: such a block is
+   * named after its file and has nothing to show until the upload ends.
+   */
+  placed(file: File, blockId: string | undefined): boolean {
+    if (!blockId) return false
+    const props = this.editor?.getBlock(blockId)?.props as
+      | { name?: unknown; url?: unknown }
+      | undefined
+    return props?.name === file.name && !props.url
+  }
+  /** Take out a placed block whose upload failed. */
+  removePlaced(blockId: string): void {
+    if (this.editor?.getBlock(blockId)) this.editor.removeBlocks([blockId])
   }
   resolve(url: string): string {
     return this.files ? this.files.resolve(url) : url
@@ -337,7 +363,22 @@ function EditorInner({
       ? {
           resolveFileUrl: async (url: string) => currentFiles.resolve(url),
           ...(files.upload
-            ? { uploadFile: (file: File) => currentFiles.upload(file) }
+            ? {
+                uploadFile: async (file: File, blockId?: string) => {
+                  const placed = currentFiles.placed(file, blockId)
+                  try {
+                    return await currentFiles.upload(file)
+                  } catch (error) {
+                    // The file panel shows its own failure.
+                    if (!placed || !blockId) throw error
+                    // BlockNote leaves a pasted or dropped file's block
+                    // loading for good when its upload fails. Let its update
+                    // pass with nothing to set, then take the block out.
+                    setTimeout(() => currentFiles.removePlaced(blockId))
+                    return {}
+                  }
+                },
+              }
             : {}),
         }
       : {}),
@@ -368,6 +409,8 @@ function EditorInner({
           initialContent: getBlockNoteCreationContent(normalizedInitialContent),
         }
   )
+
+  useEffect(() => currentFiles.attach(editor), [currentFiles, editor])
 
   // This editor is only rendered by client-side document routes. BlockNote
   // mounts its DOM in a ref callback, before this passive readiness effect;

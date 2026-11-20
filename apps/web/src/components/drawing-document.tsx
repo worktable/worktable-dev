@@ -31,7 +31,7 @@ import {
 } from "@/lib/drawing-drafts"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import type { DocumentRendererProps } from "@/lib/document-renderers"
-import { HttpError } from "@/lib/http"
+import { HttpError, refusalReason } from "@/lib/http"
 import { refreshDrawingHistory } from "@/lib/drawing-history"
 import { installDrawingBindings } from "@/lib/drawing-bindings"
 
@@ -220,12 +220,15 @@ function DrawingEditor({
         if (!disposed) {
           setConflictError(conflict)
           setStatus("Not saved")
+          // A refusal the person can act on says so. The save keeps
+          // trying, so it goes through once they have made room.
           setError(
             conflict
               ? "This drawing changed elsewhere. Save a copy to keep your changes, then reload."
-              : retryable
-                ? "Changes haven’t synced. Retrying…"
-                : "Couldn’t save your changes. Download a copy to keep them."
+              : (refusalReason(cause) ??
+                  (retryable
+                    ? "Changes haven’t synced. Retrying…"
+                    : "Couldn’t save your changes. Download a copy to keep them."))
           )
         }
         console.error("Drawing save failed", cause)

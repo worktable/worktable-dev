@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "@worktable/ui/components/sonner"
 import { createDoc } from "@/lib/docs-api"
+import { refusalReason } from "@/lib/http"
 import { docQueryKeys } from "@/lib/docs-queries"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { useNewDocumentLifetime } from "@/lib/lifetime"
@@ -63,7 +64,7 @@ export function useNewDocIn(onCreated?: () => void) {
         })
         toast.success("Doc created")
       } catch (err) {
-        toast.error("Failed to create doc")
+        toast.error(refusalReason(err) ?? "Failed to create doc")
         console.error("Failed to create doc:", err)
       } finally {
         pendingRef.current = false

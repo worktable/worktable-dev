@@ -14,6 +14,7 @@ import {
 } from "@worktable/ui/components/responsive-dialog"
 import { listDocuments, writeDocumentSource } from "@/lib/documents-api"
 import { documentQueryKeys } from "@/lib/documents-queries"
+import { refusalReason } from "@/lib/http"
 import { documentPathKey } from "@/lib/document-views"
 
 export function NewDrawingDialog({
@@ -70,7 +71,7 @@ export function NewDrawingDialog({
       onClose()
     } catch (cause) {
       console.error("Drawing creation failed", cause)
-      setError("Couldn’t create a drawing. Try again.")
+      setError(refusalReason(cause) ?? "Couldn’t create a drawing. Try again.")
     } finally {
       setPending(false)
     }

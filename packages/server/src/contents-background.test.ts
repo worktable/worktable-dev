@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parseChangedFiles } from "./contents-background.ts"
@@ -65,5 +65,18 @@ describe("parsing in the background", () => {
     const [row] = kept()
     expect(kept()).toHaveLength(1)
     expect(derivedStore().readContentsLines({ ...row!, spaceId })?.text).toContain("Second edition")
+  }, 60_000)
+
+  it("goes on past a file it can't read, and reads it once it can", async () => {
+    // Root reads any file, so the unreadable one can't be made there.
+    if (process.getuid?.() === 0) return
+    const docs = join(root, "spaces", spaceId, "docs")
+    await writeFile(join(docs, "a-locked.pdf"), smallPdf([{ text: "Locked away" }]))
+    await writeFile(join(docs, "b-open.pdf"), smallPdf([{ text: "Open to read" }]))
+    await chmod(join(docs, "a-locked.pdf"), 0o000)
+    noteSpaceChanged(spaceId)
+    expect(await parseChangedFiles(spaceId)).toBe(1)
+    await chmod(join(docs, "a-locked.pdf"), 0o644)
+    expect(await parseChangedFiles(spaceId)).toBe(1)
   }, 60_000)
 })

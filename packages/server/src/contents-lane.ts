@@ -59,6 +59,7 @@ const WAITING_PER_OWNER = 4
 export type ParsingFailure =
   | "off"
   | "busy"
+  | "cancelled"
   | "source"
   | "time"
   | "memory"
@@ -88,12 +89,15 @@ export interface ParsingJob {
   command?: readonly string[]
   /** Whose job it is, the person or agent asking, for the bound on jobs waited for. */
   owner?: string
+  /** Ends the job, queued or running, as cancelled; a running worker is killed. */
+  signal?: AbortSignal
 }
 
 const FAILURE_MESSAGES: Record<ParsingFailure, string> = {
   off: "Reading this kind of file is turned off on this Worktable.",
   busy: "Worktable is busy reading other files. Ask again in a moment.",
   source: "Worktable couldn't read this file to parse it. Ask again in a moment.",
+  cancelled: "Worktable stopped reading this file. Ask again in a moment.",
   time: "Reading this file took too long, so Worktable stopped.",
   memory: "Reading this file needed too much memory, so Worktable stopped.",
   output: "This file gave more text than Worktable keeps, so it stopped.",
@@ -152,6 +156,9 @@ async function runWorker(job: ParsingJob): Promise<ParsingResult> {
   // Held by timers the job owns: Bun 1.3 can collect an unreferenced
   // AbortSignal.timeout before it fires.
   const deadline = setTimeout(() => stop("time"), limits.timeMs)
+  const cancel = () => stop("cancelled")
+  job.signal?.addEventListener("abort", cancel)
+  if (job.signal?.aborted) cancel()
   const watching = setInterval(
     () => {
       void residentBytes(child.pid).then((bytes) => {
@@ -211,6 +218,7 @@ async function runWorker(job: ParsingJob): Promise<ParsingResult> {
   } finally {
     clearTimeout(deadline)
     clearInterval(watching)
+    job.signal?.removeEventListener("abort", cancel)
     ended.abort()
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
     await rm(workDir, { recursive: true, force: true })
@@ -233,6 +241,10 @@ async function drain(): Promise<void> {
     for (;;) {
       const next = waiting.shift() ?? background.shift()
       if (!next) return
+      if (next.job.signal?.aborted) {
+        next.resolve(failed("cancelled"))
+        continue
+      }
       next.resolve(await runWorker(next.job).catch(() => failed("crashed")))
     }
   } finally {

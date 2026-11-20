@@ -41,11 +41,16 @@ const lookedAt = new Map<string, string>()
  * Parses the files of a Space whose bytes changed since they were last
  * looked at and have no contents kept; returns how many it parsed.
  */
-export async function parseChangedFiles(spaceId: string): Promise<number> {
+export async function parseChangedFiles(
+  spaceId: string,
+  signal?: AbortSignal
+): Promise<number> {
+  const stopped = () => signal?.aborted === true
   return runWithoutTeamIdentity(async () => {
     const catalog = await readDocumentCatalogSnapshot(spaceId)
     let parsed = 0
     for (const entry of catalog.entries) {
+      if (stopped()) break
       if (entry.kind !== "document") continue
       if (entry.descriptor.format.id !== BUILTIN_DOCUMENT_FORMATS.file) continue
       const reader = contentsReaderFor(entry.descriptor.path)
@@ -57,21 +62,31 @@ export async function parseChangedFiles(spaceId: string): Promise<number> {
         lookedAt.set(seen, stamp)
         continue
       }
-      const resolved = await resolveCurrentFile({ spaceId, path: entry.descriptor.path })
-      if (resolved.kind !== "file") continue
-      const key: DerivedKey = {
-        spaceId,
-        documentId: resolved.current.documentId,
-        version: await contentHashOf(resolved.current.pinned),
-        kind: "contents",
-        variant: "",
-        maker: reader,
-        makerVersion: CONTENTS_READER_VERSIONS[reader],
+      // A file that can't be resolved or read now, gone or mid-change, is
+      // looked at again next time; the Space's other files go on.
+      let key: DerivedKey
+      let resolved: Awaited<ReturnType<typeof resolveCurrentFile>>
+      try {
+        resolved = await resolveCurrentFile({ spaceId, path: entry.descriptor.path })
+        if (resolved.kind !== "file") continue
+        key = {
+          spaceId,
+          documentId: resolved.current.documentId,
+          version: await contentHashOf(resolved.current.pinned),
+          kind: "contents",
+          variant: "",
+          maker: reader,
+          makerVersion: CONTENTS_READER_VERSIONS[reader],
+        }
+      } catch {
+        continue
       }
       if (!derivedStore().getContents(key)) {
-        const result = await parseVersion(key, resolved.current.pinned, "background")
-        // A busy lane or a file mid-change is looked at again next time.
-        if (result.kind === "failed" && (result.why === "busy" || result.why === "source")) continue
+        const result = await parseVersion(key, resolved.current.pinned, "background", {
+          ...(signal ? { signal } : {}),
+        })
+        // A busy lane, a file mid-change or a stop is looked at again next time.
+        if (result.kind === "failed" && ["busy", "source", "cancelled"].includes(result.why)) continue
         parsed += 1
       }
       lookedAt.set(seen, stamp)
@@ -80,15 +95,21 @@ export async function parseChangedFiles(spaceId: string): Promise<number> {
   })
 }
 
-/** Parses files as their Spaces change, and every Space a while after start. */
-export function startContentsBackground(): () => void {
-  let stopped = false
+/**
+ * Parses files as their Spaces change, and every Space a while after start.
+ * Returns how to stop: the file being parsed is cancelled, its worker
+ * killed and nothing kept, no file is started after it, and the promise
+ * settles once the pass has ended, so a server's shutdown never leaves a
+ * parse writing after it.
+ */
+export function startContentsBackground(): () => Promise<void> {
+  const stopping = new AbortController()
   const due = new Map<string, ReturnType<typeof setTimeout>>()
   // One Space at a time, so a burst of changes never queues work twice.
   let chain: Promise<unknown> = Promise.resolve()
   const run = (spaceId: string) => {
     chain = chain
-      .then(() => (stopped ? 0 : parseChangedFiles(spaceId)))
+      .then(() => (stopping.signal.aborted ? 0 : parseChangedFiles(spaceId, stopping.signal)))
       .catch(() => {
         // Looked over again at the Space's next change.
       })
@@ -115,11 +136,12 @@ export function startContentsBackground(): () => void {
       .catch(() => {})
   }, FIRST_PASS_MS)
   first.unref?.()
-  return () => {
-    stopped = true
+  return async () => {
+    stopping.abort()
     stopListening()
     clearTimeout(first)
     for (const timer of due.values()) clearTimeout(timer)
     due.clear()
+    await chain
   }
 }

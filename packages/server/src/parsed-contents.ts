@@ -13,9 +13,9 @@
 // What ends a parse decides what is kept. A reader's contents, and a file it
 // refused (encrypted, damaged) or stopped on (time, memory, output), are
 // kept for that version, so the next read needn't parse again. A lane that
-// was busy, a file that couldn't be read, a reader switched off, or a
-// Worktable with no room left to keep the output are answered as they are
-// and tried again on the next read.
+// was busy, a file that couldn't be read, a reader switched off, a
+// Worktable with no room left to keep the output, or a parse cancelled by a
+// server stopping are answered as they are and tried again on the next read.
 
 import { contentsPageFromStore } from "./contents-pages.ts"
 import { parseInLane, type ParsingResult } from "./contents-lane.ts"
@@ -52,7 +52,7 @@ function keptBytes(result: ParsingResult): number {
 
 /** Whether how a parse ended belongs to the file, so it is kept for it. */
 function keptFor(result: ParsingResult): boolean {
-  return result.kind !== "failed" || !["busy", "source", "off"].includes(result.why)
+  return result.kind !== "failed" || !["busy", "source", "off", "cancelled"].includes(result.why)
 }
 
 /**
@@ -63,7 +63,7 @@ export function parseVersion(
   key: DerivedKey,
   pinned: PinnedFile,
   priority: "waiting" | "background",
-  caller?: string
+  options: { caller?: string; signal?: AbortSignal } = {}
 ): Promise<ParsingResult> {
   const id = keyId(key)
   const running = parsing.get(id)
@@ -73,7 +73,8 @@ export function parseVersion(
     reader: key.maker,
     priority,
     // Bounded per caller, or per Space when no caller is named.
-    owner: caller ?? key.spaceId,
+    owner: options.caller ?? key.spaceId,
+    ...(options.signal ? { signal: options.signal } : {}),
     bytes: async (write) => {
       // The bytes parsed are the version the output is kept for.
       for await (const chunk of pinnedFileStream(pinned, 0, pinned.size, sha256Check(hex))) {
@@ -158,7 +159,9 @@ export async function readParsedContents(options: {
       timer = setTimeout(() => resolve(null), PARSE_WAIT_MS)
     })
     const result = await Promise.race([
-      parseVersion(key, file.current.pinned, "waiting", options.caller),
+      parseVersion(key, file.current.pinned, "waiting", {
+        ...(options.caller ? { caller: options.caller } : {}),
+      }),
       waited,
     ]).finally(() => clearTimeout(timer))
     if (result && !keptFor(result) && result.kind === "failed") {

@@ -2354,7 +2354,7 @@ export function startServer(
   const stopGrokBot = workspaceRejected ? () => Promise.resolve() : startGrokBotRuntime();
   const stopMcpEvents = workspaceRejected ? () => Promise.resolve() : startMcpEventsRuntime();
   const stopDerivedSweeps = workspaceRejected ? () => {} : startDerivedSweeps();
-  const stopContentsBackground = workspaceRejected ? () => {} : startContentsBackground();
+  const stopContentsBackground = workspaceRejected ? () => Promise.resolve() : startContentsBackground();
   const stopCloudTasks = workspaceRejected ? () => Promise.resolve() : startCloudTaskRuntime();
   const stopAutoReplyNotices = startAutoReplyNotices();
   // Index what waits on each person and agent before anyone asks.
@@ -2452,7 +2452,7 @@ export function startServer(
     const grokBotStopping = stopGrokBot();
     stopAutoReplyNotices();
     stopDerivedSweeps();
-    stopContentsBackground();
+    const contentsBackgroundStopping = stopContentsBackground();
     const mcpEventsStopping = stopMcpEvents();
     const cloudTasksStopping = stopCloudTasks();
     watcher.stop({ flushPending: true });
@@ -2506,6 +2506,7 @@ export function startServer(
         await settle(stopLinked);
         await settle(() => grokBotStopping);
         await settle(() => mcpEventsStopping);
+        await settle(() => contentsBackgroundStopping);
         await settle(() => cloudTasksStopping);
         await settle(stopBackupNotifier);
         await settle(stopStorageLimits);

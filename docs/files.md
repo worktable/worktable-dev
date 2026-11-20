@@ -537,7 +537,7 @@ plain name (`apps/web/src/components/viewer/viewer-frame.tsx`). Scripts inside
 a PDF never run, forms can't be filled in, and a link out is opened by the
 app's page, to the web or mail only. A password is asked for in the app's
 page and kept only for that open. The pictures of pages beside the file are
-drawn in the frame from the open file and never stored. Its limits: a file up to 64 MiB, images
+drawn in the frame from the open file and never stored. A PDF a Doc embeds is a card that opens the same viewer full screen. Its limits: a file up to 64 MiB, images
 up to 64 megapixels, and 30 seconds to show the first page; past any of them
 the page shows the card. `WORKTABLE_VIEWER_PDF=off` turns the viewer off, and
 PDFs go back to a card with Download. Another viewer of a parsed format uses

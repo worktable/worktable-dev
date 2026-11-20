@@ -34,6 +34,8 @@ import { DocTable } from "@/components/document/doc-table"
 import { DocDetails, DocSummary } from "@/components/document/doc-details"
 import { DataTooltips } from "@/components/document/data-tooltip"
 import { ImageViewControl } from "@/components/viewer/image-view-control"
+import { PdfViewControl } from "@/components/viewer/pdf-view-control"
+import { PdfCard } from "@/components/document/pdf-card"
 import { viewableImage } from "@/lib/viewable-images"
 import { NumberedList } from "@worktable/ui/lib/numbered-list"
 import { markdownTitleLine } from "@worktable/ui/document-reading-preview"
@@ -48,7 +50,7 @@ import { useDeploymentInfo } from "@/hooks/use-deployment-info"
 import { externalLinkProps, worktableLinkOrigins } from "@/lib/external-links"
 import { BASE_URL } from "@/lib/http"
 import { useTheme } from "@/components/theme-provider"
-import { resolveDocLink } from "@worktable/types"
+import { filePolicy, resolveDocLink } from "@worktable/types"
 
 /** Inside a link, an image keeps the link's click and focus. */
 const InLink = createContext(false)
@@ -335,6 +337,21 @@ export function MarkdownViewer({
                   },
                   img: ({ node, title, src, ...props }) => {
                     void node
+                    // A Space's PDF is a card that opens it full screen.
+                    if (
+                      filesOn &&
+                      typeof src === "string" &&
+                      resolveDocLink(docPath, src) !== null &&
+                      filePolicy(resolveDocLink(docPath, src)!, "page") ===
+                        "pdf"
+                    ) {
+                      return (
+                        <PdfCard
+                          target={src}
+                          href={renderDocLinkHref(spaceId, docPath, src)}
+                        />
+                      )
+                    }
                     // A Space's image waits for its version, so it loads once.
                     if (
                       filesOn &&
@@ -343,7 +360,9 @@ export function MarkdownViewer({
                       typeof src === "string" &&
                       resolveDocLink(docPath, src) !== null
                     ) {
-                      return <span aria-hidden className="worktable-image-pending" />
+                      return (
+                        <span aria-hidden className="worktable-image-pending" />
+                      )
                     }
                     const source =
                       filesOn && typeof src === "string"
@@ -450,6 +469,17 @@ export function MarkdownViewer({
             </AfterTitleContext>
           </MarkdownErrorBoundary>
           <ImageViewControl frameRef={article} openOnClick />
+          {filesOn ? (
+            <PdfViewControl
+              frameRef={article}
+              resolve={(ref) =>
+                embedSourceUrl(spaceId, docPath, ref, {
+                  versions: fileVersions,
+                  at: filesAt,
+                })
+              }
+            />
+          ) : null}
         </article>
       </div>
     </div>

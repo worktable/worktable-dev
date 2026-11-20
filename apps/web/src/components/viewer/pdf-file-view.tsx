@@ -80,9 +80,10 @@ export default function PdfFileView({
   path: string
   name: string
   fileUrl: string
-  byteLength: number
+  /** The file's size when the page knows it. */
+  byteLength?: number | undefined
   /** What the page says about the file, before the viewer's tools. */
-  leading: ReactNode
+  leading?: ReactNode
 }) {
   const queryClient = useQueryClient()
   const frame = useRef<ViewerFrameHandle>(null)

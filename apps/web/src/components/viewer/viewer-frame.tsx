@@ -67,7 +67,8 @@ export function ViewerFrame({
   title: string
   /** The file's bytes at the version its page loaded. */
   fileUrl: string
-  byteLength: number
+  /** The file's size when the page knows it; else the first read finds it. */
+  byteLength?: number | undefined
   startPage?: number
   className?: string
   onShown: (state: ViewerState) => void
@@ -138,7 +139,8 @@ export function ViewerFrame({
     let port: MessagePort | null = null
     let over = false
     let etag: string | null = null
-    const whole = byteLength <= VIEWER_WHOLE_FILE_BYTES
+    // The file's size: from its page, or else from the first response.
+    let length = byteLength ?? -1
     const abort = new AbortController()
 
     const send = (
@@ -161,7 +163,7 @@ export function ViewerFrame({
     ): Promise<ArrayBuffer | null> => {
       const response = await authenticatedFetch(fileUrl, {
         signal: abort.signal,
-        ...(begin === 0 && end === byteLength
+        ...(begin === 0 && end === length
           ? {}
           : { headers: { Range: `bytes=${begin}-${end - 1}` } }),
       })
@@ -173,13 +175,38 @@ export function ViewerFrame({
         handlers.current.onChanged()
         return null
       }
+      if (length < 0) {
+        // The whole file, or a range that names the whole file's size.
+        const total = /\/(\d+)$/.exec(
+          response.headers.get("content-range") ?? ""
+        )
+        length = total
+          ? Number(total[1])
+          : Number(response.headers.get("content-length") ?? -1)
+      }
       return response.arrayBuffer()
     }
+    /** The file's first bytes, or all of them when it is small. */
+    const first = async (): Promise<{
+      data: ArrayBuffer
+      whole: boolean
+    } | null> => {
+      if (length < 0) {
+        const head = await read(0, VIEWER_FIRST_BYTES)
+        if (!head || length < 0) return null
+        if (head.byteLength >= length) return { data: head, whole: true }
+        if (length > VIEWER_WHOLE_FILE_BYTES)
+          return { data: head, whole: false }
+      }
+      const whole = length <= VIEWER_WHOLE_FILE_BYTES
+      const data = await read(
+        0,
+        whole ? length : Math.min(VIEWER_FIRST_BYTES, length)
+      )
+      return data ? { data, whole } : null
+    }
     // The file starts loading with the frame, not after it.
-    const start = read(
-      0,
-      whole ? byteLength : Math.min(VIEWER_FIRST_BYTES, byteLength)
-    ).catch(() => null)
+    const start = first().catch(() => null)
     // The time to show the file, paused while the reader types a password.
     let deadline = window.setTimeout(() => refuse("failed"), SHOW_DEADLINE_MS)
     answerPassword.current = (password) => {
@@ -208,17 +235,17 @@ export function ViewerFrame({
       void open()
     }
     const open = async () => {
-      const data = await start
-      if (!data) return refuse("failed")
+      const opened = await start
+      if (!opened) return refuse(tooLarge ? "too-large" : "failed")
       send(
         {
           type: "viewer.open",
-          byteLength,
-          start: data,
-          whole,
+          byteLength: length,
+          start: opened.data,
+          whole: opened.whole,
           ...(startPage ? { page: startPage } : {}),
         },
-        [data]
+        [opened.data]
       )
     }
     const onMessage = async (event: MessageEvent) => {
@@ -226,7 +253,7 @@ export function ViewerFrame({
       if (!message || over || message.token !== secret) return
       switch (message.type) {
         case "viewer.read": {
-          const range = clampViewerRead(message.begin, message.end, byteLength)
+          const range = clampViewerRead(message.begin, message.end, length)
           // The whole of what it asked for, or nothing: pdf.js can't use
           // part of a piece.
           // A read that fails is tried twice more, a moment apart; one that

@@ -266,6 +266,36 @@ test("a PDF whose bytes stop arriving says so instead of waiting", async ({
     timeout: 15_000,
   })
   await page.unroute("**/documents/file?*")
+
+test("a PDF in a Doc opens full screen, and on to its page", async ({
+  page,
+}) => {
+  const created = await page.request.post(
+    `${harness.apiUrl}/api/spaces/papers/docs`,
+    {
+      data: {
+        title: "Reading list",
+        content: [
+          { type: "paragraph", content: "This week:" },
+          { type: "file", props: { url: "report.pdf", name: "report.pdf" } },
+        ],
+      },
+    }
+  )
+  expect(created.ok()).toBe(true)
+  const { path } = (await created.json()) as { path: string }
+  await page.goto(`${harness.webUrl}/spaces/papers/documents/${path}`)
+  await page.getByText("report.pdf", { exact: true }).click()
+  const viewer = page.getByRole("dialog")
+  await expect(
+    viewer
+      .frameLocator('iframe[data-viewer-frame="pdf"]')
+      .getByText("First page of the report")
+  ).toBeVisible({ timeout: 60_000 })
+  await expect(viewer.getByText("of 3")).toBeVisible()
+  await viewer.getByLabel("Open file page").click()
+  await expect(page).toHaveURL(/\/documents\/report\.pdf$/)
+  await expect(page.getByRole("dialog")).toBeHidden()
 })
 
 test("a document put in the viewer's place is never handed the file", async ({

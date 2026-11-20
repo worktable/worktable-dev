@@ -16,13 +16,6 @@ const readers: Record<string, ParsingReader> = {
       }
     },
   },
-  slow: {
-    version: 1,
-    async read(bytes) {
-      await Bun.sleep(300)
-      return { parts: [{ label: "All", text: new TextDecoder().decode(bytes) }], facts: {}, gaps: [] }
-    },
-  },
   // A parser stuck in a loop that never yields: only a kill stops it.
   hang: {
     version: 1,
@@ -37,7 +30,9 @@ const readers: Record<string, ParsingReader> = {
     async read() {
       const held: Uint8Array[] = []
       for (let i = 0; i < 12; i += 1) held.push(new Uint8Array(32 * 1024 * 1024).fill(1))
-      await Bun.sleep(10_000)
+      // Keeps the process, and what it holds, until the lane stops it.
+      setInterval(() => held.length, 1_000)
+      await new Promise(() => {})
       return { parts: [], facts: { held: held.length }, gaps: [] }
     },
   },

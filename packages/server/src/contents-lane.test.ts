@@ -82,12 +82,12 @@ describe("the parsing lane", () => {
     const finished: string[] = []
     const track = (name: string, job: Promise<unknown>) => job.then(() => finished.push(name))
     await Promise.all([
-      track("first", parse("slow", { priority: "background" })),
-      track("second", parse("slow", { priority: "background" })),
+      track("first", parse("echo", { priority: "background" })),
+      track("second", parse("echo", { priority: "background" })),
       track("asked", parse("echo", { priority: "waiting" })),
     ])
-    // The first background job had started; the one someone asked for
-    // goes before the background job still waiting.
+    // The first background job starts as it is queued; the one someone
+    // asked for goes before the background job still waiting.
     expect(finished).toEqual(["first", "asked", "second"])
   }, 30_000)
 

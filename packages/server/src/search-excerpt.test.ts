@@ -502,6 +502,16 @@ describe("search excerpts", () => {
       join(workspaceDir, "spaces", "zulu", "docs", "pairing-old.md"),
       "# Pairing, last year\n\nPairing notes from a shelved project.",
     );
+    // A Record in the Space about to be archived that matches better than
+    // any current one.
+    await req(app, "POST", "/api/spaces/zulu/records", {
+      id: "rota",
+      name: "Pairing Rota",
+      fields: { title: { type: "string", required: true } },
+    });
+    await req(app, "POST", "/api/spaces/zulu/records/rota", {
+      data: { title: "Pairing pairing pairing" },
+    });
     ageDocuments(join(workspaceDir, "spaces"));
     invalidateSearchIndex();
     expect(
@@ -545,10 +555,19 @@ describe("search excerpts", () => {
       ["doc", undefined],
       ["record", undefined],
     ]);
+    // A better match in an archived Space doesn't take a current Record's
+    // place, whether archived work is wanted last or not at all.
+    for (const extra of ["&includeArchived=true&archivedLast=true", ""]) {
+      expect(
+        (await find("pairing", `&kinds=record&maxResults=1${extra}`)).map(
+          (result) => result.spaceId,
+        ),
+      ).toEqual(["meta"]);
+    }
 
     // Without the app's order, results say nothing more than before.
     const plain = await find("pairing", "&includeArchived=true");
-    expect(plain).toHaveLength(4);
+    expect(plain).toHaveLength(5);
     expect(plain.every((result) => result.archived === undefined)).toBe(true);
 
     // A current Doc whose name differs from the archived one's only by case

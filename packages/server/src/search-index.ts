@@ -1288,35 +1288,59 @@ export async function searchWithStatus(
   // scores — record and doc relevance scores are not comparable across engines.
   if (recordsViaIndex && (!kinds || kinds.has("record"))) {
     // The space scope is applied inside the query (before its LIMIT), so a
-    // scoped search can't lose in-space hits to other spaces' matches.
-    const hits = recordIndex.searchRecords(query, maxResults, opts?.spaceId, allowedSpaces) ?? [];
+    // scoped search can't lose in-space hits to other spaces' matches. The
+    // same holds for archived Spaces: a search without them asks only current
+    // Spaces, and one that puts them last asks current and archived Spaces
+    // apart, so archived matches never take current ones' places.
+    const spacesWhere = (archived: boolean): string[] =>
+      [...segments]
+        .filter(
+          ([spaceId, segment]) =>
+            segment.archivedSpace === archived &&
+            (!allowedSpaces || allowedSpaces.includes(spaceId)),
+        )
+        .map(([spaceId]) => spaceId);
+    // Until the index has listed the Spaces, every readable Space is asked
+    // and archived ones are told apart per hit below.
+    const scopes: Array<readonly string[] | undefined> =
+      segments.size === 0
+        ? [allowedSpaces ?? undefined]
+        : opts?.archivedLast
+          ? [spacesWhere(false), spacesWhere(true)]
+          : includeArchived
+            ? [allowedSpaces ?? undefined]
+            : [spacesWhere(false)];
     // FTS matches on query-token prefixes, so the raw tokens locate in the text.
     const queryTerms = query.trim().split(/\s+/);
-    let records = 0;
-    for (const [i, hit] of hits.entries()) {
-      if (!canAccessSpace(hit.spaceId)) continue;
-      if ((opts?.archivedLast ? records : results.length) >= maxResults) break;
-      // The record index keeps a deleted Space's rows until its sweep: a
-      // Space that is gone shows none of them, archived ones included.
-      const { data: space } = await spaceOf(hit.spaceId);
-      if (!space || (!includeArchived && getSpaceArchiveInfo(space))) continue;
-      const excerpt = makeExcerpt(recordDisplayText(hit.collectionName, hit.data), queryTerms);
-      results.push({
-        spaceId: hit.spaceId,
-        type: "record",
-        path: `${hit.collectionId}/${hit.recordId}`,
-        title: hit.title,
-        score: Math.max(hits.length - i, 1),
-        collectionId: hit.collectionId,
-        recordId: hit.recordId,
-        ...(excerpt !== undefined ? { excerpt } : {}),
-        ...(opts?.archivedLast && getSpaceArchiveInfo(space)
-          ? { archived: true as const }
-          : {}),
-      });
-      records += 1;
+    for (const scope of scopes) {
+      const hits = recordIndex.searchRecords(query, maxResults, opts?.spaceId, scope) ?? [];
+      let records = 0;
+      for (const [i, hit] of hits.entries()) {
+        if (!canAccessSpace(hit.spaceId)) continue;
+        if ((opts?.archivedLast ? records : results.length) >= maxResults) break;
+        // The record index keeps a deleted Space's rows until its sweep: a
+        // Space that is gone shows none of them, archived ones included.
+        const { data: space } = await spaceOf(hit.spaceId);
+        if (!space || (!includeArchived && getSpaceArchiveInfo(space))) continue;
+        const excerpt = makeExcerpt(recordDisplayText(hit.collectionName, hit.data), queryTerms);
+        results.push({
+          spaceId: hit.spaceId,
+          type: "record",
+          path: `${hit.collectionId}/${hit.recordId}`,
+          title: hit.title,
+          score: Math.max(hits.length - i, 1),
+          collectionId: hit.collectionId,
+          recordId: hit.recordId,
+          ...(excerpt !== undefined ? { excerpt } : {}),
+          ...(opts?.archivedLast && getSpaceArchiveInfo(space)
+            ? { archived: true as const }
+            : {}),
+        });
+        records += 1;
+      }
     }
   }
+
 
   return {
     results: opts?.archivedLast

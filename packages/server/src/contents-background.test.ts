@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { parseChangedFiles, startContentsBackground } from "./contents-background.ts"
+import {
+  WORKSPACE_PARSE_BUDGET_MS,
+  parseChangedFiles,
+  spendWorkspaceBudgetForTests,
+  startContentsBackground,
+} from "./contents-background.ts"
 import { closeDerivedStore, derivedStore, derivedStoreDir } from "./derived-store.ts"
 import { writeSpace } from "./store.ts"
 import { smallPdf } from "./test-support/small-pdf.ts"
@@ -90,6 +95,17 @@ describe("parsing in the background", () => {
     expect(await parseChangedFiles(spaceId, { budgetMs: 1 })).toBe(0)
     // With the hour's budget, the rest are parsed.
     expect(await parseChangedFiles(spaceId)).toBe(2)
+  }, 60_000)
+
+  it("shares an hour's budget across all Spaces, so more Spaces don't make more time", async () => {
+    await writeFile(join(root, "spaces", spaceId, "docs", "one.pdf"), smallPdf([{ text: "One" }]))
+    noteSpaceChanged(spaceId)
+    // Other Spaces used up the workspace's hour: this one, with its own
+    // budget untouched, waits for the hour to turn.
+    spendWorkspaceBudgetForTests(WORKSPACE_PARSE_BUDGET_MS)
+    let resumes: number | null = null
+    expect(await parseChangedFiles(spaceId, { deferred: (at) => (resumes = at) })).toBe(0)
+    expect(resumes).toBeGreaterThan(Date.now() + 50 * 60_000)
   }, 60_000)
 
   it("goes on past a file it can't read, and reads it once it can", async () => {

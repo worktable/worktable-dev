@@ -11,9 +11,9 @@
 // It works from each Space's catalog snapshot: a file's source stamp says
 // whether its bytes changed since it was last looked at, so a Space's other
 // changes cost nothing. One file is parsed at a time, in the lane's
-// background queue, so what someone waits for goes first, and each Space has
-// a budget of parsing time an hour, so one Space filled at once can't hold
-// the lane for hours. On a Cloud
+// background queue, so what someone waits for goes first, and each Space,
+// and the workspace as a whole, has a budget of parsing time an hour, so
+// Spaces filled at once can't hold the lane for hours. On a Cloud
 // machine it runs only while the machine is awake; what it hasn't reached
 // is parsed when someone reads it.
 
@@ -40,6 +40,8 @@ const SETTLE_MS = 5_000
  * and never holds the lane past it. Its files are still parsed when read.
  */
 export const SPACE_PARSE_BUDGET_MS = 10 * 60_000
+/** And all Spaces together, so making more Spaces doesn't make more time. */
+export const WORKSPACE_PARSE_BUDGET_MS = 20 * 60_000
 const BUDGET_WINDOW_MS = 60 * 60_000
 
 /** Time each Space's background parsing took in its current hour. */
@@ -50,17 +52,35 @@ function spaceKey(spaceId: string): string {
   return `${workspaceCacheKey()}\0${spaceId}`
 }
 
-/** When a Space may parse in the background again, or now. */
-function budgetResumesAt(spaceId: string, budgetMs: number, now = Date.now()): number {
-  const used = spent.get(spaceKey(spaceId))
+/** When one budget, by its key, has room again, or now. */
+function resumesAt(key: string, budgetMs: number, now: number): number {
+  const used = spent.get(key)
   if (!used || now - used.since >= BUDGET_WINDOW_MS) return now
   return used.ms < budgetMs ? now : used.since + BUDGET_WINDOW_MS
 }
 
-function spend(spaceId: string, ms: number, now = Date.now()): void {
-  const used = spent.get(spaceKey(spaceId))
-  if (!used || now - used.since >= BUDGET_WINDOW_MS) spent.set(spaceKey(spaceId), { since: now, ms })
+/** When a Space may parse in the background again, or now: its own budget and the workspace's. */
+function budgetResumesAt(spaceId: string, budgetMs: number, now = Date.now()): number {
+  return Math.max(
+    resumesAt(spaceKey(spaceId), budgetMs, now),
+    resumesAt(workspaceCacheKey(), WORKSPACE_PARSE_BUDGET_MS, now)
+  )
+}
+
+function spendOn(key: string, ms: number, now: number): void {
+  const used = spent.get(key)
+  if (!used || now - used.since >= BUDGET_WINDOW_MS) spent.set(key, { since: now, ms })
   else used.ms += ms
+}
+
+function spend(spaceId: string, ms: number, now = Date.now()): void {
+  spendOn(spaceKey(spaceId), ms, now)
+  spendOn(workspaceCacheKey(), ms, now)
+}
+
+/** Counts `ms` of background parsing against the served workspace's hour, for tests. */
+export function spendWorkspaceBudgetForTests(ms: number): void {
+  spendOn(workspaceCacheKey(), ms, Date.now())
 }
 /** When every Space is looked over after start. */
 const FIRST_PASS_MS = 60_000

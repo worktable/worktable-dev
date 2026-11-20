@@ -183,6 +183,11 @@ describe("widget REST routes", () => {
     expect(guide).not.toContain("The parent theme is available");
   });
 
+  it("teaches slides on the preview surface only", () => {
+    expect(getHtmlAuthoringGuide("runtime", { surface: "preview" })).toContain("## Slides");
+    expect(getHtmlAuthoringGuide("runtime", { surface: "released" })).not.toContain("## Slides");
+  });
+
   it("points pages that step outside the served theme back to it", async () => {
     const previous = process.env["WORKTABLE_MCP_PREVIEW"];
     delete process.env["WORKTABLE_MCP_PREVIEW"];

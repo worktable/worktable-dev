@@ -1357,7 +1357,7 @@ async function _dispatchOperationInner(
     case "html.guide": {
       return {
         profile: "runtime" as const,
-        guide: getHtmlAuthoringGuide("runtime"),
+        guide: getHtmlAuthoringGuide("runtime", { surface: context.surface }),
         tokens: WIDGET_STYLE_TOKENS,
       }
     }

@@ -8,6 +8,7 @@ import {
   shareLinkQrFileName,
   shareLinkQrPath,
   shareLinkQrPng,
+  QUIET_ZONE,
   type ShareLinkQr as Code,
 } from "@/lib/share-link-qr"
 
@@ -64,7 +65,7 @@ export default function ShareLinkQr({
     <div className="flex flex-wrap items-center gap-x-5 gap-y-3 pt-1.5">
       <QrTile
         qr={qr}
-        className="size-52 shrink-0 rounded-xl border border-border p-2"
+        className="size-52 shrink-0 rounded-xl border border-border"
       />
       <div className="flex min-w-36 flex-1 flex-col gap-2">
         <Button
@@ -132,7 +133,10 @@ export default function ShareLinkQr({
   )
 }
 
-/** The code itself. Scanners need dark squares on white, in either theme. */
+/**
+ * The code itself, with its clear margin. Scanners need dark squares on
+ * white, in either theme.
+ */
 function QrTile({ qr, className }: { qr: Code; className?: string }) {
   const path = useMemo(() => shareLinkQrPath(qr), [qr])
   return (
@@ -140,7 +144,7 @@ function QrTile({ qr, className }: { qr: Code; className?: string }) {
       <svg
         role="img"
         aria-label="QR code for this link"
-        viewBox={`0 0 ${qr.size} ${qr.size}`}
+        viewBox={`${-QUIET_ZONE} ${-QUIET_ZONE} ${qr.size + QUIET_ZONE * 2} ${qr.size + QUIET_ZONE * 2}`}
         shapeRendering="crispEdges"
         className="size-full"
       >

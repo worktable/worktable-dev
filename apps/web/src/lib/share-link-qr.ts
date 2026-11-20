@@ -4,7 +4,7 @@ import { encode } from "uqr"
 // sent anywhere to make its code.
 
 /** The clear margin a scanner needs around a code, in squares. */
-const QUIET_ZONE = 4
+export const QUIET_ZONE = 4
 
 export interface ShareLinkQr {
   /** Squares across, without the margin. */
@@ -29,7 +29,10 @@ export function shareLinkQr(url: string): ShareLinkQr {
   return { size, runs }
 }
 
-/** The dark squares as one SVG path, in a `size` by `size` view box. */
+/**
+ * The dark squares as one SVG path, in a `size` by `size` box; draw it in a
+ * view box widened by `QUIET_ZONE` on every side for the margin.
+ */
 export function shareLinkQrPath(qr: ShareLinkQr): string {
   return qr.runs
     .map((run) => `M${run.x} ${run.y}h${run.length}v1h-${run.length}z`)

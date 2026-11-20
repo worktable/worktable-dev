@@ -170,11 +170,9 @@ export function SheetGrid({
             {columns.map((index) => (
               <th
                 key={index}
-                className={cn(
-                  "sticky top-0 z-20 bg-card px-3 text-left align-middle font-mono text-[0.65rem] leading-none font-normal text-muted-foreground/70",
-                  // Over its name, which a number column aligns right.
-                  numeric[index] && "text-right"
-                )}
+                // Centered over the column, as a spreadsheet does, whichever
+                // way the column's values align.
+                className="sticky top-0 z-20 bg-card px-3 text-center align-middle font-mono text-[0.65rem] leading-none font-normal text-muted-foreground/70"
                 style={{ height: LETTER_HEIGHT }}
               >
                 {columnLetter(index)}

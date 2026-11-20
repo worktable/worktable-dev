@@ -57,6 +57,25 @@ interface Result {
   editVisibleMs: number
   restartFirstSearchMs: number
   restartReread: number
+  /** A fresh process on the same data, with the server's own wait. */
+  coldFirstSearchMs?: number
+  coldResults?: number
+  coldComplete?: boolean
+}
+
+async function cold(workspace: string, app: string) {
+  const { setWorkspaceRootOverride } = await import("../../packages/server/src/workspace.ts")
+  const { setAppDirOverride } = await import("../../packages/server/src/app-storage.ts")
+  setWorkspaceRootOverride(workspace)
+  setAppDirOverride(app)
+  const search = await import("../../packages/server/src/search-index.ts")
+  const store = await import("../../packages/server/src/search-store.ts")
+  store.keepSearchIndexOnDisk(true)
+  const started = performance.now()
+  const answer = await search.searchWithStatus("budget", {
+    documentAccess: "common", maxResults: 50, includeArchived: true, archivedLast: true,
+  })
+  return { coldFirstSearchMs: performance.now() - started, coldResults: answer.results.length, coldComplete: answer.complete }
 }
 
 const percentile = (values: number[], p: number) =>
@@ -153,6 +172,10 @@ async function child(workspace: string, app: string): Promise<Result> {
 
 if (import.meta.main) {
   const args = parseArgs(process.argv.slice(2))
+  if (args.get("cold")) {
+    console.log(`RESULT ${JSON.stringify(await cold(args.get("workspace")!, args.get("app")!))}`)
+    process.exit(0)
+  }
   if (args.get("child")) {
     console.log(`RESULT ${JSON.stringify(await child(args.get("workspace")!, args.get("app")!))}`)
     process.exit(0)
@@ -181,20 +204,25 @@ if (import.meta.main) {
       for (const entry of readdirSync(join(work, "workspace"), { withFileTypes: true, recursive: true })) {
         utimesSync(join(entry.parentPath, entry.name), hourAgo, hourAgo)
       }
-      const run = spawnSync(
-        "bun",
-        ["scripts/perf/search-index-bench.ts", "--child", "1", "--workspace", join(work, "workspace"), "--app", join(work, "app")],
-        {
-          cwd: REPO_ROOT,
-          encoding: "utf8",
-          maxBuffer: 64 * 2 ** 20,
-          env: { ...process.env, ...(engine === "minisearch" ? { WORKTABLE_SEARCH_INDEX: "minisearch" } : {}) },
-        }
-      )
+      const runChild = (flag: string) => {
+        const run = spawnSync(
+          "bun",
+          ["scripts/perf/search-index-bench.ts", flag, "1", "--workspace", join(work, "workspace"), "--app", join(work, "app")],
+          {
+            cwd: REPO_ROOT,
+            encoding: "utf8",
+            maxBuffer: 64 * 2 ** 20,
+            env: { ...process.env, ...(engine === "minisearch" ? { WORKTABLE_SEARCH_INDEX: "minisearch" } : {}) },
+          }
+        )
+        const line = run.stdout.split("\n").find((entry) => entry.startsWith("RESULT "))
+        if (!line) throw new Error(`${engine} on ${profile} failed:\n${run.stdout.slice(-2000)}\n${run.stderr.slice(-4000)}`)
+        return JSON.parse(line.slice(7))
+      }
+      const result = runChild("--child") as Result
+      Object.assign(result, runChild("--cold"))
       rmSync(work, { recursive: true, force: true })
-      const line = run.stdout.split("\n").find((entry) => entry.startsWith("RESULT "))
-      if (!line) throw new Error(`${engine} on ${profile} failed:\n${run.stdout.slice(-2000)}\n${run.stderr.slice(-4000)}`)
-      results.push(JSON.parse(line.slice(7)) as Result)
+      results.push(result)
     }
     report[profile] = results
     console.log(profile, JSON.stringify(results, null, 1))

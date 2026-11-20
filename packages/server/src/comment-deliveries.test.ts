@@ -240,6 +240,33 @@ describe("comments delivered to an agent's runtime", () => {
       })
       expect((await commentDeliveryStates()).get(elsewhere.requests![0]!.id)?.state).toBe("queued")
 
+      // While a page is being worked on, its new comments wait for that
+      // batch to end and then come together. (The failed page waits out
+      // its retry backoff first.)
+      await new Promise((r) => setTimeout(r, 2_100))
+      const busy = (await claim(preview.call))!
+      expect(busy.page.path).toBe("notes")
+      await comment("notes", agentId, "Also add a summary.")
+      await comment("notes", agentId, "And a link.")
+      expect(await claim(preview.call)).toBeNull()
+      await preview.call("worktable_thread_delivery", {
+        action: "reply",
+        messageId: busy.messageId,
+        leaseId: busy.leaseId,
+        body: "Added the date.",
+      })
+      const joined = (await claim(preview.call))!
+      expect(joined.comments.map((c) => c.body).sort()).toEqual([
+        "Also add a summary.",
+        "And a link.",
+      ])
+      await preview.call("worktable_thread_delivery", {
+        action: "reply",
+        messageId: joined.messageId,
+        leaseId: joined.leaseId,
+        body: "Done.",
+      })
+
       // A comment that arrives while the runtime waits wakes it at once.
       await new Promise((r) => setTimeout(r, 2_100))
       const waiting = claim(preview.call, 10)

@@ -1104,10 +1104,30 @@ export async function claimThreadDelivery(
       if ((options.authenticatedPrincipalId && options.authenticatedPrincipalId !== policy.principalId) || !policy.enabled || policy.error || file.deliveries.some((r) => r.participantId === participantId &&
         (active(r) || r.error?.code === "REMOTE_EXECUTION_UNCONFIRMED"))) return null
     }
+    // A page whose comments are being worked on holds its new ones, so they
+    // come out together once that batch ends instead of as turns of their
+    // own in the same conversation.
+    const busyPages = new Set(
+      file.deliveries.flatMap((record) =>
+        record.participantId === participantId &&
+        record.comment &&
+        record.state !== "queued" &&
+        active(record) &&
+        record.leaseExpiresAt &&
+        Date.parse(record.leaseExpiresAt) > nowMs
+          ? [`${record.comment.spaceId}\0${record.comment.page}`]
+          : []
+      )
+    )
     for (const record of file.deliveries) {
       if (record.participantId !== participantId) continue
       if (record.managedBy === "grok-bot" && !policy) continue
       if (record.comment && !options.allowComments) continue
+      if (
+        record.comment &&
+        busyPages.has(`${record.comment.spaceId}\0${record.comment.page}`)
+      )
+        continue
       if (policy && !policy.verifiedAt && policy.probe?.messageId !== record.messageId) continue
       if (!options.allowWorktable && record.location.kind === "worktable") {
         continue

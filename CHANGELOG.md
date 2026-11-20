@@ -15,6 +15,7 @@ infrastructure and personal context out of release notes.
 - **Export downloads resume:** A Worktable export that stops downloading partway can pick up where it stopped, in a browser or download tool that resumes downloads.
 - **Agents (preview):** With preview tools on, agents asked for slides learn what makes a deck work in Worktable: one 16:9 slide at a time with keys and tap, a stack on a phone, one slide per page in print, and the slide kept in the address so an edit doesn't move the presenter. What the slides hold and how they look is left to the request.
 - **Agents (preview):** With preview tools on, an agent can look at one page of a PDF, including a scanned one, and at an image too large to read directly, through `worktable_files_render`.
+- **Agents (preview):** With preview tools on, an agent's exact or regex search also finds lines in text, code and table files, with the line number a file read pages by, so one line in a large log is one search away. A file with more than 8 MiB of text is listed as skipped.
 - **QR codes for share links:** Share shows a link's QR code beside Copy. Download it, copy it as an image, or show it full screen with the link written under it. Links under More links have QR Code in their menu.
 - **Agents (preview):** With preview tools on, an agent orienting in a Worktable that is close to its storage limit is told so, and a file's history says when older versions were removed to make room.
 

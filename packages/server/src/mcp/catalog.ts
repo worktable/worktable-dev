@@ -2,6 +2,7 @@ import {
   CONTENTS_DEFAULT_LINES,
   CONTENTS_MAX_LINES,
   CONTENTS_PAGE_MAX_BYTES,
+  GREP_FILE_MAX_BYTES,
 } from "../file-contents-limits.ts"
 import { WORKFLOW_GUIDE_NAMES } from "./workflow-guides.generated.ts"
 import { z } from "zod"
@@ -1087,6 +1088,37 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
       ...tool.inputSchema.shape,
       page: documentsRender.page!,
     }),
+  }),
+  // Exact and regex search reach plain files' text: a log, a source file or
+  // a table, line by line, as worktable_files_read gives it.
+  worktable_search: (tool) => ({
+    ...tool,
+    description:
+      "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources. Set exact to find exact text, or a regex with regex, line by line in Docs, HTML Docs and text, code or table files instead.",
+    inputSchema: z.strictObject({
+      ...tool.inputSchema.shape,
+      exact: z
+        .boolean()
+        .optional()
+        .describe(
+          `When true, match query as exact text line by line in Docs, HTML Docs and text, code or table files, returning each match's Doc or file, line number and revision, plus any it could not search. An HTML Doc's match has type html; in a long line, each match returns an excerpt around it, with the column it starts at. A file's match has type file, its line number is the one worktable_files_read pages by, and a file with more than ${GREP_FILE_MAX_BYTES / 1024 / 1024} MiB of text is listed as skipped.`
+        ),
+    }),
+    outputFields: {
+      ...tool.outputFields,
+      skipped: z
+        .array(
+          z.looseObject({
+            spaceId: z.string(),
+            docPath: z.string(),
+            reason: z.enum(["unreadable", "conversion-failed", "too-large", "not-text"]),
+          })
+        )
+        .optional()
+        .describe(
+          "With exact or regex: Docs and files in scope that could not be searched, so a match there would be missing. too-large: a file with more text than one search reads, which a download can still search; not-text: a file that isn't UTF-8 text."
+        ),
+    },
   }),
   // Threads archive when they go quiet. The list leaves those out unless
   // asked, so an agent that lists threads reads the ones still in use; an

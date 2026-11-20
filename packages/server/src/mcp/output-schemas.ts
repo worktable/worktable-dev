@@ -1847,12 +1847,30 @@ const HtmlUploadLinkOutputSchema = z.looseObject({
 })
 
 /**
+ * Exact search that reaches plain files, on the preview surface: a skipped
+ * file can be too large to read in one search, or not text.
+ */
+const FileGrepOutputSchema = z.looseObject({
+  matches: z.array(DocGrepMatchSchema),
+  total: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  skipped: z.array(
+    DocGrepSkipSchema.extend({
+      reason: z.enum(["unreadable", "conversion-failed", "too-large", "not-text"]),
+    })
+  ),
+  scope: ListScopeSchema,
+})
+
+/**
  * Results checked like the others that stay out of the listed variants: the
  * tool declares their fields with outputFields (catalog.ts).
  */
 const HELD_OPERATION_OUTPUT_VARIANTS: Partial<Record<OperationId, readonly z.ZodObject[]>> = {
   // A page of a file's contents, on the preview surface.
   "documents.read_source": [FileContentsOutputSchema],
+  // Exact search in plain files, on the preview surface.
+  "docs.grep": [FileGrepOutputSchema],
   "html.create": [HtmlUploadLinkOutputSchema],
   "html.update": [HtmlUploadLinkOutputSchema],
   // Comments delivered to runtimes, on the preview surface.

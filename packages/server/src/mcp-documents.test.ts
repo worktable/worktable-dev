@@ -500,6 +500,76 @@ describe("file contents for agents", () => {
   }, 60_000)
 })
 
+describe("exact search in files", () => {
+  it("finds a line in a large log by exact text or regex, on the preview surface", async () => {
+    const manifestPath = join(root, "worktable.workspace.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>
+    await writeFile(manifestPath, `${JSON.stringify({ ...manifest, version: 2 }, null, 2)}\n`)
+    const previous = process.env["WORKTABLE_FILES"]
+    process.env["WORKTABLE_FILES"] = "1"
+    try {
+      const docs = join(root, "spaces", spaceId, "docs")
+      // One ERROR line in a log of 45,000: the case paging can't solve.
+      const lines = Array.from({ length: 45_000 }, (_, index) =>
+        index === 31_416
+          ? "2026-11-20T10:00:00Z ERROR disk full on /var/data\n"
+          : `2026-11-20T10:00:00Z INFO request ${index + 1} ok\n`
+      )
+      await writeFile(join(docs, "server.log"), lines.join(""))
+      // Text that isn't UTF-8, and a file past what one search reads.
+      await writeFile(join(docs, "latin1.txt"), Buffer.from([0x45, 0x52, 0x52, 0x4f, 0x52, 0xe9, 0x0a]))
+      await writeFile(join(docs, "huge.log"), "ERROR\n".repeat((9 * 1024 * 1024) / 6))
+      noteSpaceChanged(spaceId)
+      const search = async (surface: "released" | "preview", args: Record<string, unknown>) => {
+        const connected = await connect(["documents:read", "docs:read"], surface)
+        const result = await connected.callTool({ name: "worktable_search", arguments: { spaceId, ...args } })
+        await connected.close()
+        return result.structuredContent as {
+          matches: Array<{ docPath: string; line: number; text: string; type?: string; revision: string }>
+          skipped: Array<{ docPath: string; reason: string }>
+        }
+      }
+
+      const found = await search("preview", { query: "ERROR disk full", exact: true })
+      expect(found.matches).toEqual([
+        expect.objectContaining({
+          docPath: "server.log",
+          type: "file",
+          line: 31_417,
+          text: "2026-11-20T10:00:00Z ERROR disk full on /var/data",
+        }),
+      ])
+      // The line number is the one a page of the file's contents starts at.
+      const reader = await connect(["documents:read"], "preview")
+      const page = (
+        await reader.callTool({
+          name: "worktable_files_read",
+          arguments: { spaceId, path: "server.log", source: true, offset: 31_417, limit: 1 },
+        })
+      ).structuredContent as { contents: { text: string }; revision?: string }
+      await reader.close()
+      expect(page.contents.text).toBe("2026-11-20T10:00:00Z ERROR disk full on /var/data\n")
+
+      const byRegex = await search("preview", { query: "ERROR \\w+ full", regex: true })
+      expect(byRegex.matches.map((match) => [match.docPath, match.line])).toEqual([["server.log", 31_417]])
+      expect(byRegex.skipped).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ docPath: "huge.log", reason: "too-large" }),
+          expect.objectContaining({ docPath: "latin1.txt", reason: "not-text" }),
+        ])
+      )
+
+      // The released surface searches Docs as before.
+      const released = await search("released", { query: "ERROR disk full", exact: true })
+      expect(released.matches).toEqual([])
+      expect(released.skipped).toEqual([])
+    } finally {
+      if (previous === undefined) delete process.env["WORKTABLE_FILES"]
+      else process.env["WORKTABLE_FILES"] = previous
+    }
+  }, 60_000)
+})
+
 describe("file links for agents", () => {
   it("asks for the revision a replace is based on, on the preview surface too", async () => {
     const manifestPath = join(root, "worktable.workspace.json")

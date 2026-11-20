@@ -3180,6 +3180,11 @@ async function _dispatchOperationInner(
         includeArchived,
         // HTML source is what worktable_html_read gives, under its own scope.
         includeHtml: hasScope(context.scopes ?? ["*"], "widgets:read"),
+        // A file's text is what worktable_files_read gives, under its scope;
+        // held on the preview surface.
+        includeFiles:
+          context.surface === "preview" &&
+          hasScope(context.scopes ?? ["*"], "documents:read"),
       })
       return {
         matches,

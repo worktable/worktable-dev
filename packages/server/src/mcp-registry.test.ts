@@ -442,8 +442,8 @@ describe("released tool surface", () => {
     const preview = (await listTools("preview")).tools
     // Waiting in preview: the thread list leaves archived threads out unless
     // asked, a render takes a PDF's page, a file read gives a text file's
-    // contents a page at a time, and runtimes may claim comments and
-    // answer them. Orientation also says when
+    // contents a page at a time, exact search reaches files' text, and
+    // runtimes may claim comments and answer them. Orientation also says when
     // storage is nearly full, and a file's versions when older ones were
     // removed at the limit; those two tools are otherwise the same. Every
     // other tool is listed the same on both.
@@ -453,6 +453,7 @@ describe("released tool surface", () => {
       "worktable_files_read",
       "worktable_delivery_claim",
       "worktable_delivery_report",
+      "worktable_search",
     ]
     const storageNotes: Record<string, string> = {
       worktable_state: "storage",

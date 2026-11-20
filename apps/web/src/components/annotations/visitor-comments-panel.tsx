@@ -257,9 +257,9 @@ export function VisitorCommentsPanel({
   const canSendEarlier = earlier.some((comment) => {
     if (!comment.body) return false
     if (!comment.passed) return true
-    const sent = annotationSentTo(
-      byAnnotation.get(comment.passed.annotationId) ?? {}
-    )
+    const annotation = byAnnotation.get(comment.passed.annotationId)
+    if (!annotation) return false
+    const sent = annotationSentTo(annotation)
     return !sent || sent.state === "failed"
   })
   const chosen = fresh.filter((comment) => selected.has(comment.id))
@@ -632,10 +632,14 @@ function VisitorRow({
   // Not sent to anyone yet, or its recipient isn't answering: it can still
   // go to someone, new, marked done, or already a team comment.
   const sent = annotation ? annotationSentTo(annotation) : null
+  // A team comment not loaded here (a page past the comments list's first
+  // page) is unknown, not unsent, so it is not offered again.
   const sendable =
     Boolean(comment.body) &&
     (!comment.passed ||
-      ((!sent || sent.state === "failed") && recipient.value !== NO_RECIPIENT))
+      (annotation !== undefined &&
+        (!sent || sent.state === "failed") &&
+        recipient.value !== NO_RECIPIENT))
   const reply = agentReply(annotation)
   const name = comment.body
     ? comment.visitorName || "Anonymous visitor"

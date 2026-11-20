@@ -38,6 +38,7 @@ import {
   readLegacyCompatibleAnnotationV2,
   replyLegacyCompatibleAnnotationV2,
   resolveLegacyCompatibleAnnotationV2,
+  setDocumentAnnotationsMetadataV2,
   updateLegacyCompatibleAnnotationV2,
 } from "./document-annotation-service.ts"
 import { readWorkspaceStorageLayoutAt } from "./workspace-storage-v2.ts"
@@ -452,6 +453,43 @@ export async function updateAnnotation(spaceId: string, annotationId: string, pa
   noteLegacyComment(spaceId, annotation);
   return annotation;
 })
+}
+
+/**
+ * Merge the same metadata into several comments on one Doc or HTML Doc,
+ * reading and writing its comments once.
+ */
+export async function setDocumentCommentsMetadata(
+  spaceId: string,
+  target: AnnotationTarget,
+  annotationIds: readonly string[],
+  metadata: Record<string, unknown>,
+  updatedBy: string
+): Promise<Annotation[]> {
+  assertSpaceAccess(spaceId, "edit");
+  const path = target.type === "widget" ? target.widgetId : "docPath" in target ? target.docPath : undefined;
+  if (!path) throw new Error("Comments must belong to a Doc or HTML Doc");
+  if (await usesDocumentDataV2()) {
+    return setDocumentAnnotationsMetadataV2({ spaceId, path, annotationIds, metadata, updatedBy });
+  }
+  const key = storageKeyFromTarget(target);
+  if (!key) throw new Error("Comments must belong to a Doc or HTML Doc");
+  return withAnnotationStoreLock(spaceId, async () => {
+    const file = await readAnnotationFile(spaceId, key);
+    const wanted = new Set(annotationIds);
+    const now = new Date().toISOString();
+    const changed: Annotation[] = [];
+    file.annotations = file.annotations.map((annotation) => {
+      if (!wanted.has(annotation.id)) return annotation;
+      const next: Annotation = { ...annotation, metadata: { ...annotation.metadata, ...metadata }, updatedAt: now, updatedBy };
+      changed.push(next);
+      return next;
+    });
+    if (changed.length !== wanted.size) throw new Error("A comment is no longer on this document");
+    await writeAnnotationFile(spaceId, key, file);
+    for (const annotation of changed) noteLegacyComment(spaceId, annotation);
+    return changed;
+  });
 }
 
 async function resolveAnnotationRecord(spaceId: string, annotationId: string, reason: string | undefined, resolvedBy: string): Promise<Annotation> {

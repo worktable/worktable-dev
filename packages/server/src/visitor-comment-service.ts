@@ -7,7 +7,7 @@ import {
   type PassVisitorCommentInput,
   type SendVisitorCommentsInput,
 } from "@worktable/types"
-import { createAnnotation, updateAnnotation } from "./annotation-store.ts"
+import { createAnnotation, setDocumentCommentsMetadata } from "./annotation-store.ts"
 import {
   ANNOTATION_ORIGIN_KEY,
   VISITOR_ANNOTATION_PREFIX,
@@ -283,15 +283,15 @@ export async function sendVisitorComments(
     to,
     at: new Date().toISOString(),
   }
-  const annotations: Annotation[] = []
-  for (const { annotation } of passed) {
-    const updated = await updateAnnotation(
-      spaceId,
-      annotation.id,
-      { metadata: { [ANNOTATION_SENT_TO_KEY]: sentTo } },
-      identity.principal.id
-    )
-    annotations.push(updated)
+  // One read and one write of the page's comments, however many were sent.
+  const annotations = await setDocumentCommentsMetadata(
+    spaceId,
+    passed[0]!.annotation.target,
+    passed.map(({ annotation }) => annotation.id),
+    { [ANNOTATION_SENT_TO_KEY]: sentTo },
+    identity.principal.id
+  )
+  for (const updated of annotations) {
     wsManager.broadcast(spaceId, {
       type: "annotation_update",
       spaceId,

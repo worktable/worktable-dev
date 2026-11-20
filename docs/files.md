@@ -697,6 +697,9 @@ reason for both), `mcp/file-results.ts`.
 - `file-contents.test.ts` "pages lines exactly as stored, however the bytes
   arrive" and "stops a page at its byte limit, and cuts only a line too long
   for any page".
+- `mcp-documents.test.ts` "finds a line in a large log by exact text or
+  regex, on the preview surface": the line number pages to that line, and a
+  file too large or not text is skipped by name.
 - `mcp-document-previews.test.ts` "shows agents a PDF's page and an image
   scaled down, on the preview surface, and says why a file has no preview":
   the picture names the revision it is of, and the released surface is as it
@@ -712,6 +715,9 @@ page of its lines, exactly as stored, with the lines it covers, how many the
 file has, where the next page starts, and what it leaves out, such as a line
 longer than a page, which is cut, or text that isn't UTF-8, which has no
 contents. The file type table's contents surface names each type's reader.
+An agent's exact or regex search there matches those files' lines too, with
+the line numbers a page of contents uses; a file with more than 8 MiB of text
+is listed as skipped rather than read (`doc-markdown-projection.ts`).
 Also there, `worktable_files_render` gives an agent a picture of a plain file: one page of a PDF, with its page count, or an image
 scaled down, which shows it an image too large to read as one. People see no
 pictures of files yet.

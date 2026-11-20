@@ -13,6 +13,11 @@ import { onDocContentChanged } from "./content-events.ts"
 import { htmlSourceRevision } from "./document-content-revision.ts"
 import { projectBlocks } from "./markdown-edit.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
+import { sourceStampSize } from "./document-catalog.ts"
+import { contentsReaderFor } from "./file-contents.ts"
+import { GREP_FILE_MAX_BYTES } from "./file-contents-limits.ts"
+import { readCurrentFileSource } from "./current-file-source.ts"
+import { DocumentSourceReadError } from "./document-source-errors.ts"
 import { listWidgets, readWidgetDocument } from "./widget-store.ts"
 import {
   getDocArchiveInfoMap,
@@ -367,8 +372,11 @@ export interface DocGrepMatch {
   before: string[]
   after: string[]
   lineTruncated?: true
-  /** An HTML Doc's match, whose docPath is its htmlId. */
-  type?: "html"
+  /**
+   * An HTML Doc's match, whose docPath is its htmlId, or a plain file's, whose
+   * docPath is its path and revision what a replace of it names.
+   */
+  type?: "html" | "file"
   /** 1-based column in the line where an excerpt of a long line starts. */
   column?: number
 }
@@ -376,8 +384,13 @@ export interface DocGrepMatch {
 export interface DocGrepSkip {
   spaceId: string
   docPath: string
-  reason: "unreadable" | "conversion-failed"
+  /**
+   * too-large: a file with more text than one search reads whole; not-text:
+   * a file whose bytes aren't UTF-8 text.
+   */
+  reason: "unreadable" | "conversion-failed" | "too-large" | "not-text"
 }
+
 
 /**
  * Match every active Doc in the given Spaces line by line, in Space then path
@@ -393,6 +406,8 @@ export async function grepDocs(
     maxResults: number
     /** Also match HTML Docs' source. */
     includeHtml?: boolean
+    /** Also match plain files with text contents: text, code and tables. */
+    includeFiles?: boolean
   }
 ): Promise<{ matches: DocGrepMatch[]; total: number; skipped: DocGrepSkip[] }> {
   validateGrepPattern(options)
@@ -437,8 +452,9 @@ export async function grepDocs(
     docPath: string,
     revision: string,
     content: string,
-    html: boolean
+    kind: "doc" | "html" | "file"
   ) => {
+    const html = kind === "html"
     const matched =
       regex && (await regex.matchingLines(content, deadline, html ? GREP_LINE_CHARS : undefined))
     const hits = matched && matched.lines
@@ -485,7 +501,7 @@ export async function grepDocs(
           text: "",
           before: [],
           after: [],
-          ...(html ? { type: "html" as const } : {}),
+          ...(kind !== "doc" ? { type: kind } : {}),
         })
         if (html && line.length > GREP_LINE_CHARS) {
           const found = matched ? (matched.columns.get(index) ?? []) : occurrences(line)
@@ -545,18 +561,94 @@ export async function grepDocs(
       const archived = options.includeArchived
         ? new Map()
         : await getDocArchiveInfoMap(spaceId, paths)
+      // Plain files with text contents, from the read model: their size
+      // comes with them, so one too large to search is never read.
+      const candidates = options.includeFiles
+        ? (await readDocumentCatalogSnapshot(spaceId)).entries.flatMap((entry) =>
+            entry.kind === "document" &&
+            entry.descriptor.format.id === "worktable.file" &&
+            inFolder(entry.descriptor.path) &&
+            contentsReaderFor(entry.descriptor.path) === "text"
+              ? [{ path: entry.descriptor.path, handle: entry.handle }]
+              : []
+          )
+        : []
+      // A file in docs/ keeps its archive state in the Space's Doc metadata,
+      // as a Doc does; others on their catalog entry.
+      const metadataArchived = options.includeArchived
+        ? new Map()
+        : await getDocArchiveInfoMap(
+            spaceId,
+            candidates
+              .filter(({ handle }) => handle.archiveProvider === "legacy-doc-metadata")
+              .map(({ path }) => path)
+          )
+      const files = candidates.flatMap(({ path, handle }) =>
+        options.includeArchived ||
+        !(handle.archiveProvider === "legacy-doc-metadata"
+          ? metadataArchived.has(path)
+          : handle.archived)
+          ? [
+              {
+                path,
+                kind: "file" as const,
+                size: sourceStampSize(handle.sourceStamp),
+              },
+            ]
+          : []
+      )
       const documents = [
-        ...paths.map((path) => ({ path, html: false })),
-        ...htmlPaths.map((path) => ({ path, html: true })),
+        ...paths.map((path) => ({ path, kind: "doc" as const, size: undefined })),
+        ...htmlPaths.map((path) => ({ path, kind: "html" as const, size: undefined })),
+        ...files,
       ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-      for (const { path: docPath, html } of documents) {
-        if (html) {
+      for (const { path: docPath, kind, size } of documents) {
+        if (kind === "file") {
+          // Reading a file can take a while: the time limit holds here too.
+          if (performance.now() > deadline) throw grepTimeoutError()
+          if (size !== undefined && size > GREP_FILE_MAX_BYTES) {
+            skipped.push({ spaceId, docPath, reason: "too-large" })
+            continue
+          }
+          // A file that grew past the limit since the listing is refused
+          // before any of it is read.
+          const file = await readCurrentFileSource({
+            spaceId,
+            path: docPath,
+            bytes: true,
+            maxBytes: GREP_FILE_MAX_BYTES,
+          }).catch((error: unknown) =>
+            error instanceof DocumentSourceReadError && error.reason === "too-large"
+              ? ("too-large" as const)
+              : null
+          )
+          if (file === "too-large" || !file?.bytes) {
+            skipped.push({
+              spaceId,
+              docPath,
+              reason: file === "too-large" ? "too-large" : "unreadable",
+            })
+            continue
+          }
+          let text: string
+          try {
+            // The bytes as the file stores them, a byte-order mark included,
+            // as a page of its contents gives them.
+            text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(file.bytes)
+          } catch {
+            skipped.push({ spaceId, docPath, reason: "not-text" })
+            continue
+          }
+          await scan(spaceId, docPath, file.sourceRevision, text, "file")
+          continue
+        }
+        if (kind === "html") {
           const { data } = await readWidgetDocument(spaceId, docPath)
           if (!data) {
             skipped.push({ spaceId, docPath, reason: "unreadable" })
             continue
           }
-          await scan(spaceId, docPath, htmlSourceRevision(data.sourceBytes), data.html, true)
+          await scan(spaceId, docPath, htmlSourceRevision(data.sourceBytes), data.html, "html")
           continue
         }
         if (archived.has(docPath)) continue
@@ -570,7 +662,7 @@ export async function grepDocs(
           skipped.push({ spaceId, docPath, reason: "conversion-failed" })
           continue
         }
-        await scan(spaceId, docPath, docRevisionId(snapshot.revision), markdown, false)
+        await scan(spaceId, docPath, docRevisionId(snapshot.revision), markdown, "doc")
       }
     }
   } finally {

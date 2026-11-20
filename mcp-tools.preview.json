@@ -975,7 +975,7 @@
   {
     "name": "worktable_search",
     "title": "Search Worktable context",
-    "description": "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources. Set exact to find exact text, or a regex with regex, line by line in Docs and HTML Docs instead.",
+    "description": "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources. Set exact to find exact text, or a regex with regex, line by line in Docs, HTML Docs and text, code or table files instead.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1014,7 +1014,7 @@
           "maximum": 500
         },
         "exact": {
-          "description": "When true, match query as exact text line by line in Docs and HTML Docs, returning each match's Doc, line number and revision, plus any Docs it could not search. An HTML Doc's match has type html; in a long line, each match returns an excerpt around it, with the column it starts at.",
+          "description": "When true, match query as exact text line by line in Docs, HTML Docs and text, code or table files, returning each match's Doc or file, line number and revision, plus any it could not search. An HTML Doc's match has type html; in a long line, each match returns an excerpt around it, with the column it starts at. A file's match has type file, its line number is the one worktable_files_read pages by, and a file with more than 8 MiB of text is listed as skipped.",
           "type": "boolean"
         }
       },
@@ -1216,12 +1216,13 @@
           "maximum": 9007199254740991
         },
         "skipped": {
+          "description": "With exact or regex: Docs and files in scope that could not be searched, so a match there would be missing. too-large: a file with more text than one search reads, which a download can still search; not-text: a file that isn't UTF-8 text.",
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
               "spaceId": {
-                "$ref": "#/definitions/CanonicalId"
+                "type": "string"
               },
               "docPath": {
                 "type": "string"
@@ -1230,7 +1231,9 @@
                 "type": "string",
                 "enum": [
                   "unreadable",
-                  "conversion-failed"
+                  "conversion-failed",
+                  "too-large",
+                  "not-text"
                 ]
               }
             },

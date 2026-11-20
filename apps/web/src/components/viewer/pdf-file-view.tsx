@@ -21,7 +21,6 @@ import {
 import { Button } from "@worktable/ui/components/button"
 import { Input } from "@worktable/ui/components/input"
 import { Skeleton } from "@worktable/ui/components/skeleton"
-import { FileCard } from "@/components/file-card"
 import {
   ViewerFrame,
   type ViewerFrameHandle,
@@ -76,6 +75,7 @@ export default function PdfFileView({
   byteLength,
   leading,
   onDismiss,
+  refusal,
 }: {
   spaceId: string
   path: string
@@ -87,6 +87,11 @@ export default function PdfFileView({
   leading?: ReactNode
   /** Escape while reading, when nothing else in the viewer is open. */
   onDismiss?: () => void
+  /**
+   * What shows in place of a file the viewer can't show, given why; by
+   * default the reason alone, centred.
+   */
+  refusal?: (status: string) => ReactNode
 }) {
   const queryClient = useQueryClient()
   const frame = useRef<ViewerFrameHandle>(null)
@@ -346,9 +351,15 @@ export default function PdfFileView({
         ) : null}
       </div>
       {refused ? (
-        <div className="mx-auto w-full max-w-3xl px-6">
-          <FileCard name={name} status={REFUSALS[refused]} />
-        </div>
+        refusal ? (
+          <div className="mx-auto w-full max-w-3xl px-6">
+            {refusal(REFUSALS[refused])}
+          </div>
+        ) : (
+          <p className="m-auto p-6 text-sm text-muted-foreground">
+            {REFUSALS[refused]}
+          </p>
+        )
       ) : (
         <div className="relative min-h-0 flex-1">
           {shown ? null : (

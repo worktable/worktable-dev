@@ -74,10 +74,13 @@ export function viewerFrameCsp(hashes: {
 
 function frameStyles(): string {
   const { light, dark } = HTML_DOC_THEME
-  const roles = (theme: typeof dark) =>
+  type Theme = Readonly<Record<keyof typeof dark, string>>
+  // Pages sit on the app's card in dark mode and its canvas in light mode,
+  // and the page browser one step away from them.
+  const roles = (theme: Theme, background: string, rail: string) =>
     [
-      `--viewer-background: ${theme === dark ? dark.card : light.background}`,
-      `--viewer-rail: ${theme === dark ? dark.background : light.card}`,
+      `--viewer-background: ${background}`,
+      `--viewer-rail: ${rail}`,
       `--viewer-line: ${theme.border}`,
       `--viewer-focus: ${theme.ring}`,
       `--viewer-text: ${theme.foreground}`,
@@ -86,8 +89,8 @@ function frameStyles(): string {
       `--viewer-selected: ${theme["surface-selected"]}`,
     ].join("; ")
   return `
-:root { color-scheme: dark; ${roles(dark)}; }
-:root[data-theme="light"] { color-scheme: light; ${roles(light)}; }
+:root { color-scheme: dark; ${roles(dark, dark.card, dark.background)}; }
+:root[data-theme="light"] { color-scheme: light; ${roles(light, light.background, light.card)}; }
 html, body { height: 100%; margin: 0; }
 body { background: var(--viewer-background); font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
 #viewer-container { position: absolute; inset: 0; overflow: auto; outline: none; }

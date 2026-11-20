@@ -20,7 +20,6 @@ import {
   rename,
   rm,
   stat,
-  statfs,
   writeFile,
 } from "node:fs/promises"
 import { basename, join } from "node:path"
@@ -51,7 +50,7 @@ import {
   type WorkspaceExportV2Manifest,
 } from "./workspace-transfer-v2.ts"
 import { logError } from "./debug-log.ts"
-import { noteStorageChange, storageUsage } from "./storage-usage.ts"
+import { noteStorageChange } from "./storage-usage.ts"
 
 // Cloudflare's smallest documented request-body ceiling is 100 MB and a Worker
 // isolate has 128 MB of memory. Eight MiB leaves ample room for auth/proxy work,
@@ -207,23 +206,6 @@ function errorMessage(error: unknown): string {
 
 const NOT_ENOUGH_DISK_TO_EXPORT =
   "There isn't enough free disk space to export this Worktable. Free some space, then export again."
-
-/**
- * Before an export starts: the package alone takes about the Worktable's
- * files, and its history unless the export leaves it out, so with less free
- * space than that where packages are written it can't finish. Read from the
- * running count and one statfs; skipped before the first count.
- */
-async function assertDiskForExport(history: WorkspaceExportHistoryPolicy): Promise<void> {
-  const usage = storageUsage()
-  if (!usage) return
-  const needs =
-    usage.parts.live.bytes + (history.mode === "none" ? 0 : usage.parts.history.bytes)
-  const disk = await statfs(ensureAppDir()).catch(() => null)
-  if (disk && disk.bavail * disk.bsize < needs) {
-    throw new WorkspacePackageLimitError(NOT_ENOUGH_DISK_TO_EXPORT)
-  }
-}
 
 /**
  * How a failed transfer is recorded: in words a person can act on when the
@@ -463,7 +445,6 @@ function runExport(id: string): void {
     })
     try {
       await exportRunHookForTests?.()
-      await assertDiskForExport(job.history)
       const result = await withWorkspaceExportLease(() =>
         writeWorkspaceExportV2(packagePath(id), {
           history: job.history,

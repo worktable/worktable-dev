@@ -15,6 +15,12 @@ Spaces, prose documents, HTML docs, drawings, records, annotations, threads, and
 any version history selected for export. Current exports also include a read-only offline browser
 for inspecting the snapshot without a running Worktable server.
 
+Packages since version 3 store bytes once: a version history file whose bytes
+match a file already in the package is listed in the manifest with `sameAs`,
+naming that file, and has no archive entry of its own. Importing recreates it
+and checks its hash. Worktable imports version 2 and version 3 packages; a
+release that reads only version 2 refuses a version 3 package.
+
 Machine-local credentials, owner sessions, participant registrations, thread
 delivery state, service configuration, logs, caches, and realtime editor state
 are excluded. Importing a conversation therefore does not reconnect its agent.

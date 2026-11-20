@@ -72,7 +72,16 @@ import {
 } from "./workspace.ts"
 
 export const WORKSPACE_EXPORT_V2_TYPE = "worktable.workspace-export" as const
-export const WORKSPACE_EXPORT_V2_VERSION = 2 as const
+/**
+ * The package version this writes. Version 3 stores a history file whose
+ * bytes match a file already in the package once: the history file is
+ * listed with `sameAs`, naming that file, and has no ZIP entry of its own.
+ * Version 2 stored every file. This reads both; a Worktable that reads only
+ * version 2 refuses a version 3 package instead of importing it incomplete.
+ */
+export const WORKSPACE_EXPORT_V2_VERSION = 3 as const
+/** Package versions this reads. */
+const WORKSPACE_EXPORT_READABLE_VERSIONS: readonly number[] = [2, 3]
 export const WORKSPACE_EXPORT_V2_MEDIA_TYPE =
   "application/vnd.worktable.workspace+zip" as const
 export const WORKSPACE_EXPORT_V2_EXTENSION = ".wtb" as const
@@ -117,6 +126,11 @@ export interface WorkspaceExportV2File {
   mode: number
   mtime: string
   sha256: string
+  /**
+   * Version 3: a history file (under `versions/`) whose bytes are the bytes
+   * of this earlier file in the package, stored once under that path.
+   */
+  sameAs?: string
 }
 
 export interface WorkspaceExportV2Directory {
@@ -137,7 +151,7 @@ export interface WorkspaceExportV2LeftOut {
 
 export interface WorkspaceExportV2Manifest {
   type: typeof WORKSPACE_EXPORT_V2_TYPE
-  version: typeof WORKSPACE_EXPORT_V2_VERSION
+  version: 2 | typeof WORKSPACE_EXPORT_V2_VERSION
   exportId: string
   exportedAt: string
   generator: {
@@ -2934,6 +2948,8 @@ type WorkspaceExportV2WriteOptions = {
    * the manifest's `leftOut`. Without it, one fails the export.
    */
   leaveOutLinks?: boolean
+  /** Write a version 2 package, storing every file. For tests of old packages. */
+  formatVersionForTests?: 2
 }
 
 export async function writeWorkspaceExportV2(
@@ -3061,14 +3077,33 @@ async function writeWorkspaceExportV2WithCaptureLock(
       workspaceName: sourceManifest.name,
     })
     const root = sanitizedArchiveRoot(source.workspaceName)
-    const publicFiles = capture.files.map(
-      ({ path, size, mode, mtime, sha256: hash }) => ({
-        path,
-        size,
-        mode,
-        mtime,
-        sha256: hash,
-      })
+    // A history file with the bytes of a file already in the package is
+    // stored once (version 3). Files are in path order, so `spaces/...`
+    // and the rest of the live tree come before `versions/...`, and a live
+    // file always has its own entry.
+    const formatVersion = options.formatVersionForTests ?? WORKSPACE_EXPORT_V2_VERSION
+    const firstWithBytes = new Map<string, string>()
+    const publicFiles: WorkspaceExportV2File[] = capture.files.map(
+      ({ path, size, mode, mtime, sha256: hash }) => {
+        const key = `${hash}:${size}`
+        const holder = firstWithBytes.get(key)
+        if (holder === undefined) firstWithBytes.set(key, path)
+        return {
+          path,
+          size,
+          mode,
+          mtime,
+          sha256: hash,
+          ...(formatVersion === 3 &&
+          holder !== undefined &&
+          path.startsWith("versions/")
+            ? { sameAs: holder }
+            : {}),
+        }
+      }
+    )
+    const storedOnce = new Set(
+      publicFiles.filter((file) => file.sameAs !== undefined).map((file) => file.path)
     )
     assertPortableOwnerAccess(capture.directories, publicFiles)
     const contentFiles = publicFiles.filter(
@@ -3095,7 +3130,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
     generatedArchivePath(root, "worktable-export.json")
     const manifest: WorkspaceExportV2Manifest = {
       type: WORKSPACE_EXPORT_V2_TYPE,
-      version: WORKSPACE_EXPORT_V2_VERSION,
+      version: formatVersion,
       exportId: `exp_${randomBytes(16).toString("base64url")}`,
       exportedAt: exportedAt.toISOString(),
       generator: { version: packageVersion() },
@@ -3139,6 +3174,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
       })
     }
     for (const file of capture.files) {
+      if (storedOnce.has(file.path)) continue
       zip.addFile(file.absolute, `${root}/workspace/${file.path}`, {
         mode: file.mode,
         mtime: new Date(file.mtime),
@@ -3162,7 +3198,7 @@ async function writeWorkspaceExportV2WithCaptureLock(
     })
     zip.end({
       forceZip64Format: false,
-      comment: "Worktable workspace export v2",
+      comment: `Worktable workspace export v${formatVersion}`,
     })
     await writing
     await options.onProgress?.("finalize")
@@ -3319,7 +3355,7 @@ function parseManifest(value: unknown): WorkspaceExportV2Manifest {
   const manifest = value as WorkspaceExportV2Manifest
   if (
     manifest.type !== WORKSPACE_EXPORT_V2_TYPE ||
-    manifest.version !== WORKSPACE_EXPORT_V2_VERSION ||
+    !WORKSPACE_EXPORT_READABLE_VERSIONS.includes(manifest.version) ||
     typeof manifest.exportId !== "string" ||
     !/^exp_[A-Za-z0-9_-]{22}$/.test(manifest.exportId) ||
     !Number.isFinite(Date.parse(manifest.exportedAt)) ||
@@ -3454,6 +3490,27 @@ function parseManifest(value: unknown): WorkspaceExportV2Manifest {
     throw new Error("workspace package exceeds the workspace entry limit")
   }
   const filePaths = new Set(manifest.integrity.files.map((file) => file.path))
+  // Version 3: a history file stored once names an earlier file with the
+  // same bytes, which has its own entry.
+  const declaredFiles = new Map(
+    manifest.integrity.files.map((file) => [file.path, file])
+  )
+  for (const file of manifest.integrity.files) {
+    if (file.sameAs === undefined) continue
+    const holder = declaredFiles.get(file.sameAs)
+    if (
+      manifest.version < 3 ||
+      typeof file.sameAs !== "string" ||
+      !file.path.startsWith("versions/") ||
+      !holder ||
+      holder.sameAs !== undefined ||
+      comparePortableText(holder.path, file.path) >= 0 ||
+      holder.sha256 !== file.sha256 ||
+      holder.size !== file.size
+    ) {
+      throw new Error(`invalid workspace package file: ${file.path}`)
+    }
+  }
   const directoryPaths = new Set(
     manifest.integrity.directories.map((directory) => directory.path)
   )
@@ -3537,7 +3594,9 @@ function assertDeclaredArchiveLayout(
     `${root}/worktable-export.json`,
     `${root}/README.txt`,
     `${root}/Open Worktable Export.html`,
-    ...manifest.integrity.files.map((file) => `${workspaceRoot}/${file.path}`),
+    ...manifest.integrity.files
+      .filter((file) => file.sameAs === undefined)
+      .map((file) => `${workspaceRoot}/${file.path}`),
   ])
   const viewerPrefix = `${root}/browse/content/`
 
@@ -3679,7 +3738,10 @@ async function openAndInspectArchive(sourceFile: string): Promise<{
         )
         .map((item) => [item.path.slice(`${root}/workspace/`.length), item])
     )
-    if (actualWorkspaceFiles.size !== manifest.integrity.files.length) {
+    const storedFiles = manifest.integrity.files.filter(
+      (file) => file.sameAs === undefined
+    )
+    if (actualWorkspaceFiles.size !== storedFiles.length) {
       throw new Error("workspace package contains undeclared portable files")
     }
     const actualWorkspaceDirectories = new Set(
@@ -3702,7 +3764,7 @@ async function openAndInspectArchive(sourceFile: string): Promise<{
         "workspace package directory declarations do not match its contents"
       )
     }
-    for (const file of manifest.integrity.files) {
+    for (const file of storedFiles) {
       const actual = actualWorkspaceFiles.get(file.path)
       if (!actual || actual.entry.uncompressedSize !== file.size) {
         throw new Error(
@@ -3789,6 +3851,30 @@ export async function extractWorkspaceExportV2(
       )
       if (bytes !== metadata.size || hash.digest("hex") !== metadata.sha256) {
         throw new Error(`workspace package integrity check failed: ${path}`)
+      }
+      await chmod(output, metadata.mode).catch(() => undefined)
+      const mtime = new Date(metadata.mtime)
+      await utimes(output, mtime, mtime).catch(() => undefined)
+    }
+    // Version 3: a file stored once is copied from the file holding its
+    // bytes, a clone where the disk allows it, and checked against its hash.
+    for (const metadata of manifest.integrity.files) {
+      if (metadata.sameAs === undefined) continue
+      const source = join(destination, ...metadata.sameAs.split("/"))
+      const output = join(destination, ...metadata.path.split("/"))
+      await mkdir(dirname(output), { recursive: true, mode: 0o700 })
+      await copyFile(
+        source,
+        output,
+        fsConstants.COPYFILE_EXCL | fsConstants.COPYFILE_FICLONE
+      )
+      if (
+        (await stat(output)).size !== metadata.size ||
+        (await hashFile(output)) !== metadata.sha256
+      ) {
+        throw new Error(
+          `workspace package integrity check failed: ${metadata.path}`
+        )
       }
       await chmod(output, metadata.mode).catch(() => undefined)
       const mtime = new Date(metadata.mtime)

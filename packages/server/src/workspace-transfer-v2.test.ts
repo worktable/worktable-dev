@@ -60,6 +60,7 @@ import {
   WORKSPACE_EXPORT_V2_MAX_MANIFEST_BYTES,
   WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES,
   WORKSPACE_EXPORT_V2_MAX_WORKSPACE_MANIFEST_BYTES,
+  type WorkspaceExportV2Manifest,
 } from "./workspace-transfer-v2.ts"
 import {
   ensureWorkspaceManifest,
@@ -400,6 +401,27 @@ describe("workspace export v2", () => {
       join(source, "spaces", "notes", "docs", ".worktable-write-1-a.tmp"),
       "authored lookalike\n"
     )
+    // The current version of welcome.md kept in its history: the same bytes.
+    const historyCopy =
+      "versions/notes/documents/doc_WWWWWWWWWWWWWWWWWWWWWW/2026-01-01T00-00-00-000Z-000000-aaaaaaaa"
+    await writeDocumentGenerationV2({
+      workspaceRoot: source,
+      spaceId: "notes",
+      documentId: "doc_WWWWWWWWWWWWWWWWWWWWWW" as DocumentId,
+      generationId: "2026-01-01T00-00-00-000Z-000000-aaaaaaaa",
+      logicalPath: "welcome",
+      format: { id: BUILTIN_DOCUMENT_FORMATS.markdown, sourceVersion: 1 },
+      operation: "update",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      createdBy: "test",
+      source: "test",
+      authoredSource: {
+        kind: "file",
+        entries: [
+          { path: "document.md", bytes: Buffer.from("# Welcome\n\nPortable content.\n") },
+        ],
+      },
+    })
     const result = await writeWorkspaceExportV2(join(root, "portable"))
 
     expect(result.destination).toBe(join(root, "portable.wtb"))
@@ -416,6 +438,16 @@ describe("workspace export v2", () => {
     for (const path of transactionArtifacts) {
       expect(listing.stdout).not.toContain(path)
     }
+    // A history copy with the bytes of a live file is stored once, under the
+    // live file's path, and listed with sameAs.
+    expect(result.manifest.version).toBe(3)
+    expect(listing.stdout).not.toContain(`${historyCopy}/source/document.md`)
+    expect(listing.stdout).toContain(`${historyCopy}/manifest.json`)
+    expect(
+      result.manifest.integrity.files.find(
+        (file) => file.path === `${historyCopy}/source/document.md`
+      )?.sameAs
+    ).toBe("spaces/notes/docs/welcome.md")
     // Authored hidden names are a complete copy's, though no list shows them.
     expect(listing.stdout).toContain("docs/.pending-guide.md")
     expect(listing.stdout).toContain("docs/.worktable-write-1-a.tmp")
@@ -477,9 +509,45 @@ describe("workspace export v2", () => {
         "utf8"
       )
     ).toBe("# Welcome\n\nPortable content.\n")
+    // The copy stored once is restored, byte for byte, where it was.
+    expect(
+      await readFile(join(destination, ...historyCopy.split("/"), "source", "document.md"), "utf8")
+    ).toBe("# Welcome\n\nPortable content.\n")
     for (const path of transactionArtifacts) {
       await expect(stat(join(destination, path))).rejects.toThrow()
     }
+
+    // A version 2 package, which stores every file, still imports.
+    const older = await writeWorkspaceExportV2(join(root, "older"), {
+      formatVersionForTests: 2,
+    })
+    expect(older.manifest.version).toBe(2)
+    expect(older.manifest.integrity.files.some((file) => file.sameAs)).toBe(false)
+    const olderRestored = join(root, "older-restored")
+    await importWorkspaceExportV2(older.destination, olderRestored)
+    expect(
+      await readFile(join(olderRestored, ...historyCopy.split("/"), "source", "document.md"), "utf8")
+    ).toBe("# Welcome\n\nPortable content.\n")
+
+    // A package whose sameAs names bytes that differ is refused.
+    const forged = JSON.parse(
+      spawnSync("unzip", ["-p", result.destination, `${result.manifest.archive.root}/worktable-export.json`], {
+        encoding: "utf8",
+      }).stdout
+    ) as WorkspaceExportV2Manifest
+    const forgedFile = forged.integrity.files.find((file) => file.sameAs)!
+    // An earlier file with different bytes.
+    forgedFile.sameAs = "spaces/notes/docs/.pending-guide.md"
+    const forgedArchive = join(root, "forged.wtb")
+    await replaceArchiveEntry(
+      result.destination,
+      forgedArchive,
+      `${result.manifest.archive.root}/worktable-export.json`,
+      Buffer.from(JSON.stringify(forged))
+    )
+    await expect(inspectWorkspaceExportV2(forgedArchive)).rejects.toThrow(
+      "invalid workspace package file"
+    )
     expect(
       await readFile(
         join(destination, "spaces", "notes", "docs", ".pending-guide.md"),

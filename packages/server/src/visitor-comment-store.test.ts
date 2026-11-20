@@ -217,55 +217,93 @@ describe("private visitor comments", () => {
     )
     expect(await readdir(join(dir, workspace!))).toEqual(["comments.sqlite"])
   })
-  it("keeps cap-triggered pauses, deduplicates accepted sends and resumes only by a person", () => {
-    let first: ReturnType<typeof receiveVisitorComment> | undefined
-    for (let client = 0; client < 4; client++) {
-      const key = String(client).repeat(32)
-      for (let index = 0; index < 5; index++) {
-        const made = receiveVisitorComment(
-          comment({
-            clientKey: key,
-            visitorKey: `visitor-${client}`,
-            requestId: `request-${index}`,
-          })
-        )
-        first ??= made
+  it("lets a room on one address comment, holds one visitor, pauses a burst and resumes only by a person", () => {
+    const refusal = (input: ReturnType<typeof comment>) => {
+      try {
+        receiveVisitorComment(input)
+      } catch (error) {
+        if (error instanceof VisitorCommentRefused) return error
+        throw error
       }
-      expect(() =>
+      throw new Error("Expected a refusal")
+    }
+    const now = Date.now()
+    const clock = spyOn(Date, "now").mockReturnValue(now)
+    try {
+      // One person is held at six in ten minutes, then may comment again.
+      const one = (requestId: string) =>
+        comment({ visitorKey: "solo", clientKey: "solo", requestId })
+      for (let index = 0; index < 6; index++)
+        receiveVisitorComment(one(`solo-${index}`))
+      expect(refusal(one("solo-over"))).toMatchObject({
+        status: 429,
+        retryAfter: 600,
+      })
+      clock.mockReturnValue(now + 600_001)
+      expect(receiveVisitorComment(one("solo-later")).id).toMatch(/^vc_/)
+      clock.mockReturnValue(now + 2 * 600_001)
+      // A room of forty on one venue address gets two hundred through; the
+      // next is refused without pausing the link.
+      let first: ReturnType<typeof receiveVisitorComment> | undefined
+      const room = (person: number, index: number | string) =>
+        comment({
+          clientKey: "venue",
+          visitorKey: `room-${person}`,
+          requestId: `room-${index}`,
+        })
+      for (let person = 0; person < 40; person++)
+        for (let index = 0; index < 5; index++) {
+          const made = receiveVisitorComment(room(person, index))
+          first ??= made
+        }
+      expect(refusal(room(40, 0))).toMatchObject({ retryAfter: 600 })
+      expect(commentPause("worktableId", "link")).toBeNull()
+      // A burst past three hundred in ten minutes pauses the link.
+      for (let visitor = 0; visitor < 100; visitor++)
         receiveVisitorComment(
           comment({
-            clientKey: key,
-            visitorKey: `visitor-${client}`,
-            requestId: "over-cap",
+            clientKey: `client-${visitor}`,
+            visitorKey: `burst-${visitor}`,
+            requestId: "burst",
           })
         )
-      ).toThrow(VisitorCommentRefused)
+      expect(
+        refusal(comment({ clientKey: "late", visitorKey: "late" }))
+      ).toMatchObject({ retryAfter: 3600 })
+      expect(commentPause("worktableId", "link")).toBe("spike")
+      expect(refusal(comment({ requestId: "while-paused" }))).toMatchObject({
+        code: "COMMENTS_PAUSED",
+      })
+      expect(receiveVisitorComment(room(0, 0))).toEqual(first!)
+      pauseVisitorComments("worktableId", "link", false)
+      expect(commentPause("worktableId", "link")).toBeNull()
+      // Two addresses at their cap within ten minutes also pause a link,
+      // even while it stays under three hundred.
+      const capped = (address: string, index: number | string) =>
+        comment({
+          linkId: "capped",
+          clientKey: address,
+          visitorKey: `${address}-${index}`,
+          requestId: "cap",
+        })
+      for (let index = 0; index < 200; index++)
+        receiveVisitorComment(capped("first", index))
+      clock.mockReturnValue(Date.now() + 599_000)
+      expect(refusal(capped("first", "over"))).toMatchObject({
+        retryAfter: 600,
+      })
+      expect(commentPause("worktableId", "capped")).toBeNull()
+      clock.mockReturnValue(Date.now() + 1_001)
+      for (let index = 0; index < 200; index++)
+        receiveVisitorComment(capped("second", index))
+      expect(refusal(capped("second", "over"))).toMatchObject({
+        retryAfter: 3600,
+      })
+      expect(commentPause("worktableId", "capped")).toBe("spike")
+    } finally {
+      clock.mockRestore()
     }
-    expect(commentPause("worktableId", "link")).toBe("spike")
-    expect(() =>
-      receiveVisitorComment(comment({ requestId: "while-paused" }))
-    ).toThrow("Comments are paused")
-    expect(
-      receiveVisitorComment(
-        comment({
-          clientKey: "0".repeat(32),
-          visitorKey: "visitor-0",
-          requestId: "request-0",
-        })
-      )
-    ).toEqual(first!)
-    pauseVisitorComments("worktableId", "link", false)
-    expect(commentPause("worktableId", "link")).toBeNull()
-    expect(
-      receiveVisitorComment(
-        comment({
-          clientKey: "new",
-          visitorKey: "new",
-          requestId: "after-resume",
-        })
-      ).id
-    ).toMatch(/^vc_/)
-  })
+  }, 30_000)
   it("strips control and direction characters and erases old client keys and expired text off the request path", () => {
     expect(cleanVisitorText(" A\u202ee\u0301\u0000\nB ")).toBe("Aé\nB")
     const made = receiveVisitorComment(comment())

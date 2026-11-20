@@ -37,8 +37,8 @@ function privateFixture(
       const receive = index => receiveVisitorComment({worktableId, linkId: link.id, linkLabel: link.label, linkCreator: link.createdById, documentId, spaceId: link.spaceId, kind: input.kind, visitorName: "Auditor <unverified>", visitorKey: index.toString(16).padStart(64, "0"), clientKey: index.toString(16).padStart(32, "0"), body: input.operation === "receive" ? input.outside : "Synthetic review " + index, requestId: "fixture-request-" + index});
       const first = receive(0);
       if (input.operation === "spike") {
-        for (let index=1; index<30; index++) receive(index);
-        try { receive(30); throw new Error("Expected the thirty-first comment to be refused"); }
+        for (let index=1; index<300; index++) receive(index);
+        try { receive(300); throw new Error("Expected the three hundred and first comment to be refused"); }
         catch (error) { if (!(error instanceof VisitorCommentRefused)) throw error; }
         if (commentPause(worktableId, link.id) !== "spike") throw new Error("Expected durable automatic pause");
       }

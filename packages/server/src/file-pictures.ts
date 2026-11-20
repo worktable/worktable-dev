@@ -11,9 +11,10 @@
 // here or pushed whole into the browser.
 //
 // What bounds a picture:
-// - An image is read only within the byte limit, and decoded only when its
-//   header declares a size within the pixel limits, read here before
-//   anything decodes it.
+// - An image is drawn only within the byte limit, and decoded only when its
+//   header declares a size within the pixel limits. This process reads the
+//   header alone, at most 1 MiB, before anything decodes the image, so a
+//   call holds little here however many arrive at once.
 // - A PDF is parsed by pdf.js with scripts, forms and network off; the
 //   images inside it are held to the same pixel limit.
 // - A picture is drawn within the preview pixel limit and returned within
@@ -39,8 +40,12 @@ import {
   PDF_RENDERER_VERSION,
 } from "./generated/pdf-preview-assets.ts"
 
-/** The largest image a picture is made of. It is read whole to check it. */
+/** The largest image a picture is made of. */
 export const PICTURE_IMAGE_MAX_BYTES = 32 * 1024 * 1024
+/** How much of an image is read here to find the size its header declares. */
+const IMAGE_HEADER_MAX_BYTES = 1024 * 1024
+/** The most this process reads from a file in one piece. */
+const SERVER_READ_BYTES = 256 * 1024
 /** The widest or tallest image decoded, in pixels. */
 const IMAGE_MAX_SIDE = 8192
 /** The most pixels an image decoded for a picture holds, a PDF's own images included. */
@@ -225,19 +230,19 @@ async function checkedImageType(source: FilePictureSource): Promise<string> {
       "This image is too large to preview."
     )
   const type = fileTypeFor(source.name)!
-  const bytes = new Uint8Array(source.size)
-  for (let position = 0; position < source.size; ) {
-    const chunk = await source.read(position, source.size - position)
-    if (chunk.byteLength === 0) break
-    bytes.set(chunk, position)
-    position += chunk.byteLength
-  }
   let sizes: Array<{ width: number; height: number }> | null
   if (type === "avif") {
-    sizes = avifDeclaredSizes(bytes)
+    const meta = await avifMetaBox(source)
+    sizes = meta && avifDeclaredSizes(meta)
   } else {
     try {
-      const declared = imageSize(bytes)
+      const declared = imageSize(
+        await readRange(
+          source,
+          0,
+          Math.min(source.size, IMAGE_HEADER_MAX_BYTES)
+        )
+      )
       // The bytes must be the type the name says: nothing is sniffed wider.
       sizes =
         declared.type === (type === "jpeg" ? "jpg" : type)
@@ -264,6 +269,55 @@ async function checkedImageType(source: FilePictureSource): Promise<string> {
       "This image is too large to preview."
     )
   return FILE_TYPES[type].mediaType
+}
+
+/** Bytes `begin` to `end` of a file, read a bounded piece at a time. */
+async function readRange(
+  source: FilePictureSource,
+  begin: number,
+  end: number
+): Promise<Uint8Array> {
+  const bytes = new Uint8Array(end - begin)
+  for (let position = begin; position < end; ) {
+    const chunk = await source.read(
+      position,
+      Math.min(SERVER_READ_BYTES, end - position)
+    )
+    if (chunk.byteLength === 0) throw new Error("Short read")
+    bytes.set(chunk, position - begin)
+    position += chunk.byteLength
+  }
+  return bytes
+}
+
+/**
+ * An AVIF's `meta` box, which declares its picture sizes, found by reading
+ * the file's top-level box headers alone: the picture data beside it is
+ * never read here. Null when there is none within the header limit.
+ */
+async function avifMetaBox(
+  source: FilePictureSource
+): Promise<Uint8Array | null> {
+  for (let at = 0, boxes = 0; at + 8 <= source.size && boxes < 64; boxes += 1) {
+    const header = await readRange(source, at, Math.min(source.size, at + 16))
+    const view = new DataView(header.buffer)
+    let size = view.getUint32(0)
+    if (size === 1) {
+      if (header.byteLength < 16) return null
+      const large = view.getBigUint64(8)
+      if (large > BigInt(source.size - at)) return null
+      size = Number(large)
+    } else if (size === 0) {
+      size = source.size - at
+    }
+    if (size < 8 || size > source.size - at) return null
+    if (String.fromCharCode(...header.subarray(4, 8)) === "meta")
+      return size <= IMAGE_HEADER_MAX_BYTES
+        ? readRange(source, at, at + size)
+        : null
+    at += size
+  }
+  return null
 }
 
 /**
@@ -312,14 +366,9 @@ async function inPicturePage(
                 throw new Error("Invalid read")
               budget -= end - begin
               if (budget < 0) throw new Error("Read budget exceeded")
-              const bytes = new Uint8Array(end - begin)
-              for (let position = begin; position < end; ) {
-                const chunk = await source.read(position, end - position)
-                if (chunk.byteLength === 0) throw new Error("Short read")
-                bytes.set(chunk, position - begin)
-                position += chunk.byteLength
-              }
-              return Buffer.from(bytes).toString("base64")
+              return Buffer.from(
+                await readRange(source, begin, end)
+              ).toString("base64")
             } catch (error) {
               failRead(error)
               throw error

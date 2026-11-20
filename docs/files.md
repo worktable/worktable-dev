@@ -510,9 +510,10 @@ MCP preview surface (`file-pictures.ts`): an image scaled down, and one page of
 a PDF, which pdf.js parses there with no network, no workers, a PDF's scripts
 and forms off, and 30 seconds at most. The page is handed the file's bytes at
 one revision, at most 1 MiB at a time as it asks, never a path or a link. An
-image is read up to 32 MiB and decoded only when its header declares at most
-8192 pixels a side and 40 million pixels, which holds for the images inside a
-PDF too. A picture is at most 4 million pixels and 4 MiB, drawn smaller when
+image up to 32 MiB is decoded only when its header declares at most 8192
+pixels a side and 40 million pixels, which holds for the images inside a PDF
+too; the server reads that header alone, at most 1 MiB, and never the image
+whole. A picture is at most 4 million pixels and 4 MiB, drawn smaller when
 it would pass either. `WORKTABLE_PICTURES_PDF=off` and
 `WORKTABLE_PICTURES_IMAGE=off` turn each off. A file with no picture says why
 and still reads and downloads.

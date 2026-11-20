@@ -225,6 +225,14 @@ it("shows agents a PDF's page and an image scaled down, on the preview surface, 
       .toBuffer()
   )
   await writeFile(
+    join(docs, "shot.avif"),
+    await sharp({
+      create: { width: 640, height: 400, channels: 3, background: { r: 40, g: 120, b: 200 } },
+    })
+      .avif()
+      .toBuffer()
+  )
+  await writeFile(
     join(docs, "tall.png"),
     await sharp({
       create: { width: 1000, height: 8000, channels: 3, background: { r: 30, g: 30, b: 30 } },
@@ -305,6 +313,10 @@ it("shows agents a PDF's page and an image scaled down, on the preview surface, 
   expect(
     preview(await render({ path: "files/photo.png", preview: { width: 2048 } }))
   ).toMatchObject({ width: 2000, height: 1000 })
+  // An AVIF is drawn too; its declared size comes from its header alone.
+  expect(
+    preview(await render({ path: "files/shot.avif", preview: { width: 320 } }))
+  ).toMatchObject({ status: "ready", width: 320, height: 200 })
   // A tall one is drawn smaller than asked, to stay within a picture's
   // pixel limit, and says so.
   const tall = preview(await render({ path: "files/tall.png" }))

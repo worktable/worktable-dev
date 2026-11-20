@@ -19,6 +19,8 @@ const LOCK_OPTIONS = {
 }
 
 export interface RetainedWorktableReply {
+  /** An answer to a page of comments, posted with the delivery's lease. */
+  comments?: true
   location?: WorktableThreadLocation
   spaceId?: string
   threadId: string

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { createServer, type Socket } from "node:net"
 import {
+  claimAskingForComments,
   claimWithThreadLocations,
   McpWorktableClient,
 } from "./worktable-client.js"
@@ -183,6 +184,33 @@ describe("OpenClaw Worktable client", () => {
     const failure = Object.assign(new Error("Unauthorized"), { code: 401 })
     await expect(
       claimWithThreadLocations(() => Promise.reject(failure), 0)
+    ).rejects.toBe(failure)
+  })
+
+  it("asks for comments until a Worktable refuses the option, then claims without it", async () => {
+    const asks = { comments: true }
+    const requests: Array<Record<string, unknown>> = []
+    const older = async (request: Record<string, unknown>) => {
+      requests.push(request)
+      if ("comments" in request)
+        throw new Error('Invalid arguments: Unrecognized key: "comments"')
+      return { delivery: null }
+    }
+    expect(await claimAskingForComments(older, 0, asks)).toEqual({
+      delivery: null,
+    })
+    await claimAskingForComments(older, 0, asks)
+    expect(requests.map((request) => "comments" in request)).toEqual([
+      true,
+      false,
+      false,
+    ])
+    // Any other failure is the claim's, not the option's.
+    const failure = Object.assign(new Error("Unauthorized"), { code: 401 })
+    await expect(
+      claimAskingForComments(() => Promise.reject(failure), 0, {
+        comments: true,
+      })
     ).rejects.toBe(failure)
   })
 })

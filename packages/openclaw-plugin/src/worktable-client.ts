@@ -1,5 +1,6 @@
 import { name as packageName, version as packageVersion } from "../package.json"
 import type {
+  ClaimedWorktableComments,
   ClaimedWorktableDelivery,
   WorktableClient,
   WorktableParticipant,
@@ -41,13 +42,39 @@ type ThreadDeliveryCall = (
 
 export function claimWithThreadLocations(
   call: ThreadDeliveryCall,
-  waitSeconds: number
+  waitSeconds: number,
+  comments = false
 ): Promise<Record<string, unknown>> {
   return call({
     action: "claim",
     waitSeconds,
     threadLocationVersion: 2,
+    ...(comments ? { comments: true } : {}),
   })
+}
+
+/** A Worktable from before comments for runtimes refuses the option itself. */
+function refusedCommentsOption(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error)
+  return /comments/.test(text) && /unrecognized|unknown|invalid/i.test(text)
+}
+
+/**
+ * Claim, asking for comments too while this Worktable takes the option. One
+ * that refuses it is asked once more without, and not asked again.
+ */
+export async function claimAskingForComments(
+  call: ThreadDeliveryCall,
+  waitSeconds: number,
+  asks: { comments: boolean }
+): Promise<Record<string, unknown>> {
+  try {
+    return await claimWithThreadLocations(call, waitSeconds, asks.comments)
+  } catch (error) {
+    if (!asks.comments || !refusedCommentsOption(error)) throw error
+    asks.comments = false
+    return claimWithThreadLocations(call, waitSeconds)
+  }
 }
 
 // Worktable answers MCP POSTs with plain JSON (stateless, no sessions), so the
@@ -323,15 +350,54 @@ export class McpWorktableClient implements WorktableClient {
     return result.threads as WorktableThreadSummary[]
   }
 
+  /** Whether to ask for comments: until this Worktable says it doesn't know them. */
+  readonly #asks = { comments: true }
+
   async claim(
     waitSeconds = 25,
     signal?: AbortSignal
-  ): Promise<ClaimedWorktableDelivery | null> {
-    const result = await claimWithThreadLocations(
+  ): Promise<ClaimedWorktableDelivery | ClaimedWorktableComments | null> {
+    const result = await claimAskingForComments(
       (request) => this.#call("worktable_thread_delivery", request, signal),
-      waitSeconds
+      waitSeconds,
+      this.#asks
     )
-    return (result.delivery as ClaimedWorktableDelivery | null) ?? null
+    return (
+      (result.delivery as
+        | ClaimedWorktableDelivery
+        | ClaimedWorktableComments
+        | null) ?? null
+    )
+  }
+
+  async answerComments(input: {
+    spaceId: string
+    annotationIds: string[]
+    body: string
+  }): Promise<string[]> {
+    const answered: string[] = []
+    for (const annotationId of new Set(input.annotationIds)) {
+      try {
+        await this.#call("worktable_annotations_write", {
+          action: "reply",
+          spaceId: input.spaceId,
+          annotationId,
+          body: input.body,
+        })
+        answered.push(annotationId)
+      } catch {
+        // A comment deleted or moved out of reach since the turn began.
+      }
+    }
+    return answered
+  }
+
+  async replyToComments(input: {
+    messageId: string
+    leaseId: string
+    body: string
+  }): Promise<void> {
+    await this.#call("worktable_thread_delivery", { action: "reply", ...input })
   }
 
   async accept(messageId: string, leaseId: string): Promise<void> {

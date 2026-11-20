@@ -97,6 +97,7 @@ import {
   pendingRevision,
 } from "./pending-list.ts"
 import { ownerIdentity } from "./auth.ts"
+import { askingTextHash } from "./annotation-requests.ts"
 import { readDocumentIdentities } from "./document-query.ts"
 import { DocumentAnnotationError } from "./document-annotation-service.ts"
 import { readAnnotation, replyAnnotation } from "./annotation-store.ts"
@@ -2040,12 +2041,22 @@ async function commentClaim(
       : undefined
     const author = asked?.author ?? annotation.author
     const quote = (annotation.target as { quote?: string }).quote
+    const body = asked?.body ?? annotation.body
+    // A person's words changed after they asked, by anyone who can edit the
+    // page's comments, aren't theirs to vouch for, as the pending list
+    // already treats them. The runtime's owner rule refuses such an author.
+    const rewritten =
+      author.type === "user" &&
+      request.textHash !== undefined &&
+      request.textHash !== askingTextHash(body)
     comments.push({
       annotationId: annotation.id,
       requestId: request.id,
       ...(quote ? { quote } : {}),
-      body: asked?.body ?? annotation.body,
-      from: await commentAuthor(author),
+      body,
+      from: rewritten
+        ? { id: "", kind: "system", name: "an edited comment" }
+        : await commentAuthor(author),
       replies: annotation.thread.map((message) => ({
         from: message.author.name ?? message.author.id,
         body: message.body,

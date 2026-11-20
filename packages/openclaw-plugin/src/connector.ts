@@ -253,10 +253,13 @@ function threadTurn(
 /** The comments, as the agent reads them: where, what each says, and how to answer. */
 function commentsText(delivery: ClaimedWorktableComments): string {
   const { page, comments } = delivery
+  // The page by its path, not its title: anyone who can edit the page can
+  // change the title, and the owner rule checks only the comments' authors.
+  const where = `\`${page.path}\` in Space \`${page.spaceId}\``
   const lines = [
     comments.length === 1
-      ? `A comment on “${page.title}” (${page.path}, Space ${page.spaceId}) was sent to you in Worktable.`
-      : `${comments.length} comments on “${page.title}” (${page.path}, Space ${page.spaceId}) were sent to you in Worktable.`,
+      ? `A comment on ${where} was sent to you in Worktable.`
+      : `${comments.length} comments on ${where} were sent to you in Worktable.`,
   ]
   for (const comment of comments) {
     lines.push("", `Comment ${comment.annotationId}, from ${comment.from.name}:`)

@@ -1,13 +1,19 @@
-import { Search } from "lucide-react"
+import type { ReactNode } from "react"
+import { Command, Search } from "lucide-react"
 import { useWorkspace } from "@/lib/queries"
 import { openSearch } from "@/lib/search-open"
 
-/** The keys that open search: Cmd on Apple's keyboards, Ctrl elsewhere. */
-function shortcutKeys(): readonly string[] {
-  return typeof navigator !== "undefined" &&
+/** The keys that open search: Command on Apple's keyboards, Ctrl elsewhere. */
+function shortcutKeys(): ReadonlyArray<{ id: string; key: ReactNode }> {
+  const mac =
+    typeof navigator !== "undefined" &&
     /Mac|iPhone|iPad/.test(navigator.platform)
-    ? ["⌘", "K"]
-    : ["Ctrl", "K"]
+  return [
+    mac
+      ? { id: "command", key: <Command className="size-3" /> }
+      : { id: "ctrl", key: "Ctrl" },
+    { id: "k", key: "K" },
+  ]
 }
 
 /**
@@ -32,10 +38,13 @@ export function SidebarSearchButton({ onOpen }: { onOpen?: () => void }) {
         Search {worktableName}…
       </span>
       {/* Each key on its own cap; none on a touch screen. */}
-      <span className="flex shrink-0 items-center gap-1 pointer-coarse:hidden">
-        {shortcutKeys().map((key) => (
+      <span
+        aria-hidden
+        className="flex shrink-0 items-center gap-1 pointer-coarse:hidden"
+      >
+        {shortcutKeys().map(({ id, key }) => (
           <kbd
-            key={key}
+            key={id}
             className="inline-code-accent flex h-5 min-w-5 items-center justify-center font-sans text-xs leading-none"
           >
             {key}

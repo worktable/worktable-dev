@@ -576,7 +576,15 @@ export async function waitForWorkspaceExportJob(
   return getWorkspaceExportJob(id)
 }
 
-export async function openWorkspaceExportDownload(id: string): Promise<{
+/**
+ * A finished export's bytes, whole or from `range` (inclusive), so a
+ * download that broke off can resume where it stopped. The range is checked
+ * against the package by the caller (`requestedRange`).
+ */
+export async function openWorkspaceExportDownload(
+  id: string,
+  range?: { start: number; end: number }
+): Promise<{
   job: WorkspaceExportJob
   body: ReadableStream<Uint8Array>
 }> {
@@ -611,11 +619,12 @@ export async function openWorkspaceExportDownload(id: string): Promise<{
             await rm(packagePath(id), { force: true }).catch(() => undefined)
         }
       }
-      let position = 0
+      let position = range?.start ?? 0
+      const end = range ? Math.min(range.end + 1, info.size) : info.size
       const body = new ReadableStream<Uint8Array>({
         async pull(controller) {
           try {
-            const length = Math.min(64 * 1024, info.size - position)
+            const length = Math.min(64 * 1024, end - position)
             if (length <= 0) {
               controller.close()
               await release()

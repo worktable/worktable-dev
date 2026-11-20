@@ -1,3 +1,4 @@
+import { requestedRange } from "../file-response.ts"
 import { StorageLimitError, storageLimitBody } from "../storage-limit.ts"
 import { memberIsPayer, peopleInWorktable, requestBilling } from "../hosted-billing.ts";
 import { teamsEnabled } from "../team-database.ts"
@@ -601,17 +602,41 @@ workspaceRouter.get("/transfers/exports/:id/download", async (c) => {
         `/api/workspace/transfers/exports/${encodeURIComponent(id)}/download`
       )
     }
-    const download = await openWorkspaceExportDownload(id)
+    // A download that broke off resumes with Range, under If-Range with the
+    // package's hash, so it never mixes two packages.
+    const ready = await getWorkspaceExportJob(id)
+    const size = ready.bytes ?? 0
+    const etag = `"${ready.sha256 ?? ""}"`
+    const range = ready.sha256 ? requestedRange(c, size, etag) : null
+    const headers = {
+      "Content-Type": "application/vnd.worktable.workspace+zip",
+      "Content-Disposition": downloadDisposition(
+        ready.downloadName ?? "workspace.wtb"
+      ),
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Accept-Ranges": "bytes",
+      ...(ready.sha256 ? { ETag: etag } : {}),
+    }
+    if (range === "unsatisfiable") {
+      return new Response(null, {
+        status: 416,
+        headers: { ...headers, "Content-Range": `bytes */${size}` },
+      })
+    }
+    const download = await openWorkspaceExportDownload(id, range ?? undefined)
+    if (range) {
+      return new Response(download.body, {
+        status: 206,
+        headers: {
+          ...headers,
+          "Content-Length": String(range.end - range.start + 1),
+          "Content-Range": `bytes ${range.start}-${range.end}/${size}`,
+        },
+      })
+    }
     return new Response(download.body, {
-      headers: {
-        "Content-Type": "application/vnd.worktable.workspace+zip",
-        "Content-Length": String(download.job.bytes),
-        "Content-Disposition": downloadDisposition(
-          download.job.downloadName ?? "workspace.wtb"
-        ),
-        "Cache-Control": "private, no-store",
-        "X-Content-Type-Options": "nosniff",
-      },
+      headers: { ...headers, "Content-Length": String(download.job.bytes) },
     })
   } catch (error) {
     return transferError(c, error)

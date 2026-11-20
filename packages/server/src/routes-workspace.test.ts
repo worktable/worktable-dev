@@ -382,9 +382,37 @@ describe("GET /api/workspace/export", () => {
     )
     expect(download.status).toBe(200)
     expect(download.headers.get("Content-Disposition")).toContain("attachment")
-    expect(new Uint8Array(await download.arrayBuffer()).subarray(0, 2)).toEqual(
-      new Uint8Array([0x50, 0x4b])
+    expect(download.headers.get("Accept-Ranges")).toBe("bytes")
+    const whole = new Uint8Array(await download.arrayBuffer())
+    expect(whole.subarray(0, 2)).toEqual(new Uint8Array([0x50, 0x4b]))
+
+    // A download that broke off resumes from where it stopped, under the
+    // package's own tag; a tag from another package gets the whole again.
+    const etag = download.headers.get("ETag")!
+    const resumeAt = Math.floor(whole.byteLength / 2)
+    const resumed = await app().fetch(
+      new Request(`http://localhost${downloadUrl}`, {
+        headers: { ...navigationHeaders, Range: `bytes=${resumeAt}-`, "If-Range": etag },
+      })
     )
+    expect(resumed.status).toBe(206)
+    expect(resumed.headers.get("Content-Range")).toBe(
+      `bytes ${resumeAt}-${whole.byteLength - 1}/${whole.byteLength}`
+    )
+    expect(new Uint8Array(await resumed.arrayBuffer())).toEqual(whole.subarray(resumeAt))
+    const otherPackage = await app().fetch(
+      new Request(`http://localhost${downloadUrl}`, {
+        headers: { ...navigationHeaders, Range: `bytes=${resumeAt}-`, "If-Range": '"other"' },
+      })
+    )
+    expect(otherPackage.status).toBe(200)
+    expect(new Uint8Array(await otherPackage.arrayBuffer())).toEqual(whole)
+    const pastTheEnd = await app().fetch(
+      new Request(`http://localhost${downloadUrl}`, {
+        headers: { ...navigationHeaders, Range: `bytes=${whole.byteLength}-` },
+      })
+    )
+    expect(pastTheEnd.status).toBe(416)
   })
 
   it("refuses a cross-origin browser using the implicit local owner", async () => {

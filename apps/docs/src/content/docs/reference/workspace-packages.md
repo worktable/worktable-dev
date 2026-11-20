@@ -44,5 +44,7 @@ Current import limits are:
 | Manifest                   |   32 MiB |
 
 Cloud transfers use 8 MiB upload chunks and an unfinished transfer expires
-after 24 hours of inactivity. A valid package must also pass path, entry-type,
+after 24 hours of inactivity. An export download that breaks off can resume
+where it stopped: the server answers byte ranges, under `If-Range` with the
+package's hash. A valid package must also pass path, entry-type,
 manifest-version, integrity, and workspace-contract validation.

@@ -586,8 +586,11 @@ person typing in a Doc keeps saving at the limit, counted but never refused. A
 person's drawing saves may go past the limit by 5% of it, at most 64 MiB
 (`storageGraceBytes`), so nobody loses a stroke when the Worktable fills; past
 that they are refused like any write. At its limit a Worktable
-still opens, reads, deletes and exports. What people delete leaves the
-backed-up folder at once and is removed after the history window.
+still opens, reads, deletes and exports. On the MCP preview surface,
+`worktable_state` tells an agent once the Worktable has used 80% of its
+limit, and a file's versions say how many older ones were removed at the
+limit, as Settings and the History panel tell a person. What people delete
+leaves the backed-up folder at once and is removed after the history window.
 
 The default limit is 2 GiB, the most today's export can carry.
 `WORKTABLE_STORAGE_LIMIT_BYTES` sets another; outside Cloud it is capped at

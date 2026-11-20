@@ -4,6 +4,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -417,6 +418,17 @@ function ItemPicture({
   // until its own picture loads, and keeps it when that one has none.
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
   const loaded = loadedSrc === src
+  // A picture the browser already has shows on the tile's first frame, as
+  // the rest of a revisited page does; only one still loading fades in.
+  const image = useRef<HTMLImageElement>(null)
+  const [fade, setFade] = useState(true)
+  useLayoutEffect(() => {
+    const element = image.current
+    if (element?.complete && element.naturalWidth > 0) {
+      setFade(false)
+      setLoadedSrc(src)
+    }
+  }, [src])
   return (
     <span
       aria-hidden
@@ -425,13 +437,14 @@ function ItemPicture({
     >
       {!loaded && children}
       <img
+        ref={image}
         src={src}
         alt=""
-        decoding="async"
         draggable={false}
         onLoad={() => setLoadedSrc(src)}
         className={cn(
-          "absolute inset-0 size-full object-cover object-top transition-opacity duration-300",
+          "absolute inset-0 size-full object-cover object-top",
+          fade && "transition-opacity duration-300",
           loaded ? "opacity-100" : "opacity-0"
         )}
       />

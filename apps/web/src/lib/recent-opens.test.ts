@@ -15,22 +15,17 @@ const doc = (name: string, at: number): RecentOpen => ({
 
 describe("recent opens", () => {
   const stored = new Map<string, string>()
-  const original = globalThis.localStorage
+  const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage")
   beforeEach(() => {
     stored.clear()
-    Object.defineProperty(globalThis, "localStorage", {
-      configurable: true,
-      value: {
-        getItem: (key: string) => stored.get(key) ?? null,
-        setItem: (key: string, value: string) => void stored.set(key, value),
-      },
-    })
+    ;(globalThis as Record<string, unknown>).localStorage = {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => void stored.set(key, value),
+    }
   })
   afterEach(() => {
-    Object.defineProperty(globalThis, "localStorage", {
-      configurable: true,
-      value: original,
-    })
+    if (original) Object.defineProperty(globalThis, "localStorage", original)
+    else Reflect.deleteProperty(globalThis, "localStorage")
   })
 
   it("keeps the newest first, each page once, under its latest name", () => {

@@ -17,6 +17,7 @@ import { sourceStampSize } from "./document-catalog.ts"
 import { contentsReaderFor } from "./file-contents.ts"
 import { GREP_FILE_MAX_BYTES } from "./file-contents-limits.ts"
 import { readCurrentFileSource } from "./current-file-source.ts"
+import { DocumentSourceReadError } from "./document-source-errors.ts"
 import { listWidgets, readWidgetDocument } from "./widget-store.ts"
 import {
   getDocArchiveInfoMap,
@@ -562,23 +563,40 @@ export async function grepDocs(
         : await getDocArchiveInfoMap(spaceId, paths)
       // Plain files with text contents, from the read model: their size
       // comes with them, so one too large to search is never read.
-      const files = options.includeFiles
+      const candidates = options.includeFiles
         ? (await readDocumentCatalogSnapshot(spaceId)).entries.flatMap((entry) =>
             entry.kind === "document" &&
             entry.descriptor.format.id === "worktable.file" &&
-            (options.includeArchived || !entry.handle.archived) &&
             inFolder(entry.descriptor.path) &&
             contentsReaderFor(entry.descriptor.path) === "text"
-              ? [
-                  {
-                    path: entry.descriptor.path,
-                    kind: "file" as const,
-                    size: sourceStampSize(entry.handle.sourceStamp),
-                  },
-                ]
+              ? [{ path: entry.descriptor.path, handle: entry.handle }]
               : []
           )
         : []
+      // A file in docs/ keeps its archive state in the Space's Doc metadata,
+      // as a Doc does; others on their catalog entry.
+      const metadataArchived = options.includeArchived
+        ? new Map()
+        : await getDocArchiveInfoMap(
+            spaceId,
+            candidates
+              .filter(({ handle }) => handle.archiveProvider === "legacy-doc-metadata")
+              .map(({ path }) => path)
+          )
+      const files = candidates.flatMap(({ path, handle }) =>
+        options.includeArchived ||
+        !(handle.archiveProvider === "legacy-doc-metadata"
+          ? metadataArchived.has(path)
+          : handle.archived)
+          ? [
+              {
+                path,
+                kind: "file" as const,
+                size: sourceStampSize(handle.sourceStamp),
+              },
+            ]
+          : []
+      )
       const documents = [
         ...paths.map((path) => ({ path, kind: "doc" as const, size: undefined })),
         ...htmlPaths.map((path) => ({ path, kind: "html" as const, size: undefined })),
@@ -592,22 +610,31 @@ export async function grepDocs(
             skipped.push({ spaceId, docPath, reason: "too-large" })
             continue
           }
+          // A file that grew past the limit since the listing is refused
+          // before any of it is read.
           const file = await readCurrentFileSource({
             spaceId,
             path: docPath,
-            bytes: (current) => current.pinned.size <= GREP_FILE_MAX_BYTES,
-          }).catch(() => null)
-          if (!file) {
-            skipped.push({ spaceId, docPath, reason: "unreadable" })
-            continue
-          }
-          if (!file.bytes) {
-            skipped.push({ spaceId, docPath, reason: "too-large" })
+            bytes: true,
+            maxBytes: GREP_FILE_MAX_BYTES,
+          }).catch((error: unknown) =>
+            error instanceof DocumentSourceReadError && error.reason === "too-large"
+              ? ("too-large" as const)
+              : null
+          )
+          if (file === "too-large" || !file?.bytes) {
+            skipped.push({
+              spaceId,
+              docPath,
+              reason: file === "too-large" ? "too-large" : "unreadable",
+            })
             continue
           }
           let text: string
           try {
-            text = new TextDecoder("utf-8", { fatal: true }).decode(file.bytes)
+            // The bytes as the file stores them, a byte-order mark included,
+            // as a page of its contents gives them.
+            text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(file.bytes)
           } catch {
             skipped.push({ spaceId, docPath, reason: "not-text" })
             continue

@@ -52,6 +52,11 @@ export async function readCurrentFileSource(options: {
   /** Whether to keep the bytes: decided for the file found, by its size. */
   bytes?: boolean | ((current: CurrentFile) => boolean)
   /**
+   * The most bytes this read takes: a larger file throws
+   * DocumentSourceReadError "too-large" before any of it is read.
+   */
+  maxBytes?: number
+  /**
    * Sees every chunk of the bytes, in order, without their being kept. A
    * fresh one is made for each attempt, so a file read again after it
    * changed is seen from its start.
@@ -82,7 +87,7 @@ export async function readCurrentFileSource(options: {
         )
     }
     const { current } = resolved
-    if (current.pinned.size > FILE_VERSION_MAX_BYTES) {
+    if (current.pinned.size > Math.min(options.maxBytes ?? Infinity, FILE_VERSION_MAX_BYTES)) {
       throw new DocumentSourceReadError(
         "too-large",
         "document source exceeds its read budget"

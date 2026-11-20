@@ -519,7 +519,18 @@ describe("exact search in files", () => {
       // Text that isn't UTF-8, and a file past what one search reads.
       await writeFile(join(docs, "latin1.txt"), Buffer.from([0x45, 0x52, 0x52, 0x4f, 0x52, 0xe9, 0x0a]))
       await writeFile(join(docs, "huge.log"), "ERROR\n".repeat((9 * 1024 * 1024) / 6))
+      // A byte-order mark stays part of the first line, as a read gives it.
+      await writeFile(join(docs, "marked.txt"), "\uFEFFfirst ERROR line\n")
+      // An archived log is left out unless archived work is asked for.
+      await writeFile(join(docs, "old.log"), "2026-01-01 ERROR disk full on /old\n")
       noteSpaceChanged(spaceId)
+      const archiver = await connect(["documents:read", "documents:write"], "preview")
+      const archivedLog = await archiver.callTool({
+        name: "worktable_files_update",
+        arguments: { spaceId, path: "old.log", archived: true },
+      })
+      await archiver.close()
+      expect(archivedLog.isError).not.toBe(true)
       const search = async (surface: "released" | "preview", args: Record<string, unknown>) => {
         const connected = await connect(["documents:read", "docs:read"], surface)
         const result = await connected.callTool({ name: "worktable_search", arguments: { spaceId, ...args } })
@@ -549,6 +560,13 @@ describe("exact search in files", () => {
       ).structuredContent as { contents: { text: string }; revision?: string }
       await reader.close()
       expect(page.contents.text).toBe("2026-11-20T10:00:00Z ERROR disk full on /var/data\n")
+
+      const withArchived = await search("preview", { query: "ERROR disk full", exact: true, includeArchived: true })
+      expect(withArchived.matches.map((match) => match.docPath).sort()).toEqual(["old.log", "server.log"])
+      const marked = await search("preview", { query: "^\uFEFFfirst ERROR", regex: true })
+      expect(marked.matches).toEqual([
+        expect.objectContaining({ docPath: "marked.txt", line: 1, text: "\uFEFFfirst ERROR line" }),
+      ])
 
       const byRegex = await search("preview", { query: "ERROR \\w+ full", regex: true })
       expect(byRegex.matches.map((match) => [match.docPath, match.line])).toEqual([["server.log", 31_417]])

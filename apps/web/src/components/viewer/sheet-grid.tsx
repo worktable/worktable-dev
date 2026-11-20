@@ -532,7 +532,15 @@ function sortKeys(
         NUMBER.test(value) ? Number(value) : Number.NaN
       )
     : undefined
-  const distinct = [...new Set(values)]
+  // A number column ranks only the cells that aren't numbers; the rest
+  // compare by value, so ranking them would be wasted.
+  const distinct = [
+    ...new Set(
+      numbers
+        ? values.filter((_, index) => numbers[index] !== numbers[index])
+        : values
+    ),
+  ]
   const ascii = distinct.every((value) => /^[\x20-\x7e]*$/.test(value))
   if (ascii) {
     const keyed = distinct.map((value) => ({

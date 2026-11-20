@@ -22,6 +22,23 @@ import { getWorkspaceRoot, workspaceCacheKey } from "./workspace.ts"
 // authenticated, capability-scoped visitor routes.
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
+const TEN_MINUTES = 600_000
+/** Receipt limits. A venue's wifi is one client address, so the address cap
+ * fits a room; one person is held by their visitor key, and a burst on one
+ * link pauses it until a person resumes it. */
+const LIMIT = {
+  visitorTen: 6,
+  visitorDay: 20,
+  clientTen: 200,
+  /** Distinct addresses at their cap within ten minutes that pause the link. */
+  cappedClients: 2,
+  /** Accepted comments within ten minutes that pause the link. */
+  linkTen: 300,
+  linkHour: 500,
+  linkDay: 1000,
+  workspaceDay: 2000,
+  pending: 500,
+} as const
 interface StoreConnections {
   reader: Database | null
   writer: Database | null
@@ -442,6 +459,7 @@ export function receiveVisitorComment(input: {
       coalesce(sum(link_id=? AND received_at>?),0) AS linkHour,
       coalesce(sum(link_id=? AND received_at>?),0) AS linkTen,
       coalesce(sum(link_id=? AND client_key=? AND received_at>?),0) AS clientTen,
+      coalesce(sum(link_id=? AND visitor_key=? AND received_at>?),0) AS visitorTen,
       coalesce(sum(visitor_key=?),0) AS visitorDay
       FROM visitor_comments WHERE worktableId=? AND received_at>?`
         )
@@ -450,10 +468,13 @@ export function receiveVisitorComment(input: {
           input.linkId,
           now - HOUR,
           input.linkId,
-          now - 600_000,
+          now - TEN_MINUTES,
           input.linkId,
           input.clientKey,
-          now - 600_000,
+          now - TEN_MINUTES,
+          input.linkId,
+          input.visitorKey,
+          now - TEN_MINUTES,
           input.visitorKey,
           input.worktableId,
           now - DAY
@@ -463,6 +484,7 @@ export function receiveVisitorComment(input: {
         linkHour: number
         linkTen: number
         clientTen: number
+        visitorTen: number
         visitorDay: number
       }
       const pending = (
@@ -472,8 +494,11 @@ export function receiveVisitorComment(input: {
           )
           .get(input.worktableId, input.linkId) as { n: number }
       ).n
-      let spike = totals.linkTen >= 30
-      if (totals.clientTen >= 5) {
+      const clientCapped = totals.clientTen >= LIMIT.clientTen
+      let spike = totals.linkTen >= LIMIT.linkTen
+      // One room behind one address reaching its cap is refused, not paused;
+      // several addresses at their cap together look like a coordinated push.
+      if (clientCapped) {
         db.query(
           "INSERT INTO visitor_cap_hits VALUES(?,?,?,?) ON CONFLICT(worktableId,link_id,client_key) DO UPDATE SET at=excluded.at"
         ).run(input.worktableId, input.linkId, input.clientKey, now)
@@ -484,10 +509,10 @@ export function receiveVisitorComment(input: {
               .query(
                 "SELECT count(*) AS n FROM visitor_cap_hits WHERE worktableId=? AND link_id=? AND at>?"
               )
-              .get(input.worktableId, input.linkId, now - 600_000) as {
+              .get(input.worktableId, input.linkId, now - TEN_MINUTES) as {
               n: number
             }
-          ).n > 3
+          ).n >= LIMIT.cappedClients
       }
       if (spike) {
         db.query(
@@ -495,19 +520,15 @@ export function receiveVisitorComment(input: {
         ).run(input.worktableId, input.linkId)
         wrote = true
       }
-      if (
+      const longWait =
         spike ||
-        totals.workspaceDay >= 500 ||
-        totals.linkDay >= 200 ||
-        totals.linkHour >= 30 ||
-        totals.clientTen >= 5 ||
-        totals.visitorDay >= 20 ||
-        pending >= 500
-      )
-        return new VisitorCommentRefused(
-          false,
-          totals.clientTen >= 5 ? 600 : 3600
-        )
+        totals.workspaceDay >= LIMIT.workspaceDay ||
+        totals.linkDay >= LIMIT.linkDay ||
+        totals.linkHour >= LIMIT.linkHour ||
+        totals.visitorDay >= LIMIT.visitorDay ||
+        pending >= LIMIT.pending
+      if (longWait || clientCapped || totals.visitorTen >= LIMIT.visitorTen)
+        return new VisitorCommentRefused(false, longWait ? 3600 : 600)
       const id = `vc_${nanoid(22)}`
       db.query(
         `INSERT INTO visitor_comments(id,worktableId,link_id,link_label,link_creator,document_id,space_at_receipt,kind,visitor_name,visitor_key,client_key,body,received_at,status,request_id)
@@ -767,7 +788,7 @@ export function sweepVisitorComments(
       .run(now - 180 * DAY, now - 30 * DAY).changes
     writes += db
       .query("DELETE FROM visitor_cap_hits WHERE at<?")
-      .run(now - 600_000).changes
+      .run(now - TEN_MINUTES).changes
   }).immediate()
   if (writes) notifyStoreChange()
   return changed

@@ -1,6 +1,14 @@
-import { useEffect, useId, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useId, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Copy, Loader2, MoreVertical, Pencil, Plus, Unlink } from "lucide-react"
+import {
+  Copy,
+  Loader2,
+  MoreVertical,
+  Pencil,
+  Plus,
+  QrCode,
+  Unlink,
+} from "lucide-react"
 import type {
   DocumentShareLinks,
   DocumentSharingSummary,
@@ -85,6 +93,9 @@ import {
   retryOnPreviewChange,
 } from "@/lib/share-link-access-api"
 
+// The code is drawn only for people who ask for one.
+const ShareLinkQr = lazy(() => import("@/components/share-link-qr"))
+
 interface LinkDraft {
   label: string
   expiry: ShareLinkExpiry
@@ -160,6 +171,8 @@ export function ShareLinksDialog({
     access: ShareLinkAccess
   } | null>(null)
   const [revoking, setRevoking] = useState<ShareLink | null>(null)
+  // The link whose QR code shows, one at a time.
+  const [qrFor, setQrFor] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState("")
   // Results from an earlier opening never apply to a later one.
   const session = useRef(0)
@@ -347,6 +360,7 @@ export function ShareLinksDialog({
       setMoreOpen(false)
       setPasswordOpen(null)
       setAccess(null)
+      setQrFor(null)
       setAnnouncement("")
     }
   }
@@ -495,6 +509,18 @@ export function ShareLinksDialog({
     )
   }
 
+  function toggleQr(link: ShareLink) {
+    setQrFor((current) => (current === link.id ? null : link.id))
+  }
+
+  function qr(link: ShareLink) {
+    return qrFor === link.id && link.url ? (
+      <Suspense fallback={<Skeleton className="size-52 rounded-xl" />}>
+        <ShareLinkQr url={link.url} title={link.label || title} />
+      </Suspense>
+    ) : null
+  }
+
   function menu(link: ShareLink, label: string) {
     return (
       <LinkMenu
@@ -502,6 +528,7 @@ export function ShareLinksDialog({
         label={label}
         container={portalContainer}
         disabled={busy}
+        onQr={link === defaultLink ? undefined : () => toggleQr(link)}
         onEdit={
           link === defaultLink
             ? undefined
@@ -624,6 +651,8 @@ export function ShareLinksDialog({
                 link={defaultLink}
                 menu={menu(defaultLink, "Link actions")}
                 onCopied={() => setAnnouncement("Link copied")}
+                qr={qr(defaultLink)}
+                onQr={() => toggleQr(defaultLink)}
               />
               {recordsNote}
             </>
@@ -850,6 +879,7 @@ export function ShareLinksDialog({
                       editingId={editingLink?.id ?? null}
                       form={editingLink ? form("edit") : null}
                       menu={menu}
+                      qr={qr}
                     />
                     {editing?.kind === "new" ? (
                       form("new")
@@ -1334,17 +1364,22 @@ function DetailLine({
 }
 
 /**
- * The default link: its URL to copy and its menu, and why it doesn't open
- * when it doesn't. Its expiry and password are rows below it.
+ * The default link: its URL to copy, its QR code and its menu, and why it
+ * doesn't open when it doesn't. Its expiry and password are rows below it.
  */
 export function DefaultLink({
   link,
   menu,
   onCopied,
+  qr,
+  onQr,
 }: {
   link: ShareLink
   menu: React.ReactNode
   onCopied: () => void
+  /** The link's QR code while it shows. */
+  qr?: React.ReactNode
+  onQr?: () => void
 }) {
   const { copied, copy } = useCopy(onCopied)
   const stopped = shareLinkSummary(link, { opened: false }).filter(
@@ -1366,6 +1401,20 @@ export function DefaultLink({
             <Button type="button" onClick={() => void copy(link.url!)}>
               {copied ? "Copied" : "Copy"}
             </Button>
+            {onQr ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="QR Code"
+                title="QR Code"
+                aria-expanded={Boolean(qr)}
+                className={cn(qr && "bg-accent")}
+                onClick={onQr}
+              >
+                <QrCode className="size-4" />
+              </Button>
+            ) : null}
           </>
         ) : (
           <p className="min-w-0 flex-1 text-sm text-muted-foreground">
@@ -1374,6 +1423,7 @@ export function DefaultLink({
         )}
         {menu}
       </div>
+      {qr}
       {stopped.length > 0 ? <DetailLine parts={stopped} /> : null}
       {viewed.length > 0 ? <DetailLine parts={viewed} /> : null}
     </div>
@@ -1395,12 +1445,15 @@ export function OtherLinkList({
   editingId,
   form,
   menu,
+  qr,
 }: {
   links: readonly ShareLink[]
   /** The link whose row shows `form` instead. */
   editingId: string | null
   form: React.ReactNode
   menu: (link: ShareLink, label: string) => React.ReactNode
+  /** A link's QR code while it shows, under its row. */
+  qr?: (link: ShareLink) => React.ReactNode
 }) {
   if (links.length === 0) return null
   return (
@@ -1413,22 +1466,26 @@ export function OtherLinkList({
             </li>
           )
         const name = linkName(link)
+        const code = qr?.(link)
         return (
-          <li key={link.id} className="flex items-center gap-2 py-1.5">
-            <div className="min-w-0 flex-1 space-y-0.5">
-              <p
-                className={cn(
-                  "truncate font-medium",
-                  link.status === "revoked" && "text-muted-foreground"
-                )}
-              >
-                {name}
-              </p>
-              <DetailLine parts={shareLinkSummary(link)} />
+          <li key={link.id} className="space-y-2 py-1.5">
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p
+                  className={cn(
+                    "truncate font-medium",
+                    link.status === "revoked" && "text-muted-foreground"
+                  )}
+                >
+                  {name}
+                </p>
+                <DetailLine parts={shareLinkSummary(link)} />
+              </div>
+              {link.canManage && link.status !== "revoked"
+                ? menu(link, `Actions for ${name}`)
+                : null}
             </div>
-            {link.canManage && link.status !== "revoked"
-              ? menu(link, `Actions for ${name}`)
-              : null}
+            {code}
           </li>
         )
       })}
@@ -1442,6 +1499,7 @@ function LinkMenu({
   container,
   disabled,
   onEdit,
+  onQr,
   onRevoke,
 }: {
   link: ShareLink
@@ -1450,6 +1508,8 @@ function LinkMenu({
   disabled: boolean
   /** Absent for the default link, whose settings show in the dialog. */
   onEdit?: () => void
+  /** Absent for the default link, which has a button for its code. */
+  onQr?: () => void
   onRevoke: () => void
 }) {
   return (
@@ -1482,6 +1542,12 @@ function LinkMenu({
           <DropdownMenuItem onClick={() => copyShareLink(link.url!)}>
             <Copy className="mr-2 size-4" />
             Copy Link
+          </DropdownMenuItem>
+        ) : null}
+        {link.url && onQr ? (
+          <DropdownMenuItem onClick={onQr}>
+            <QrCode className="mr-2 size-4" />
+            QR Code
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuSeparator />

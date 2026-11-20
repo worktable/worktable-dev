@@ -189,6 +189,7 @@ import {
   markdownReadingText,
 } from "../markdown-passage.ts"
 import type { McpSurface } from "./surface.ts"
+import { formatStorageBytes, storageSummary } from "../storage-limit.ts"
 import {
   delimitedChanges,
   IMAGE_MAX_BYTES,
@@ -1017,6 +1018,31 @@ export const GETTING_STARTED_ADD_REFUSAL =
 export const FIRST_SPACE_HINT =
   "No Space holds the person's work yet. Create one named for the work with worktable_spaces_write, then save there. Getting Started holds Worktable's guides."
 
+/**
+ * Orientation tells an agent when the Worktable is close to its storage
+ * limit, as Settings tells a person, so it can keep what it writes small or
+ * ask before writing more. Held on the preview surface. Read from memory.
+ */
+function storageNotice(surface: McpSurface | undefined) {
+  if (surface !== "preview") return {}
+  const summary = storageSummary()
+  if (!summary) return {}
+  const { bytes: limitBytes, warnAt, countedBytes: usedBytes } = summary.limit
+  if (usedBytes < limitBytes * warnAt) return {}
+  const used = formatStorageBytes(usedBytes)
+  const limit = formatStorageBytes(limitBytes)
+  return {
+    storage: {
+      usedBytes,
+      limitBytes,
+      message:
+        usedBytes >= limitBytes
+          ? `This Worktable is at its ${limit} limit. Writes that add to it are refused until something is deleted.`
+          : `This Worktable has used ${used} of its ${limit} limit. At the limit, its oldest history is removed to make room, and writes that still don't fit are refused.`,
+    },
+  }
+}
+
 /** Whether an operation would add a new item to the Space it names. */
 async function addsToSpace(
   operationId: OperationId,
@@ -1621,7 +1647,13 @@ async function _dispatchOperationInner(
               : "Document path cannot be resolved"
         )
       }
-      return { versions: result.versions }
+      return {
+        versions: result.versions,
+        // Held on the preview surface: older versions removed at the limit.
+        ...(context.surface === "preview" && result.pruned
+          ? { pruned: result.pruned }
+          : {}),
+      }
     }
     case "documents.diff": {
       return diffDocumentText({
@@ -2761,6 +2793,7 @@ async function _dispatchOperationInner(
             spaces.length === 1 && isGettingStartedSpace(spaces[0]!)
               ? FIRST_SPACE_HINT
               : "List a Space's files in every format with worktable_files_read, or search with worktable_search. Drawing previews and objects are available through worktable_drawings_read.",
+          ...storageNotice(context.surface),
           ...(await skills()),
         }
       }
@@ -2785,6 +2818,7 @@ async function _dispatchOperationInner(
         ...(hasScope(identity.scopes, "documents:read")
           ? { documents: await listDocuments({ spaceId, includeArchived }) }
           : {}),
+        ...storageNotice(context.surface),
         ...(await skills()),
       }
     }

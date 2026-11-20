@@ -978,6 +978,40 @@ export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
  * until agent directories review them. Each takes a released tool's place.
  */
 const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
+  // Storage: orientation says when the Worktable is close to its limit,
+  // and a file's history says when older versions were removed there.
+  worktable_state: (tool) => ({
+    ...tool,
+    description: `${tool.description} When the Worktable is close to its storage limit, it says so.`,
+    outputFields: {
+      ...tool.outputFields,
+      storage: z
+        .object({
+          usedBytes: z.number().int().nonnegative(),
+          limitBytes: z.number().int().positive(),
+          message: z.string(),
+        })
+        .optional()
+        .describe(
+          "Present when the Worktable has used 80% or more of its storage limit. At the limit its oldest history is removed to make room, and writes that still don't fit are refused."
+        ),
+    },
+  }),
+  worktable_files_read: (tool) => ({
+    ...tool,
+    outputFields: {
+      ...tool.outputFields,
+      pruned: z
+        .object({
+          versions: z.number().int().positive(),
+          at: z.string(),
+        })
+        .optional()
+        .describe(
+          "With versions: how many older versions were removed to make room at the storage limit, and when last."
+        ),
+    },
+  }),
   // Pictures of plain files: one page of a PDF, and an image scaled down,
   // which shows an agent an image too large to read as one.
   worktable_files_render: (tool) => ({

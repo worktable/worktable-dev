@@ -53,9 +53,17 @@ function distance(a: string, b: string, max: number): number {
   return rows[a.length]![b.length]!
 }
 
+/** Word lengths from which one and two edits are allowed, and whether a wrong first letter counts twice. */
+interface Rules {
+  one: number
+  two: number
+  firstLetterDouble: boolean
+}
+let rules: Rules = { one: 4, two: 8, firstLetterDouble: false }
+
 /** Edits a word may take: none when short, one, then two when long. */
 function budget(word: string): number {
-  return word.length < 4 ? 0 : word.length < 8 ? 1 : 2
+  return word.length < rules.one ? 0 : word.length < rules.two ? 1 : 2
 }
 
 /** Closest first, then the word more documents hold. */
@@ -64,7 +72,8 @@ function rank(word: string, candidates: Iterable<Term>): Term[] {
   const scored: Array<Term & { d: number }> = []
   for (const candidate of candidates) {
     if (candidate.term === word) continue
-    const d = distance(word, candidate.term, max)
+    let d = distance(word, candidate.term, max)
+    if (rules.firstLetterDouble && d <= max && candidate.term[0] !== word[0]) d += 1
     if (d <= max) scored.push({ ...candidate, d })
   }
   return scored.sort((a, b) => a.d - b.d || b.docs - a.docs).slice(0, 3)
@@ -360,11 +369,39 @@ for (const [name, method] of Object.entries(methods)) {
     `| ${name} | ${pct(first, cases.length)} | ${pct(top3, cases.length)} | ${pct(firstLetterRight, firstLetterCases)} | ${percentile(times, 50).toFixed(2)} / ${percentile(times, 95).toFixed(2)} ms | ${method.setupMs.toFixed(0)} ms | ${method.memoryMb !== undefined ? `${method.memoryMb.toFixed(0)} MB memory` : method.diskMb !== undefined ? `index file now ${method.diskMb.toFixed(0)} MB` : "none"} |`
   )
 }
-lines.push(
-  "",
-  `Machine: ${navigator.hardwareConcurrency} CPUs, Bun ${Bun.version}.`,
-  ""
-)
+// The whole-list scan under each engine's length rules, and with a wrong
+// first letter counting twice. Also scored without first-letter typos, which
+// studies put at 1-7% of real ones, not the 16% generated here.
+const variants: Array<[string, Rules]> = [
+  ["1 edit from 4 letters, 2 from 8 (Algolia)", { one: 4, two: 8, firstLetterDouble: false }],
+  ["1 from 4, 2 from 7 (Typesense)", { one: 4, two: 7, firstLetterDouble: false }],
+  ["1 from 5, 2 from 9 (Meilisearch)", { one: 5, two: 9, firstLetterDouble: false }],
+  ["1 from 3, 2 from 6 (Elasticsearch AUTO)", { one: 3, two: 6, firstLetterDouble: false }],
+  ["1 from 4, 2 from 8, first letter counts twice", { one: 4, two: 8, firstLetterDouble: true }],
+]
+lines.push("", "### Length rules for the whole-list scan", "", "| Rules | Right word first | In top 3 | Without first-letter typos: first / top 3 |", "|---|---|---|---|")
+for (const [name, variant] of variants) {
+  rules = variant
+  let first = 0
+  let top3 = 0
+  let firstOther = 0
+  let top3Other = 0
+  const other = cases.filter((c) => !c.firstLetter)
+  for (const c of cases) {
+    const found = rank(c.typo, vocabulary)
+    const hit1 = found[0]?.term === c.target
+    const hit3 = found.some((f) => f.term === c.target)
+    if (hit1) first += 1
+    if (hit3) top3 += 1
+    if (!c.firstLetter) {
+      if (hit1) firstOther += 1
+      if (hit3) top3Other += 1
+    }
+  }
+  const pct = (n: number, of: number) => `${((n / of) * 100).toFixed(0)}%`
+  lines.push(`| ${name} | ${pct(first, cases.length)} | ${pct(top3, cases.length)} | ${pct(firstOther, other.length)} / ${pct(top3Other, other.length)} |`)
+}
+lines.push("", `Machine: ${navigator.hardwareConcurrency} CPUs, Bun ${Bun.version}.`, "")
 db.close()
 rmSync(work, { recursive: true, force: true })
 report["methods"] = results

@@ -141,6 +141,9 @@ function useValidation(validated: boolean): Promise<void> {
   return validation.promise
 }
 
+/** An address fragment a reloaded page may open at. */
+const FRAME_HASH = /^#[^\s#]{1,255}$/
+
 function WidgetDetailPage({
   spaceId,
   widgetId,
@@ -249,7 +252,7 @@ function WidgetDetailPage({
   // check, is what catches a move during the open, so it waits for the check.
   const [frameBeforeCheck] = useState(() => isSpaceLive(spaceId))
   const frameRevision = page ? page.revision : preview?.revision
-  const frameSrc =
+  const baseFrameSrc =
     !page && !frameBeforeCheck
       ? null
       : frameRevision
@@ -261,6 +264,19 @@ function WidgetDetailPage({
         : `${contentUrl}&v=${encodeURIComponent(
             page?.provenance?.contentHash ?? page?.document.updatedAt ?? ""
           )}`
+  // Where the reader is in the page, as the page reports it. A new revision
+  // loads the page again: it opens at the same address fragment (a deck's
+  // slide), and the scroll position is sent back once it starts.
+  const [frameHash, setFrameHash] = useState("")
+  const frameScroll = useRef({ x: 0, y: 0 })
+  const [frameOpening, setFrameOpening] = useState({
+    base: baseFrameSrc,
+    hash: "",
+  })
+  if (frameOpening.base !== baseFrameSrc)
+    setFrameOpening({ base: baseFrameSrc, hash: frameHash })
+  const frameSrc =
+    baseFrameSrc === null ? null : `${baseFrameSrc}${frameOpening.hash}`
   const [loadedFrameSrc, setLoadedFrameSrc] = useState<string | null>(null)
   const [commentButton, setCommentButton] = useState<HTMLButtonElement | null>(
     null
@@ -466,6 +482,12 @@ function WidgetDetailPage({
           data.navigationToken.length >= 16
         ) {
           navigationToken = data.navigationToken
+          const { x, y } = frameScroll.current
+          if (x || y)
+            iframeWindow?.postMessage(
+              { type: "worktable.place.restore", place: { x, y } },
+              "*"
+            )
         }
         return
       }
@@ -494,6 +516,18 @@ function WidgetDetailPage({
       // WindowProxy survives navigation. A replacement page must not inherit
       // the original document's broker, including requests waiting for validation.
       if (!isCurrentFrame()) return
+      if (data?.type === "worktable.place") {
+        const place = (data as { place?: unknown }).place as
+          | { hash?: unknown; x?: unknown; y?: unknown }
+          | undefined
+        const hash = typeof place?.hash === "string" ? place.hash : ""
+        setFrameHash(FRAME_HASH.test(hash) ? hash : "")
+        frameScroll.current = {
+          x: typeof place?.x === "number" ? place.x : 0,
+          y: typeof place?.y === "number" ? place.y : 0,
+        }
+        return
+      }
       if (data?.type?.startsWith("worktable.comment.")) {
         onFrameComment(data)
         return
@@ -663,8 +697,12 @@ function WidgetDetailPage({
   const fullscreenActive = nativeFullscreen || overlayFullscreen
 
   useEffect(() => {
-    const handleFullscreenChange = () =>
+    const handleFullscreenChange = () => {
       setNativeFullscreen(!!document.fullscreenElement)
+      // Keys go to the page once it fills the screen, so a deck's arrow
+      // keys work without a click first.
+      if (document.fullscreenElement) iframeRef.current?.focus()
+    }
     document.addEventListener("fullscreenchange", handleFullscreenChange)
     return () =>
       document.removeEventListener("fullscreenchange", handleFullscreenChange)
@@ -952,7 +990,9 @@ function WidgetDetailPage({
             active={frameSrc !== null && loadedFrameSrc === frameSrc}
             closeWhen={elementComments.mode}
           />
-          {(frameSrc === null || loadedFrameSrc !== frameSrc) && (
+          {/* The placeholder covers the first load only: a new revision
+              replaces the page in place, at the reader's place. */}
+          {(frameSrc === null || loadedFrameSrc === null) && (
             <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden bg-background">
               <EditorSkeleton />
             </div>

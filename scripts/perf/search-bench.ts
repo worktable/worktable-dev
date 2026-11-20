@@ -83,7 +83,7 @@ function memory(): { rssMb: number; heapMb: number } {
 }
 
 /** Plain text files, as people and agents leave them: logs and notes. */
-function addTextFiles(workspace: string, count: number): void {
+export function addTextFiles(workspace: string, count: number): void {
   const spaces = readdirSync(join(workspace, "spaces")).filter(
     (name) => !name.startsWith(".")
   )
@@ -492,123 +492,125 @@ function overlap(
   return shares.reduce((sum, share) => sum + share, 0) / shares.length
 }
 
-const args = parseArgs(process.argv.slice(2))
-const mode = args.get("mode")
+if (import.meta.main) {
+  const args = parseArgs(process.argv.slice(2))
+  const mode = args.get("mode")
 
-if (mode) {
-  // A child: one index, one fresh process.
-  const workspace = args.get("workspace")!
-  const app = args.get("app")!
-  const result =
-    mode === "minisearch"
-      ? await runMiniSearch(workspace, app)
-      : await runFts5(workspace, app, args.get("db")!, mode === "fts5-all")
-  console.log(`RESULT ${JSON.stringify(result)}`)
-  process.exit(0)
-}
-
-const profiles = (args.get("profiles") ?? "1k").split(",") as ProfileName[]
-const fileCount = Number(args.get("files") ?? "2000")
-const out = args.get("out") ?? join(REPO_ROOT, "test-results")
-mkdirSync(out, { recursive: true })
-const report: Record<string, unknown> = {
-  node: process.version,
-  bun: Bun.version,
-  cpus: navigator.hardwareConcurrency,
-}
-const lines: string[] = ["# Search index benchmark", ""]
-
-for (const profile of profiles) {
-  const seed = 1
-  const dir = fixtureDir(profile, seed)
-  if (!readFixture(dir)) {
-    const generated = spawnSync(
-      "bun",
-      [
-        "scripts/perf/fixtures.ts",
-        "--profile",
-        profile,
-        "--seed",
-        String(seed),
-      ],
-      {
-        cwd: REPO_ROOT,
-        stdio: "inherit",
-      }
-    )
-    if (generated.status !== 0) throw new Error(`fixture ${profile} failed`)
+  if (mode) {
+    // A child: one index, one fresh process.
+    const workspace = args.get("workspace")!
+    const app = args.get("app")!
+    const result =
+      mode === "minisearch"
+        ? await runMiniSearch(workspace, app)
+        : await runFts5(workspace, app, args.get("db")!, mode === "fts5-all")
+    console.log(`RESULT ${JSON.stringify(result)}`)
+    process.exit(0)
   }
-  // A copy with text files added, the same for every run.
-  const work = mkdtempSync(join(tmpdir(), `search-bench-${profile}-`))
-  cpSync(join(dir, "workspace"), join(work, "workspace"), { recursive: true })
-  addTextFiles(join(work, "workspace"), fileCount)
 
-  const child = (childMode: string) => {
-    const app = join(work, `app-${childMode}`)
-    cpSync(join(dir, "app"), app, { recursive: true })
-    const db = join(work, `db-${childMode}`)
-    mkdirSync(db, { recursive: true })
-    const run = spawnSync(
-      "bun",
-      [
-        "scripts/perf/search-bench.ts",
-        "--mode",
-        childMode,
-        "--workspace",
-        join(work, "workspace"),
-        "--app",
-        app,
-        "--db",
-        db,
-      ],
-      { cwd: REPO_ROOT, encoding: "utf8", maxBuffer: 64 * 2 ** 20 }
-    )
-    const line = run.stdout
-      .split("\n")
-      .find((entry) => entry.startsWith("RESULT "))
-    if (!line)
-      throw new Error(
-        `${childMode} on ${profile} failed:\n${run.stdout.slice(-2000)}\n${run.stderr.slice(-4000)}`
+  const profiles = (args.get("profiles") ?? "1k").split(",") as ProfileName[]
+  const fileCount = Number(args.get("files") ?? "2000")
+  const out = args.get("out") ?? join(REPO_ROOT, "test-results")
+  mkdirSync(out, { recursive: true })
+  const report: Record<string, unknown> = {
+    node: process.version,
+    bun: Bun.version,
+    cpus: navigator.hardwareConcurrency,
+  }
+  const lines: string[] = ["# Search index benchmark", ""]
+
+  for (const profile of profiles) {
+    const seed = 1
+    const dir = fixtureDir(profile, seed)
+    if (!readFixture(dir)) {
+      const generated = spawnSync(
+        "bun",
+        [
+          "scripts/perf/fixtures.ts",
+          "--profile",
+          profile,
+          "--seed",
+          String(seed),
+        ],
+        {
+          cwd: REPO_ROOT,
+          stdio: "inherit",
+        }
       )
-    return JSON.parse(line.slice("RESULT ".length)) as ModeResult
-  }
-  const mini = child("minisearch")
-  const ftsDocs = child("fts5-docs")
-  const ftsAll = child("fts5-all")
-  rmSync(work, { recursive: true, force: true })
+      if (generated.status !== 0) throw new Error(`fixture ${profile} failed`)
+    }
+    // A copy with text files added, the same for every run.
+    const work = mkdtempSync(join(tmpdir(), `search-bench-${profile}-`))
+    cpSync(join(dir, "workspace"), join(work, "workspace"), { recursive: true })
+    addTextFiles(join(work, "workspace"), fileCount)
 
-  report[profile] = {
-    minisearch: mini,
-    fts5Docs: ftsDocs,
-    fts5All: ftsAll,
-    top10Overlap: overlap(mini.top, ftsDocs.top),
-    top10OverlapAnyWord: overlap(mini.top, ftsDocs.topAnyWord ?? {}),
+    const child = (childMode: string) => {
+      const app = join(work, `app-${childMode}`)
+      cpSync(join(dir, "app"), app, { recursive: true })
+      const db = join(work, `db-${childMode}`)
+      mkdirSync(db, { recursive: true })
+      const run = spawnSync(
+        "bun",
+        [
+          "scripts/perf/search-bench.ts",
+          "--mode",
+          childMode,
+          "--workspace",
+          join(work, "workspace"),
+          "--app",
+          app,
+          "--db",
+          db,
+        ],
+        { cwd: REPO_ROOT, encoding: "utf8", maxBuffer: 64 * 2 ** 20 }
+      )
+      const line = run.stdout
+        .split("\n")
+        .find((entry) => entry.startsWith("RESULT "))
+      if (!line)
+        throw new Error(
+          `${childMode} on ${profile} failed:\n${run.stdout.slice(-2000)}\n${run.stderr.slice(-4000)}`
+        )
+      return JSON.parse(line.slice("RESULT ".length)) as ModeResult
+    }
+    const mini = child("minisearch")
+    const ftsDocs = child("fts5-docs")
+    const ftsAll = child("fts5-all")
+    rmSync(work, { recursive: true, force: true })
+
+    report[profile] = {
+      minisearch: mini,
+      fts5Docs: ftsDocs,
+      fts5All: ftsAll,
+      top10Overlap: overlap(mini.top, ftsDocs.top),
+      top10OverlapAnyWord: overlap(mini.top, ftsDocs.topAnyWord ?? {}),
+    }
+    const ms = (value: number | undefined) =>
+      value === undefined ? "n/a" : `${value.toFixed(value < 10 ? 2 : 0)} ms`
+    const mb = (value: number | undefined) =>
+      value === undefined ? "n/a" : `${value.toFixed(1)} MB`
+    lines.push(
+      `## ${profile} Docs (${ftsAll.counts["docs"]} documents, ${ftsAll.counts["messages"]} thread messages in ${ftsAll.counts["threads"]} threads, ${ftsAll.counts["files"]} text files)`,
+      "",
+      "| Measure | MiniSearch today | FTS5, same Docs | FTS5, Docs + threads + files |",
+      "|---|---|---|---|",
+      `| Build from nothing | ${ms(mini.buildMs)} | ${ms(ftsDocs.buildMs)} (projection ${ms(ftsDocs.projectMs)}) | ${ms(ftsAll.buildMs)} (reading ${ms(ftsAll.projectMs)}) |`,
+      `| Memory held (RSS growth) | ${mb(mini.rssMb)} | ${mb(ftsDocs.rssMb)} | ${mb(ftsAll.rssMb)} |`,
+      `| JS heap growth | ${mb(mini.heapMb)} | ${mb(ftsDocs.heapMb)} | ${mb(ftsAll.heapMb)} |`,
+      `| On disk | none | ${mb(ftsDocs.diskMb)} | ${mb(ftsAll.diskMb)} |`,
+      `| First search after a restart | ${ms(mini.firstQueryAfterRestartMs)} (full rebuild) | ${ms(ftsDocs.firstQueryAfterRestartMs)} + catch-up check ${ms(ftsDocs.catchUpMs)} | ${ms(ftsAll.firstQueryAfterRestartMs)} + ${ms(ftsAll.catchUpMs)} |`,
+      `| Search, p50 / p95 | ${ms(mini.queryP50Ms)} / ${ms(mini.queryP95Ms)} | ${ms(ftsDocs.queryP50Ms)} / ${ms(ftsDocs.queryP95Ms)} | ${ms(ftsAll.queryP50Ms)} / ${ms(ftsAll.queryP95Ms)} |`,
+      `| An edit, until searchable | ${ms(mini.editVisibleMs)} | ${ms(ftsDocs.editVisibleMs)} | ${ms(ftsAll.editVisibleMs)} |`,
+      `| Top-10 overlap with today's Doc ranking | 100% | ${(overlap(mini.top, ftsDocs.top) * 100).toFixed(0)}% all words; ${(overlap(mini.top, ftsDocs.topAnyWord ?? {}) * 100).toFixed(0)}% any word | |`,
+      `| Misspelled queries with any hit | ${Object.values(mini.typoHits).filter((n) => n > 0).length} of ${TYPO_QUERIES.length} | ${Object.values(ftsDocs.typoHits).filter((n) => n > 0).length} of ${TYPO_QUERIES.length} | |`,
+      ""
+    )
   }
-  const ms = (value: number | undefined) =>
-    value === undefined ? "n/a" : `${value.toFixed(value < 10 ? 2 : 0)} ms`
-  const mb = (value: number | undefined) =>
-    value === undefined ? "n/a" : `${value.toFixed(1)} MB`
   lines.push(
-    `## ${profile} Docs (${ftsAll.counts["docs"]} documents, ${ftsAll.counts["messages"]} thread messages in ${ftsAll.counts["threads"]} threads, ${ftsAll.counts["files"]} text files)`,
-    "",
-    "| Measure | MiniSearch today | FTS5, same Docs | FTS5, Docs + threads + files |",
-    "|---|---|---|---|",
-    `| Build from nothing | ${ms(mini.buildMs)} | ${ms(ftsDocs.buildMs)} (projection ${ms(ftsDocs.projectMs)}) | ${ms(ftsAll.buildMs)} (reading ${ms(ftsAll.projectMs)}) |`,
-    `| Memory held (RSS growth) | ${mb(mini.rssMb)} | ${mb(ftsDocs.rssMb)} | ${mb(ftsAll.rssMb)} |`,
-    `| JS heap growth | ${mb(mini.heapMb)} | ${mb(ftsDocs.heapMb)} | ${mb(ftsAll.heapMb)} |`,
-    `| On disk | none | ${mb(ftsDocs.diskMb)} | ${mb(ftsAll.diskMb)} |`,
-    `| First search after a restart | ${ms(mini.firstQueryAfterRestartMs)} (full rebuild) | ${ms(ftsDocs.firstQueryAfterRestartMs)} + catch-up check ${ms(ftsDocs.catchUpMs)} | ${ms(ftsAll.firstQueryAfterRestartMs)} + ${ms(ftsAll.catchUpMs)} |`,
-    `| Search, p50 / p95 | ${ms(mini.queryP50Ms)} / ${ms(mini.queryP95Ms)} | ${ms(ftsDocs.queryP50Ms)} / ${ms(ftsDocs.queryP95Ms)} | ${ms(ftsAll.queryP50Ms)} / ${ms(ftsAll.queryP95Ms)} |`,
-    `| An edit, until searchable | ${ms(mini.editVisibleMs)} | ${ms(ftsDocs.editVisibleMs)} | ${ms(ftsAll.editVisibleMs)} |`,
-    `| Top-10 overlap with today's Doc ranking | 100% | ${(overlap(mini.top, ftsDocs.top) * 100).toFixed(0)}% all words; ${(overlap(mini.top, ftsDocs.topAnyWord ?? {}) * 100).toFixed(0)}% any word | |`,
-    `| Misspelled queries with any hit | ${Object.values(mini.typoHits).filter((n) => n > 0).length} of ${TYPO_QUERIES.length} | ${Object.values(ftsDocs.typoHits).filter((n) => n > 0).length} of ${TYPO_QUERIES.length} | |`,
+    `Machine: ${navigator.hardwareConcurrency} CPUs, Bun ${Bun.version}.`,
     ""
   )
+  writeFileSync(join(out, "search-bench.json"), JSON.stringify(report, null, 2))
+  writeFileSync(join(out, "search-bench.md"), lines.join("\n"))
+  console.log(lines.join("\n"))
 }
-lines.push(
-  `Machine: ${navigator.hardwareConcurrency} CPUs, Bun ${Bun.version}.`,
-  ""
-)
-writeFileSync(join(out, "search-bench.json"), JSON.stringify(report, null, 2))
-writeFileSync(join(out, "search-bench.md"), lines.join("\n"))
-console.log(lines.join("\n"))

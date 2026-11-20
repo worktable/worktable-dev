@@ -59,7 +59,9 @@ package when it's ready. It is a standard ZIP archive. After extracting:
 
 - `Open Worktable Export.html` is a read-only offline browser. It does not run
   HTML-doc scripts or make network requests.
-- `workspace/` holds the exact portable workspace.
+- `workspace/` holds the portable workspace. A version history file with
+  the same bytes as another file in the package is stored once, and importing
+  puts it back.
 - `README.txt` explains the layout.
 
 ### Filename recovery

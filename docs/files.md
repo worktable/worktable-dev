@@ -695,7 +695,10 @@ them.
 
 **Enforced in:** `workspace-transfer-v2.ts`, `workspace-transfer-jobs.ts`,
 `routes/workspace.ts` (a package downloads by range, under `If-Range` with
-its hash, so a broken-off download resumes and never mixes two packages).
+its hash, so a broken-off download resumes and never mixes two packages). A
+package stores a history file once when its bytes match a file already in it
+(package version 3, `sameAs`), so a file and the history copy of its current
+version take its size once; importing recreates the copy and checks its hash.
 
 **Proved by:**
 

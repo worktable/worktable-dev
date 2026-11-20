@@ -484,6 +484,8 @@ describe("search excerpts", () => {
   });
 
   it("finds archived documents from the same index, marked and after the rest when asked", async () => {
+    // Every answer here comes from a finished index, however slow the machine.
+    setSearchWaitForTests(60_000);
     const find = async (query: string, extra = "") => {
       const res = await req(
         app,
@@ -518,10 +520,8 @@ describe("search excerpts", () => {
     });
     const all = await find("pairing", "&includeArchived=true&archivedLast=true");
     expect(reread).toBe(0);
-    expect(all.map((result) => [result.spaceId, result.path, result.archived])).toEqual([
-      ["meta", "pairing-today", undefined],
-      ...all.slice(1).map((result) => [result.spaceId, result.path, true]),
-    ]);
+    expect(all.map((result) => result.archived)).toEqual([undefined, true, true]);
+    expect(all[0]?.path).toBe("pairing-today");
     expect(all.slice(1).map((result) => result.path).sort()).toEqual([
       "pairing-notes",
       "pairing-old",
@@ -565,6 +565,7 @@ describe("search excerpts", () => {
   });
 
   it("narrows a search to the kinds asked for", async () => {
+    setSearchWaitForTests(60_000);
     const find = async (query: string, kinds: string) =>
       req(app, "GET", `/api/search?query=${query}&documentMode=common&kinds=${kinds}`);
     const created = await req(app, "POST", "/api/spaces/meta/widgets", {

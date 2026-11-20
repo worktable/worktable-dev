@@ -346,9 +346,6 @@ work without knowing it.
 
 **Gaps:**
 
-- The released MCP surface still describes `expectedRevision` as optional for
-  `worktable_files_write`, though a replace without it is refused; the preview
-  surface says it's required.
 - No test covers a ChatGPT attachment replace.
 
 ### 9. A revision is one state
@@ -497,8 +494,7 @@ the type table allows), `packages/types/src/file-types.ts`,
   password, damage and a size past the limits each end in a reason, never a
   picture.
 
-The one binary format Worktable decodes is AVIF, for agents on the MCP preview
-surface: the sandboxed preview browser converts it to PNG, with no network,
+The one binary format Worktable decodes for agents is AVIF: the sandboxed preview browser converts it to PNG, with no network,
 within 15 seconds, for a file up to 5 MiB whose container declares pictures up
 to 8192 pixels a side and 40 million pixels (read from its box headers before
 anything decodes it), and a PNG up to 5 MiB (`agent-image-conversion.ts`).
@@ -613,6 +609,9 @@ export can carry, can't be recovered.
   left": reads, a smaller replace and a delete still work at the limit.
 - `storage-limit.test.ts` "leaves transfers out, counts a write on disk past the
   limit, and refuses the next new write".
+- `storage-limit.test.ts` "refuses a write that doesn't fit from the first
+  moment after start": before the first count, a write starts it at once and
+  is refused, instead of going through uncounted.
 - `storage-limit.test.ts` "keeps the version a replace supersedes, and lets a
   person keep drawing, at the limit": a replace prunes older history, never
   the version it replaced, and is refused when only that could make room; a
@@ -624,7 +623,9 @@ export can carry, can't be recovered.
 
 **Gaps:**
 
-- Nothing is refused until the first count, a few seconds after start.
+- A write that needs room in the first seconds after start waits for the
+  first count, up to 10 seconds; on a Worktable too large to count in that
+  time, it goes through uncounted.
 - Typing in a Doc has no bound past the limit: a person who keeps typing, or
   sends large edits through the editor connection, keeps adding bytes.
 - Each file's current version is also kept as a history copy that pruning
@@ -660,7 +661,7 @@ reason for both), `mcp/file-results.ts`.
 - `mcp-document-previews.test.ts` "keeps HTML saved when preview runtime is
   unavailable and fences standalone captures to the source revision".
 - `mcp-documents.test.ts` "reads code the type table doesn't list and a
-  Dockerfile as text, and an AVIF as an image": on the preview surface only.
+  Dockerfile as text, and an AVIF as an image".
 - `mcp-document-previews.test.ts` "shows agents a PDF's page and an image
   scaled down, on the preview surface, and says why a file has no preview":
   the picture names the revision it is of, and the released surface is as it
@@ -668,17 +669,16 @@ reason for both), `mcp/file-results.ts`.
 
 Code files the table knows (`.js`, `.ts`, `.css`) show as text on their page,
 as agents read them. Plain text and logs are text to both; CSV and TSV are a
-table to people and text to agents, which carries the same content. On the MCP
-preview surface, source code the table doesn't list (such as `.py` or `.go`)
-and a `Dockerfile` read as text, and an AVIF as a PNG agents can see
-(`mcp/file-results.ts`). There too, `worktable_files_render` gives an agent a
+table to people and text to agents, which carries the same content. Source
+code the table doesn't list (such as `.py` or `.go`) and a `Dockerfile` read
+as text to agents, and an AVIF as a PNG they can see (`mcp/file-results.ts`).
+On the MCP preview surface, `worktable_files_render` gives an agent a
 picture of a plain file: one page of a PDF, with its page count, or an image
 scaled down, which shows it an image too large to read as one. People see no
 pictures of files yet.
 
 **Gaps:** a code type the table doesn't list, and a `Dockerfile`, is a card to
-people, and base64 to agents on the released surface. AVIF is an image to
-people but base64 to agents on the released surface. No test checks that the
+people but text to agents. No test checks that the
 HTTP API and agent tools report the same identity and revision for one file.
 
 ### 16. Everything can be taken out

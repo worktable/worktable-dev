@@ -293,6 +293,7 @@ export function SpaceOverview({
                         title={pin.title ?? pin.path}
                         formatId={pin.format?.id}
                         revision={pin.revision}
+                        picture={pin.picture}
                         tint={tint}
                         disabled={
                           pin.status === "active"

@@ -117,6 +117,37 @@ describe("isolated preview browser lifecycle", () => {
     await pool.close()
   })
 
+  test("runs background work only when nothing else waits, and never in the queue's place", async () => {
+    const fake = fakeWorkers()
+    const pool = new PreviewBrowserPool({
+      launch: fake.launch,
+      queueLimit: 1,
+      backgroundLimit: 2,
+    })
+    const order: string[] = []
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const first = pool.run("image", async () => {
+      await held
+      order.push("first")
+    })
+    await delay(5)
+    // Two pictures wait, then a job someone waits on arrives: it goes next.
+    const pictures = [
+      pool.run("image", async () => void order.push("picture 1"), { background: true }),
+      pool.run("image", async () => void order.push("picture 2"), { background: true }),
+    ]
+    // Background work never takes the queue's place.
+    const waited = pool.run("image", async () => void order.push("waited on"))
+    await expect(
+      pool.run("image", async () => "overflow", { background: true })
+    ).rejects.toMatchObject({ code: "PREVIEW_BUSY" })
+    release()
+    await Promise.all([first, waited, ...pictures])
+    expect(order).toEqual(["first", "waited on", "picture 1", "picture 2"])
+    await pool.close()
+  })
+
   test("deadline includes queue wait and idle workers stop", async () => {
     const fake = fakeWorkers()
     const pool = new PreviewBrowserPool({

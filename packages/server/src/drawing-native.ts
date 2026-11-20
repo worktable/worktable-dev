@@ -98,7 +98,8 @@ async function nativeJob<T>(
   task: (page: import("playwright-core").Page) => Promise<T>,
   operations: DrawingOperation[] = [],
   timeoutMs = 30_000,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  lowPriority = false
 ): Promise<T> {
   return withPreviewPage(
     "drawing",
@@ -149,6 +150,7 @@ async function nativeJob<T>(
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
         : AbortSignal.timeout(timeoutMs),
+      background: lowPriority,
     }
   )
 }
@@ -374,7 +376,7 @@ export async function renderNativeDrawing(
     return assets
   }
   let assets = options.region ? [] : validateBudget(shapes)
-  const { signal, ...renderOptions } = options
+  const { signal, lowPriority, ...renderOptions } = options
   const result = await nativeJob(
     drawing,
     async (page) => {
@@ -405,7 +407,8 @@ export async function renderNativeDrawing(
     },
     [],
     options.timeoutMs,
-    signal
+    signal,
+    lowPriority
   )
   if (Buffer.byteLength(result.data, "base64") > MAX_DOCUMENT_PREVIEW_BYTES)
     throw new Error("Drawing preview exceeds output budget")

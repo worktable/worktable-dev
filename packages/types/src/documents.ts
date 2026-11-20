@@ -504,6 +504,8 @@ export const ResolvedStartHerePinSchema = StartHerePinSchema.extend({
   status: z.enum(["active", "archived", "missing"]),
   title: z.string().optional(),
   format: DocumentFormatClaimSchema.optional(),
+  /** For an item with a picture, the version its picture is of. */
+  picture: z.string().optional(),
 })
 
 export type ResolvedStartHerePin = z.infer<typeof ResolvedStartHerePinSchema>

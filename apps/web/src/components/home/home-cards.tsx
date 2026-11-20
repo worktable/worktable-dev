@@ -386,8 +386,61 @@ function PagePreview({
 }
 
 /**
- * A pinned doc: a page shows itself, anything else its icon on its Space's
- * color.
+ * A picture of an item at one version, drawn by the server: the first page
+ * of a PDF, an image, a drawing. The browser keeps it for good, since its
+ * address names the version. The icon shows until it has loaded, and stays
+ * when there is none.
+ */
+function ItemPicture({
+  spaceId,
+  path,
+  version,
+  themed,
+  tint,
+  children,
+}: {
+  spaceId: string
+  path: string
+  version: string
+  /** Whether it is drawn in the app's theme, as a drawing is. */
+  themed: boolean
+  tint: CSSProperties
+  /** The item's icon, shown until the picture has loaded. */
+  children: ReactNode
+}) {
+  const { resolvedTheme } = useTheme()
+  const [loaded, setLoaded] = useState(false)
+  const src = `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/picture?path=${encodeURIComponent(path)}&v=${encodeURIComponent(version)}${
+    themed ? `&theme=${resolvedTheme === "dark" ? "dark" : "light"}` : ""
+  }`
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none relative flex aspect-[16/10] items-center justify-center overflow-hidden rounded-lg"
+      style={loaded ? undefined : tint}
+    >
+      {!loaded && children}
+      <img
+        src={src}
+        alt=""
+        decoding="async"
+        draggable={false}
+        onLoad={() => setLoaded(true)}
+        className={cn(
+          "absolute inset-0 size-full object-cover object-top transition-opacity duration-300",
+          loaded ? "opacity-100" : "opacity-0"
+        )}
+      />
+      {loaded && (
+        <span className="absolute inset-0 rounded-lg border border-card-border" />
+      )}
+    </span>
+  )
+}
+
+/**
+ * A pinned doc: a page shows itself, a file or drawing its picture, and
+ * anything else its icon on its Space's color.
  */
 export function PinTile({
   spaceId,
@@ -395,6 +448,7 @@ export function PinTile({
   title,
   formatId,
   revision,
+  picture,
   tint,
   place,
   onUnpin,
@@ -406,6 +460,8 @@ export function PinTile({
   formatId?: string
   /** The content revision; a page without one shows its icon. */
   revision?: string
+  /** For a file or drawing, the version its picture is of. */
+  picture?: string
   /** The Space's soft color and ink, for a doc that has no preview. */
   tint: CSSProperties
   /** Where it lives: its Space on Home, its folder in a Space. */
@@ -440,6 +496,16 @@ export function PinTile({
         >
           {icon}
         </PagePreview>
+      ) : picture && !disabled ? (
+        <ItemPicture
+          spaceId={spaceId}
+          path={path}
+          version={picture}
+          themed={formatId === "worktable.quickdraw"}
+          tint={tint}
+        >
+          {icon}
+        </ItemPicture>
       ) : (
         <span
           aria-hidden

@@ -422,7 +422,10 @@ checks, and stale output presented as current misleads.
 **Enforced in:** `share-images.ts` (shared-page images keyed by content hash),
 `document-preview-service.ts` and `html-preview.ts` (source revision and
 `partial` status), `routes/file-links.ts` (access checked when a link is used),
-`document-write-service.ts` (deletion).
+`document-write-service.ts` (deletion), `item-pictures.ts` (a pinned item's
+picture: its address names the version it is of, a version the item is no
+longer at has none, it is read with the Space's access, and nothing is kept
+on the server).
 
 **Proved by:**
 
@@ -506,7 +509,8 @@ Past any limit, or with `WORKTABLE_AGENT_IMAGE_CONVERSION=off`, the agent gets
 the file's bytes as before.
 
 Pictures of files are drawn in the same sandboxed browser, for agents on the
-MCP preview surface (`file-pictures.ts`): an image scaled down, and one page of
+MCP preview surface and for pinned tiles (`file-pictures.ts`,
+`item-pictures.ts`): an image scaled down, and one page of
 a PDF, which pdf.js parses there with no network, no workers, a PDF's scripts
 and forms off, and 30 seconds at most. The page is handed the file's bytes at
 one revision, at most 1 MiB at a time as it asks, never a path or a link. An
@@ -516,7 +520,9 @@ too; the server reads that header alone, at most 1 MiB, and never the image
 whole. A picture is at most 4 million pixels and 4 MiB, drawn smaller when
 it would pass either. `WORKTABLE_PICTURES_PDF=off` and
 `WORKTABLE_PICTURES_IMAGE=off` turn each off. A file with no picture says why
-and still reads and downloads.
+and still reads and downloads. Pictures for tiles wait in the browser's
+background lane: they run only when no other job waits, and never take a
+place in its queue.
 
 **Gaps:** no test covers the web page's `sandbox=""` frame. Worktable has no
 container parsers in its own process yet; the first one must follow this

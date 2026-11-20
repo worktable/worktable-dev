@@ -36,6 +36,10 @@ export class PreviewBrowserError extends Error {
 }
 const DRIVER_VERSION = "1.61.1"
 let launchStatus: "not_checked" | "ready" | "failed" = "not_checked"
+/** When the browser last failed to start, by Date.now(). */
+let launchFailedAt = 0
+/** How long a failed start keeps lists from asking for pictures. */
+const LAUNCH_FAILURE_HOLD_MS = 10 * 60_000
 let launchFailure: string | undefined
 let launchFailureKind: PreviewSandboxFailure | undefined
 const localRequire = createRequire(import.meta.url)
@@ -120,6 +124,17 @@ function resolveRuntime(): Runtime {
   }
 }
 
+/**
+ * Whether this host's preview browser failed to start, from what is already
+ * known: reads nothing, so lists can ask it per request.
+ */
+export function previewBrowserFailed(): boolean {
+  return (
+    launchStatus === "failed" &&
+    Date.now() - launchFailedAt < LAUNCH_FAILURE_HOLD_MS
+  )
+}
+
 export function previewBrowserAvailability(): {
   available: boolean
   sandboxRequired: true
@@ -189,6 +204,8 @@ interface PoolOptions {
   deadlineMs?: number
   idleMs?: number
   queueLimit?: number
+  /** How many background jobs may wait, beside the queue's own limit. */
+  backgroundLimit?: number
 }
 
 async function launchWorker(): Promise<Worker> {
@@ -203,6 +220,7 @@ async function launchWorker(): Promise<Worker> {
     return worker
   } catch (error) {
     launchStatus = "failed"
+    launchFailedAt = Date.now()
     launchFailureKind = classifyPreviewSandboxFailure(String(error))
     launchFailure = describePreviewLaunchFailure(
       String(error),
@@ -252,6 +270,11 @@ export function describePreviewLaunchFailure(
 export class PreviewBrowserPool {
   private readonly workers = new Map<PreviewKind, Worker>()
   private readonly queue: Job[] = []
+  /**
+   * Work nobody is waiting on, such as pictures for lists: it runs only
+   * when the queue is empty, and never takes a place in it.
+   */
+  private readonly background: Job[] = []
   private active: Job | undefined
   private activeCompletion: Promise<void> = Promise.resolve()
   private readonly retiring = new Set<Promise<void>>()
@@ -266,8 +289,9 @@ export class PreviewBrowserPool {
   async run<T>(
     kind: PreviewKind,
     task: (page: Page) => Promise<T>,
-    options: { signal?: AbortSignal } = {}
+    options: { signal?: AbortSignal; background?: boolean } = {}
   ): Promise<T> {
+    const waiting = options.background ? this.background : this.queue
     if (options.signal?.aborted)
       throw new PreviewBrowserError(
         "PREVIEW_CANCELLED",
@@ -278,7 +302,12 @@ export class PreviewBrowserPool {
         "PREVIEW_CANCELLED",
         "Preview service is shutting down"
       )
-    if (this.queue.length >= (this.options.queueLimit ?? 8))
+    if (
+      waiting.length >=
+      (options.background
+        ? (this.options.backgroundLimit ?? 16)
+        : (this.options.queueLimit ?? 8))
+    )
       throw new PreviewBrowserError(
         "PREVIEW_BUSY",
         "Preview queue is full; retry later"
@@ -307,8 +336,8 @@ export class PreviewBrowserPool {
           job.interrupt()
           job.cleanup()
           reject(error)
-          const index = this.queue.indexOf(job)
-          if (index >= 0) this.queue.splice(index, 1)
+          const index = waiting.indexOf(job)
+          if (index >= 0) waiting.splice(index, 1)
           if (this.active === job) void this.retire(kind)
         },
       }
@@ -335,7 +364,7 @@ export class PreviewBrowserPool {
         this.options.deadlineMs ?? 30_000
       )
       options.signal?.addEventListener("abort", onAbort, { once: true })
-      this.queue.push(job)
+      waiting.push(job)
       void this.drain()
     })
   }
@@ -358,7 +387,7 @@ export class PreviewBrowserPool {
 
   private async drain(): Promise<void> {
     if (this.active || this.closing) return
-    const job = this.queue.shift()
+    const job = this.queue.shift() ?? this.background.shift()
     if (!job) {
       this.idleTimer = setTimeout(() => {
         void Promise.all(
@@ -387,6 +416,10 @@ export class PreviewBrowserPool {
             const launched = await (this.options.launch ?? launchWorker)(
               job.kind
             )
+            // A browser that starts clears an earlier failure to start.
+            launchStatus = "ready"
+            launchFailure = undefined
+            launchFailureKind = undefined
             if (job.cancelled || this.closing) {
               await settleWithin(launched.server.kill())
               throw new PreviewBrowserError(
@@ -521,7 +554,7 @@ export class PreviewBrowserPool {
         "PREVIEW_CANCELLED",
         "Preview service is shutting down"
       )
-      for (const job of [...this.queue]) job.abort(error)
+      for (const job of [...this.queue, ...this.background]) job.abort(error)
       this.active?.abort(error)
       await Promise.all(
         [...this.workers.keys()].map((kind) => this.retire(kind))
@@ -547,10 +580,14 @@ export function runWithPreviewBrowserPool<T>(
 }
 
 let pool = new PreviewBrowserPool()
+/**
+ * Runs `task` in a fresh sandboxed page. `background` work waits until
+ * nothing else does: someone waiting on a preview always goes first.
+ */
 export function withPreviewPage<T>(
   kind: PreviewKind,
   task: (page: Page) => Promise<T>,
-  options: { signal?: AbortSignal } = {}
+  options: { signal?: AbortSignal; background?: boolean } = {}
 ): Promise<T> {
   return (scopedPools.getStore() ?? pool).run(kind, task, options)
 }

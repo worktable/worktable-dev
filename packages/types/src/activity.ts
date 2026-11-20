@@ -220,6 +220,8 @@ export interface HomePin extends HomePinRef {
   formatId?: string
   /** The content revision, which addresses a page's preview. */
   revision?: string
+  /** For an item with a picture, the version its picture is of. */
+  picture?: string
 }
 
 export interface HomeFeed {

@@ -66,7 +66,9 @@ export default function PdfFileView({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-1">
-        <div className="min-w-0 flex-1">{leading}</div>
+        <div className="min-w-0 flex-1 text-sm text-muted-foreground">
+          {leading}
+        </div>
         {shown ? (
           <div className="flex shrink-0 items-center gap-0.5">
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums">

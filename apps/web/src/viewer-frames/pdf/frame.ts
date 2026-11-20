@@ -34,10 +34,65 @@ class HostBinaryData {
   }
 }
 
-/** The file's bytes, a piece at a time, from the page. */
+/** The most read ahead of what pdf.js asked for, when it reads in a row. */
+const READ_AHEAD_MAX_BYTES = 1024 * 1024
+
+/**
+ * The file's bytes, a piece at a time, from the page. pdf.js asks for one
+ * piece after another when it reads a long table, each a round trip. When a
+ * request starts where the last one ended, more is fetched than was asked
+ * for, doubling each time, and the next requests are answered from it.
+ */
 class HostTransport extends pdfjs.PDFDataRangeTransport {
+  #length: number
+  #asked = new Map<number, number>()
+  #ahead: { begin: number; bytes: Uint8Array } | null = null
+  #lastEnd = -1
+  #extra = 0
+
+  constructor(length: number, start: Uint8Array) {
+    super(length, start)
+    this.#length = length
+  }
+
   override requestDataRange(begin: number, end: number): void {
-    say({ type: "viewer.read", begin, end })
+    const inRow = begin === this.#lastEnd
+    this.#lastEnd = end
+    const ahead = this.#ahead
+    if (
+      ahead &&
+      ahead.begin === begin &&
+      ahead.bytes.byteLength >= end - begin
+    ) {
+      const rest = ahead.bytes.subarray(end - begin)
+      this.#ahead = rest.byteLength > 0 ? { begin: end, bytes: rest } : null
+      const now = ahead.bytes.slice(0, end - begin)
+      void Promise.resolve().then(() => this.onDataRange(begin, now))
+      return
+    }
+    this.#ahead = null
+    this.#extra = inRow
+      ? Math.min(
+          Math.max(this.#extra * 2, VIEWER_PIECE_BYTES),
+          READ_AHEAD_MAX_BYTES
+        )
+      : 0
+    this.#asked.set(begin, end)
+    say({
+      type: "viewer.read",
+      begin,
+      end: Math.min(this.#length, end + this.#extra),
+    })
+  }
+
+  /** Bytes the page sent for a read that began at `begin`. */
+  arrived(begin: number, data: Uint8Array): void {
+    const wanted = (this.#asked.get(begin) ?? begin + data.byteLength) - begin
+    this.#asked.delete(begin)
+    if (data.byteLength > wanted) {
+      this.#ahead = { begin: begin + wanted, bytes: data.slice(wanted) }
+    }
+    this.onDataRange(begin, data.slice(0, wanted))
   }
 }
 
@@ -120,7 +175,8 @@ async function open(
   let shown = false
   eventBus.on("pagesinit", () => {
     if (!viewer) return
-    viewer.currentScaleValue = "page-width"
+    // The width of the pane, up to a size that still reads as a page.
+    viewer.currentScaleValue = "auto"
     if (message.page) viewer.currentPageNumber = message.page
   })
   eventBus.on("pagerendered", () => {
@@ -175,17 +231,18 @@ hear((message) => {
   if (message.type === "viewer.open") void open(message)
   else if (message.type === "viewer.bytes") {
     if (message.data) {
-      transport?.onDataRange(message.begin, new Uint8Array(message.data))
+      transport?.arrived(message.begin, new Uint8Array(message.data))
     }
   } else if (message.type === "viewer.asset")
     assetArrived(message.id, message.data)
   else command(message)
 })
 
-// Fit to width follows the pane as it is resized.
+// A zoom that fits the pane follows it as it is resized.
 window.addEventListener("resize", () => {
-  if (viewer?.currentScaleValue === "page-width") {
-    viewer.currentScaleValue = "page-width"
+  const fit = viewer?.currentScaleValue
+  if (viewer && (fit === "auto" || fit === "page-width")) {
+    viewer.currentScaleValue = fit
   }
 })
 

@@ -70,6 +70,13 @@ describe("the parsing lane", () => {
     const started = performance.now()
     expect(await parse("echo", { bytes: unreadable })).toMatchObject({ kind: "failed", why: "source" })
     expect(performance.now() - started).toBeLessThan(10_000)
+    // A job can be cancelled, running or queued: its worker is killed.
+    const cancelling = new AbortController()
+    const running = parse("hang", { signal: cancelling.signal })
+    const queued = parse("echo", { signal: cancelling.signal, priority: "background" })
+    cancelling.abort()
+    expect(await running).toMatchObject({ kind: "failed", why: "cancelled" })
+    expect(await queued).toMatchObject({ kind: "failed", why: "cancelled" })
     // The lane is still there for the next file.
     expect(await parse("echo")).toMatchObject({ kind: "ok" })
   }, 30_000)

@@ -810,8 +810,12 @@ longer than a page, which is cut, or text that isn't UTF-8, which has no
 contents. A PDF reads the same way: its pages, each starting with a mark
 such as `<!-- Page 3 -->`, with an outline of the line each starts on and its
 page count. It is parsed once per version in the contents lane and its
-contents kept in the derived store; a read that would wait more than 20
-seconds says the file is still being read, and the parse goes on. A PDF that
+contents kept in the derived store: a moment after it is written, through
+Worktable or on disk, and for every Space a minute after start
+(`contents-background.ts`, which tells changed files by their source stamp
+and parses one at a time behind anything someone waits for). A read that
+would wait more than 20 seconds for a parse says the file is still being
+read, and the parse goes on. A PDF that
 is password protected, damaged, or that stopped its reader says so. The file
 type table's contents surface names each type's reader.
 An agent's exact or regex search there matches text files' lines too, with

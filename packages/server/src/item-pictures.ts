@@ -129,6 +129,15 @@ async function drawItemPicture(input: {
   if (previewBrowserFailed())
     throw new ItemPictureError("busy", "The preview browser isn't running.")
   const deadline = new AbortController()
+  // Every wait ends at the deadline, reading the source included: a read
+  // that never returns can't hold the picture, or others waiting on it.
+  // A file left open by a late read is closed when that read finishes.
+  const expired = new Promise<never>((_, reject) => {
+    deadline.signal.addEventListener("abort", () =>
+      reject(new ItemPictureError("busy", "The picture took too long."))
+    )
+  })
+  expired.catch(() => undefined)
   // Held by a timer this call owns: Bun 1.3 can collect an unreferenced
   // AbortSignal.timeout before it fires.
   const timer = setTimeout(
@@ -136,6 +145,22 @@ async function drawItemPicture(input: {
       deadline.abort(new DOMException("Picture timed out", "TimeoutError")),
     PICTURE_DEADLINE_MS
   )
+  try {
+    return await Promise.race([drawWithin(input, deadline.signal), expired])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function drawWithin(
+  input: {
+    spaceId: string
+    path: string
+    version: string
+    theme: "light" | "dark"
+  },
+  signal: AbortSignal
+): Promise<ItemPicture> {
   try {
     const { catalog } = await readDocumentIdentities(input.spaceId)
     const entry = catalog.entries.find(
@@ -147,8 +172,8 @@ async function drawItemPicture(input: {
       throw new ItemPictureError("none", "This item has no picture.")
     if (entry.kind !== "document") throw new Error("unreachable")
     return entry.descriptor.format.id === QUICKDRAW_FORMAT
-      ? await drawingPicture(input, entry, deadline.signal)
-      : await filePicture(input, deadline.signal)
+      ? await drawingPicture(input, entry, signal)
+      : await filePicture(input, signal)
   } catch (error) {
     if (error instanceof ItemPictureError) throw error
     // What a file is at this version decides these, so they hold for good;
@@ -161,8 +186,6 @@ async function drawItemPicture(input: {
       "busy",
       error instanceof Error ? error.message : String(error)
     )
-  } finally {
-    clearTimeout(timer)
   }
 }
 

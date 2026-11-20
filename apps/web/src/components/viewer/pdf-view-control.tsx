@@ -84,7 +84,15 @@ export function PdfViewControl({
 
   return (
     <DeferredMount active={open}>
-      {pdf && <PdfViewerDialog open={open} onOpenChange={setOpen} pdf={pdf} />}
+      {pdf && (
+        <PdfViewerDialog
+          // Another file, or a newer version of it, opens afresh.
+          key={`${pdf.spaceId}\n${pdf.path}\n${pdf.version ?? ""}\n${pdf.at ?? ""}`}
+          open={open}
+          onOpenChange={setOpen}
+          pdf={pdf}
+        />
+      )}
     </DeferredMount>
   )
 }

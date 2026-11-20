@@ -5,7 +5,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setAppDirOverride } from "./app-storage.ts"
 import { closeDerivedStore, derivedStore } from "./derived-store.ts"
-import { readParsedContents } from "./parsed-contents.ts"
+import { parseVersion, readParsedContents } from "./parsed-contents.ts"
+import { resolveCurrentFile } from "./document-page-service.ts"
+import { contentHashOf } from "./file-revision.ts"
 import { setStorageLimitForTests, startStorageLimits } from "./storage-limit.ts"
 import { activeStorageAccount, startStorageAccounting, storageUsage } from "./storage-usage.ts"
 import { writeSpace } from "./store.ts"
@@ -74,5 +76,29 @@ describe("parsed contents", () => {
     const roomy = await readParsedContents({ spaceId, path: "report.pdf", reader: "pdf" })
     expect(roomy!.contents.state).toBe("ready")
     expect(roomy!.contents.text).toContain("A report with some words")
+  }, 60_000)
+
+  it("keeps nothing for a file deleted while it was parsed", async () => {
+    await writeFile(join(workspace, "spaces", spaceId, "docs", "kept.pdf"), smallPdf([{ text: "Its bytes" }]))
+    noteSpaceChanged(spaceId)
+    const resolved = await resolveCurrentFile({ spaceId, path: "kept.pdf" })
+    if (resolved.kind !== "file") throw new Error("kept.pdf isn't a file")
+    // The parse ends after its file was deleted: its id is no longer in
+    // the Space, as a delete during the parse leaves it.
+    const result = await parseVersion(
+      {
+        spaceId,
+        documentId: "doc_deleted_meanwhile",
+        version: await contentHashOf(resolved.current.pinned),
+        kind: "contents",
+        variant: "",
+        maker: "pdf",
+        makerVersion: 1,
+      },
+      resolved.current.pinned,
+      "waiting"
+    )
+    expect(result.kind).toBe("ok")
+    expect(derivedStore().listing(spaceId)).toEqual([])
   }, 60_000)
 })

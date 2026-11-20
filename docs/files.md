@@ -582,8 +582,10 @@ The PDF reader (`pdf-contents-reader.ts`) runs there, from the file's bytes
 alone. pdf.js opens the file and reads each page's text, with eval off and
 a PDF's scripts, forms and attachments never run or read; pdf-inspector
 (Rust as WebAssembly) reads the same pages as Markdown that keeps headings
-and tables. A page it reads uses its Markdown, any other keeps pdf.js's
-text. An encrypted or damaged PDF is refused with the reason, and a page
+and tables. A page it marks, whose Markdown holds the first words pdf.js
+read there, uses its Markdown; any other page keeps pdf.js's text. What
+pdf.js asks for besides the file (character maps, fonts, decoders) comes
+from the bundle, never a path or the network. An encrypted or damaged PDF is refused with the reason, and a page
 that is only a picture is named, since Worktable reads no text from
 pictures. At most 5,000 pages are read. Proved by `pdf-contents-reader.test.ts`
 "refuses an encrypted or damaged PDF with the reason, never reads it as

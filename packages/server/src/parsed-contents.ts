@@ -25,6 +25,7 @@ import {
 } from "./contents-reader-versions.ts"
 import { readCurrentFileSource, type CurrentFileSource } from "./current-file-source.ts"
 import { derivedStore, type DerivedKey } from "./derived-store.ts"
+import { sweepDerivedOutput } from "./derived-sweep.ts"
 import type { ContentsPage } from "./file-contents.ts"
 import { contentHashOf, pinnedFileStream, sha256Check, type PinnedFile } from "./file-revision.ts"
 import { StorageLimitError, admitStorageWrite } from "./storage-limit.ts"
@@ -80,7 +81,7 @@ export function parseVersion(
       }
     },
   })
-    .then((result): ParsingResult => {
+    .then(async (result): Promise<ParsingResult> => {
       if (!keptFor(result)) return result
       // Output is kept only with room for it under the Worktable's total
       // limit, which derived output counts toward; a file whose contents
@@ -106,6 +107,9 @@ export function parseVersion(
       } finally {
         room.release()
       }
+      // A file deleted while it was parsed keeps nothing: the Space is
+      // swept now that its output is written, as a delete sweeps it.
+      await sweepDerivedOutput(key.spaceId).catch(() => {})
       return result
     })
     .finally(() => parsing.delete(id))

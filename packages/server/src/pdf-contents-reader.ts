@@ -10,8 +10,8 @@
 //   damaged, and tells a page that is only a picture from an empty one.
 // - pdf-inspector (Firecrawl, Rust as WebAssembly) reads the same pages as
 //   Markdown that keeps headings and tables, which most of a long PDF's
-//   sense is in. A page it reads with text uses its Markdown; any other
-//   page keeps pdf.js's plain text.
+//   sense is in. A page it reads, and whose Markdown holds the words pdf.js
+//   read there, uses its Markdown; any other page keeps pdf.js's text.
 //
 // Scripts, forms and attachments inside a PDF are never run or read, eval is
 // off, and nothing is fetched. Text from pictures (OCR) isn't read, and the
@@ -45,12 +45,23 @@ async function inspector(): Promise<typeof processPdf> {
   return processPdf
 }
 
-/** Character maps for text in fonts a PDF doesn't carry, from the bundle. */
-class BundledCMaps {
-  async fetch({ name }: { name: string }): Promise<{ cMapData: Uint8Array; isCompressed: boolean }> {
-    const asset = PDF_PREVIEW_ASSETS[`/pdfjs/cmaps/${name}.bcmap`]
-    if (!asset) throw new Error(`no character map ${name}`)
-    return { cMapData: new Uint8Array(await Bun.file(asset.url).arrayBuffer()), isCompressed: true }
+const BUNDLED_FOLDERS: Record<string, string> = {
+  cMapUrl: "cmaps",
+  standardFontDataUrl: "standard_fonts",
+  wasmUrl: "wasm",
+}
+
+/**
+ * What pdf.js asks for besides the file (character maps for text in fonts
+ * a PDF doesn't carry, standard fonts, image decoders), from the bundle:
+ * never fetched, never read from a path the file names.
+ */
+export class BundledPdfData {
+  async fetch({ kind, filename }: { kind: string; filename: string }): Promise<Uint8Array> {
+    const folder = BUNDLED_FOLDERS[kind]
+    const asset = folder ? PDF_PREVIEW_ASSETS[`/pdfjs/${folder}/${filename}`] : undefined
+    if (!asset) throw new Error(`pdf.js asked for ${kind} ${filename}, which isn't bundled`)
+    return new Uint8Array(await Bun.file(asset.url).arrayBuffer())
   }
 }
 
@@ -63,17 +74,56 @@ const IMAGE_OPS = new Set<number>([
 const PICTURE_PAGE =
   "This page is a picture with no text layer. Worktable doesn't read text from pictures."
 
-/** pdf-inspector's Markdown, split at its page marks, by page number. */
-function markdownPages(markdown: string | undefined): Map<number, string> {
+/**
+ * pdf-inspector's Markdown, split at its page marks, by page number. A mark
+ * counts only on a line of its own and only when it moves forward through
+ * the file's pages, so a mark written as text inside a page doesn't start
+ * one.
+ */
+function markdownPages(markdown: string | undefined, pageCount: number): Map<number, string> {
   const pages = new Map<number, string>()
   if (!markdown) return pages
-  const marks = [...markdown.matchAll(/<!-- Page (\d+) -->\n?/g)]
+  const marks: { page: number; start: number; end: number }[] = []
+  for (const mark of markdown.matchAll(/(^|\n)<!-- Page (\d+) -->\n?/g)) {
+    const page = Number(mark[2])
+    if (page <= (marks.at(-1)?.page ?? 0) || page > pageCount) continue
+    marks.push({ page, start: mark.index! + mark[1]!.length, end: mark.index! + mark[0].length })
+  }
   marks.forEach((mark, index) => {
-    const start = mark.index! + mark[0].length
-    const end = marks[index + 1]?.index ?? markdown.length
-    pages.set(Number(mark[1]), markdown.slice(start, end).trim())
+    pages.set(mark.page, markdown.slice(mark.end, marks[index + 1]?.start ?? markdown.length).trim())
   })
   return pages
+}
+
+/** Words of a text, for telling whether two readings are of one page. */
+function words(text: string): string[] {
+  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
+}
+
+/**
+ * Which pages' Markdown can be trusted to be that page: it holds the first
+ * words pdf.js read there, and no page after it that has text lacks a mark
+ * of its own (pdf-inspector marks only pages that start with a line of
+ * text, so a page holding only a table runs into the page before it).
+ */
+function trustedPages(structured: Map<number, string>, plain: string[]): Set<number> {
+  const trusted = new Set<number>()
+  for (const [page, markdown] of structured) {
+    const opening = words(plain[page - 1] ?? "").slice(0, 4)
+    const found = new Set(words(markdown))
+    if (opening.every((word) => found.has(word))) trusted.add(page)
+  }
+  for (let page = 1; page <= plain.length; page += 1) {
+    if (structured.has(page) || plain[page - 1] === "") continue
+    // An unmarked page with text: its content may sit in the last marked page.
+    for (let before = page - 1; before >= 1; before -= 1) {
+      if (structured.has(before)) {
+        trusted.delete(before)
+        break
+      }
+    }
+  }
+  return trusted
 }
 
 export const pdfReader: ParsingReader = {
@@ -91,7 +141,9 @@ export const pdfReader: ParsingReader = {
         useSystemFonts: false,
         stopAtErrors: false,
         verbosity: VerbosityLevel.ERRORS,
-        CMapReaderFactory: BundledCMaps,
+        // pdf.js 6 asks one factory for character maps, fonts and decoders.
+        BinaryDataFactory: BundledPdfData,
+        useWorkerFetch: false,
         cMapPacked: true,
       } as Parameters<typeof getDocument>[0])
       document = await loading.promise
@@ -137,17 +189,24 @@ export const pdfReader: ParsingReader = {
     // a file it can't read keeps the plain text.
     let structured = new Map<number, string>()
     try {
+      const pages = pagesRead < pageCount ? Array.from({ length: pagesRead }, (_, index) => index + 1) : undefined
       structured = markdownPages(
-        (await inspector())(bytes, { includePageMarkers: true, includeImages: false }).markdown
+        (await inspector())(bytes, {
+          includePageMarkers: true,
+          includeImages: false,
+          ...(pages ? { pages } : {}),
+        }).markdown,
+        pagesRead
       )
     } catch {
       // Plain text for every page.
     }
+    const trusted = trustedPages(structured, plain)
 
     const parts: ContentsPart[] = []
     const gaps: ContentsGap[] = []
     for (let number = 1; number <= pagesRead; number += 1) {
-      const markdown = structured.get(number)
+      const markdown = trusted.has(number) ? structured.get(number) : undefined
       parts.push({
         label: `Page ${number}`,
         text: markdown && markdown.length > 0 ? markdown : plain[number - 1]!,

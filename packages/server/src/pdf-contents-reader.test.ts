@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { ReaderRefused } from "./contents-protocol.ts"
-import { pdfReader } from "./pdf-contents-reader.ts"
+import { BundledPdfData, pdfReader } from "./pdf-contents-reader.ts"
 import { smallPdf } from "./test-support/small-pdf.ts"
 
 async function refusal(bytes: Uint8Array): Promise<string> {
@@ -43,6 +43,22 @@ describe("a PDF's contents", () => {
     expect(output.gaps).toEqual([
       { where: "Page 2", why: expect.stringContaining("doesn't read text from pictures") },
     ])
+  })
+
+  it("doesn't take a page mark written as text for a page, and keeps the bundled maps to hand", async () => {
+    const output = await pdfReader.read(
+      smallPdf([
+        { text: "How to mark pages\n<!-- Page 2 -->\nis written like that" },
+        { text: "The real second page" },
+      ])
+    )
+    expect(output.parts[0]!.text).toContain("How to mark pages")
+    expect(output.parts[1]!.text).toContain("The real second page")
+    expect(output.parts[1]!.text).not.toContain("is written like that")
+    // Character maps for text in fonts a PDF doesn't carry come from the bundle.
+    const map = await new BundledPdfData().fetch({ kind: "cMapUrl", filename: "90ms-RKSJ-H.bcmap" })
+    expect(map.byteLength).toBeGreaterThan(0)
+    await expect(new BundledPdfData().fetch({ kind: "cMapUrl", filename: "../../etc/passwd" })).rejects.toThrow()
   })
 
   it("refuses an encrypted or damaged PDF with the reason, never reads it as empty", async () => {

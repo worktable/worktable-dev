@@ -12,6 +12,7 @@
 // its bytes never mix two revisions.
 
 import type { DocumentId } from "@worktable/types"
+import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { resolveCurrentFile, type CurrentFile } from "./document-page-service.ts"
 import { DocumentSourceReadError } from "./document-source-errors.ts"
 import {
@@ -43,12 +44,15 @@ export function forgetSourceRevisionsForTests(): void {
   sourceRevisions.clear()
 }
 
-function sourceRevisionKey(current: CurrentFile): string {
+/** Everything a source revision is worked out from, but the bytes, and their revision. */
+async function sourceRevisionKey(current: CurrentFile): Promise<string> {
   return JSON.stringify([
+    // A workspace replacement changes every revision, bytes unchanged.
+    await getWorkspaceCollaborationEpoch(),
     current.documentId,
     current.path,
-    current.format.id,
-    current.format.sourceVersion,
+    current.format,
+    current.source,
     current.pinned.path,
     current.pinned.revision,
   ])
@@ -147,7 +151,7 @@ async function readPinned(
   keepBytes: boolean,
   consumer?: { update(chunk: Uint8Array): void }
 ): Promise<{ sourceRevision: string; bytes?: Uint8Array }> {
-  const key = sourceRevisionKey(current)
+  const key = await sourceRevisionKey(current)
   const known = keepBytes || consumer ? undefined : sourceRevisions.get(key)
   if (known !== undefined) return { sourceRevision: known }
   const startedAt = Date.now()

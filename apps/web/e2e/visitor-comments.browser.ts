@@ -151,7 +151,6 @@ for (const appearance of [
         await expect(
           row.getByText("Auditor <unverified>", { exact: true })
         ).toBeVisible()
-        await expect(row.getByText("Unverified", { exact: true })).toBeVisible()
         expect(await row.locator("a,img,svg[onload]").count()).toBe(0)
         expect(listReads()).toBe(1)
         await page.screenshot({
@@ -180,7 +179,9 @@ for (const appearance of [
         await row
           .getByRole("button", { name: "Visitor comment actions" })
           .click()
-        await page.getByRole("menuitem", { name: "Reply", exact: true }).click()
+        await page
+          .getByRole("menuitem", { name: "Reply to Visitor", exact: true })
+          .click()
         await row
           .getByLabel("Reply to visitor", { exact: true })
           .fill("Thanks. We will check the figures.")
@@ -192,31 +193,32 @@ for (const appearance of [
           .getByRole("button", { name: "Visitor comment actions" })
           .click()
         await page
-          .getByRole("menuitem", { name: "Mark done", exact: true })
+          .getByRole("menuitem", { name: "Mark Done", exact: true })
           .click()
         await expect(row.getByText("Done", { exact: true })).toBeVisible()
+        // Done but not sent: it can still go to the team, with a note.
         await row
-          .getByRole("button", { name: "Pass to Team", exact: true })
+          .getByRole("button", { name: "Visitor comment actions" })
           .click()
+        await page.getByRole("menuitem", { name: "Add Note", exact: true }).click()
         const form = row.locator("form")
         const pass = form.getByRole("button", {
-          name: "Pass to Team",
+          name: "Add to Comments",
           exact: true,
         })
-        await expect(pass).toBeDisabled()
         await form
-          .getByLabel("What should happen?", { exact: true })
+          .getByLabel("Note", { exact: true })
           .fill("Please check the forecast before publishing.")
         await form
-          .getByRole("button", { name: "Edit quote", exact: true })
+          .getByRole("button", { name: "Edit Quote", exact: true })
           .click()
         await form
           .getByLabel("Outside input, unverified", { exact: true })
           .fill("Check the forecast totals.")
         await pass.click()
-        await expect(row.getByText(/^Passed by /)).toBeVisible()
+        await expect(row.getByText(/^Added to Comments by /)).toBeVisible()
         await row
-          .getByRole("button", { name: "View comment", exact: true })
+          .getByRole("button", { name: "View Comment", exact: true })
           .click()
         await expect(
           page.getByRole("button", { name: "All Comments", exact: true })
@@ -250,13 +252,13 @@ for (const appearance of [
           receipt.getByText("Visitor", { exact: true })
         ).toBeVisible()
         await expect(
-          receipt.getByRole("button", { name: "View comment", exact: true })
+          receipt.getByRole("button", { name: "View Comment", exact: true })
         ).toBeVisible()
         await receipt
           .getByRole("button", { name: "Visitor comment actions" })
           .click()
         await expect(
-          page.getByRole("menuitem", { name: "Reply", exact: true })
+          page.getByRole("menuitem", { name: "Reply to Visitor", exact: true })
         ).toHaveCount(0)
         await page
           .getByRole("menuitem", { name: "Delete", exact: true })

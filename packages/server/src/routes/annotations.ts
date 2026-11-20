@@ -2,7 +2,7 @@ import { requireScope, restWriteActor } from "../auth.ts";
 import { reservedAnnotationInput } from "../annotation-origin.ts";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { AnnotationTargetSchema, WidgetIdSchema, type Annotation, type AnnotationAuthor, type AnnotationTarget } from "@worktable/types";
+import { ANNOTATION_SENT_TO_KEY, AnnotationTargetSchema, WidgetIdSchema, annotationSentTo, type Annotation, type AnnotationAuthor, type AnnotationTarget } from "@worktable/types";
 import {
   createAnnotation,
   annotationForReader,
@@ -16,6 +16,7 @@ import {
 import { wsManager } from "../ws.ts";
 import { listThreadParticipantsForDisplay } from "../thread-service.ts";
 import { pendingMarks } from "../pending-list.ts";
+import { readThreadActivities, type ThreadActivityLookup } from "../thread-delivery-store.ts";
 import { passageAuthorForTarget } from "../passage-author.ts";
 import {
   CommentRecipientError,
@@ -119,6 +120,20 @@ function withMarks<T extends Annotation>(annotation: T): T {
   };
 }
 
+/**
+ * A comment sent in a batch, with how far its recipient has got: the state of
+ * the thread message that asked them, from one cached read of deliveries.
+ */
+function withSentState<T extends Annotation>(annotation: T, activities: ThreadActivityLookup): T {
+  const sent = annotationSentTo(annotation);
+  if (!sent) return annotation;
+  const activity = activities({ kind: "space", spaceId: annotation.spaceId }, sent.threadId)
+    .filter((candidate) => candidate.messageId === sent.messageId)
+    .at(-1);
+  if (!activity) return annotation;
+  return { ...annotation, metadata: { ...annotation.metadata, [ANNOTATION_SENT_TO_KEY]: { ...sent, state: activity.state } } };
+}
+
 function parseCsv(value: string | undefined): string[] | undefined {
   if (!value) return undefined;
   return value.split(",").map((item) => item.trim()).filter(Boolean);
@@ -172,7 +187,8 @@ annotationsRouter.get("/", requireScope("annotations:read"), async (c) => {
     limit: Number.isFinite(limit) ? limit : 100,
     offset: Number.isFinite(offset) ? offset : 0,
   });
-  return c.json({ ...result, annotations: result.annotations.map((annotation) => shown(c, withMarks(annotation))) });
+  const activities = result.annotations.some((annotation) => annotationSentTo(annotation)) ? await readThreadActivities() : null;
+  return c.json({ ...result, annotations: result.annotations.map((annotation) => shown(c, withMarks(activities ? withSentState(annotation, activities) : annotation))) });
 });
 
 // People comment and reply on what they can read; changing or resolving a

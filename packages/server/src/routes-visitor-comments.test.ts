@@ -23,6 +23,12 @@ import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { useResolvedDocumentHandle } from "./document-query.ts"
 import { createPublicVisitorCommentsRouter } from "./routes/public-visitor-comments.ts"
 import { visitorCommentsRouter } from "./routes/visitor-comments.ts"
+import { annotationsRouter } from "./routes/annotations.ts"
+import { resolveParticipant } from "./participant-store.ts"
+import { pendingFor, pendingList } from "./pending-list.ts"
+import { acceptDelivery, claimNextThreadDelivery } from "./thread-service.ts"
+import { readThread } from "./thread-store.ts"
+import { annotationSentTo, type Annotation } from "@worktable/types"
 import { writeDoc, writeSpace } from "./store.ts"
 import { visitorCommentNamespace } from "./visitor-comment-access.ts"
 import {
@@ -103,6 +109,7 @@ function app(identity = owner, trustedVisitor = false) {
     return next()
   })
   server.route("/api/spaces/:spaceId/visitor-comments", visitorCommentsRouter)
+  server.route("/api/spaces/:spaceId/annotations", annotationsRouter)
   server.route("/api/shares", sharesRouter)
   server.route("/api/pending", pendingRouter)
   server.route("/api/spaces/:spaceId/documents", documentsRouter)
@@ -640,3 +647,112 @@ it("shows each visitor only their own comments, on links and policies saved by e
   }
 })
 
+
+it("sends visitor comments to an agent as one thread message, and shows how far it got", async () => {
+  const namespace = await visitorCommentNamespace()
+  const visitor = (n: number) =>
+    receiveVisitorComment({
+      worktableId: namespace.worktableId,
+      linkId: "link",
+      linkLabel: "Room",
+      linkCreator: owner.principal.id,
+      documentId,
+      spaceId: "space",
+      kind: "doc",
+      visitorName: `Visitor ${n}`,
+      visitorKey: String(n).repeat(64).slice(0, 64),
+      clientKey: "b".repeat(32),
+      body: `Slide ${n}: make it shorter`,
+      requestId: `request0${n}`,
+    })
+  const [first, second, third] = [visitor(1), visitor(2), visitor(3)]
+  const agent: TokenIdentity = {
+    ...owner,
+    agent: "openclaw",
+    principal: {
+      id: "token:klaus",
+      type: "agent",
+      displayName: "Klaus",
+      authorizedBy: owner.principal.id,
+    },
+  }
+  const agentId = (await resolveParticipant(agent, { name: "Klaus" }))
+    .participant.id
+  await pendingList()
+  const send = (body: unknown) =>
+    app().request("/api/spaces/space/visitor-comments/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  const input = {
+    comments: [{ id: first.id }, { id: second.id }],
+    to: agentId,
+    requestId: "send-one-batch",
+  }
+  const sent = await send(input)
+  expect(sent.status).toBe(200)
+  const result = (await sent.json()) as {
+    annotations: Annotation[]
+    thread: { threadId: string; messageId: string }
+  }
+  // No note needed: the visitor's words stand on their own, still quoted.
+  expect(result.annotations.map((a) => a.body.split("\n")[0])).toEqual([
+    expect.stringMatching(/^> Outside input, unverified/),
+    expect.stringMatching(/^> Outside input, unverified/),
+  ])
+  // The thread message is the only ask: the comments ask no one themselves.
+  expect(result.annotations.map((a) => a.requests ?? [])).toEqual([[], []])
+  expect(result.annotations.map((a) => annotationSentTo(a)?.threadId)).toEqual([
+    result.thread.threadId,
+    result.thread.threadId,
+  ])
+  // A retry of the same send asks nothing again.
+  const again = (await (await send(input)).json()) as typeof result
+  expect(again.thread).toEqual(result.thread)
+  const thread = await readThread(
+    { kind: "space", spaceId: "space" },
+    result.thread.threadId
+  )
+  expect(thread.messages).toHaveLength(1)
+  expect(thread.messages[0]!.body).toContain("2 comments on")
+  for (const annotation of result.annotations)
+    expect(thread.messages[0]!.body).toContain(annotation.id)
+  expect((await pendingFor(agentId)).map((item) => item.kind)).toEqual([
+    "threadRequest",
+  ])
+
+  const states = async () =>
+    (
+      (await (
+        await app().request("/api/spaces/space/annotations?docPath=report")
+      ).json()) as { annotations: Annotation[] }
+    ).annotations
+      .map((a) => annotationSentTo(a)?.state)
+      .filter(Boolean)
+  expect(await states()).toEqual(["queued", "queued"])
+  const claim = (await claimNextThreadDelivery(agent, 0, 2))!
+  expect(claim.messageId).toBe(result.thread.messageId)
+  await acceptDelivery(agent, claim.messageId, claim.leaseId)
+  expect(await states()).toEqual(["working", "working"])
+
+  // Kept as a comment only: no thread, no ask.
+  const kept = (await (
+    await send({
+      comments: [{ id: third.id, note: "Keep for later" }],
+      to: null,
+      requestId: "keep-as-comment",
+    })
+  ).json()) as typeof result
+  expect(kept.thread).toBeNull()
+  expect(annotationSentTo(kept.annotations[0]!)).toBeNull()
+  expect(kept.annotations[0]!.body.startsWith("Keep for later")).toBe(true)
+  const listed = (await (
+    await app().request(`/api/spaces/space/visitor-comments?documentId=${documentId}`)
+  ).json()) as { comments: Array<{ status: string }> }
+  expect(listed.comments.map((comment) => comment.status)).toEqual([
+    "passed",
+    "passed",
+    "passed",
+  ])
+})

@@ -2,11 +2,13 @@ import { Hono, type Context } from "hono"
 import { withStoreWriteLock } from "../store.ts"
 import {
   passVisitorComment,
+  sendVisitorComments,
   VisitorCommentPassError,
 } from "../visitor-comment-service.ts"
 import {
   DocumentIdSchema,
   PassVisitorCommentInputSchema,
+  SendVisitorCommentsInputSchema,
   VisitorCommentReplyInputSchema,
   type VisitorCommentsResponse,
 } from "@worktable/types"
@@ -174,6 +176,14 @@ visitorCommentsRouter.delete("/:id", async (c) =>
     true
   )
 )
+visitorCommentsRouter.post("/send", async (c) => {
+  const input = SendVisitorCommentsInputSchema.safeParse(
+    await c.req.json().catch(() => null)
+  )
+  if (!input.success)
+    return c.json({ error: "Choose comments to send", code: "INVALID_REQUEST" }, 400)
+  return c.json(await sendVisitorComments(c, input.data))
+})
 visitorCommentsRouter.post("/:id/pass", async (c) => {
   const input = PassVisitorCommentInputSchema.safeParse(
     await c.req.json().catch(() => null)
@@ -181,7 +191,7 @@ visitorCommentsRouter.post("/:id/pass", async (c) => {
   if (!input.success)
     return c.json(
       {
-        error: "Enter what should happen and a quote",
+        error: "Enter a quote",
         code: "INVALID_REQUEST",
       },
       400

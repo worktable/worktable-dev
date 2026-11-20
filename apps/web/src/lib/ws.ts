@@ -53,6 +53,7 @@ import type {
   AgentConnectionInventory,
 } from "@worktable/types"
 import { isStoredThreadArchived, threadLocationKey } from "@worktable/types"
+import { applySentCommentActivity } from "./sent-comments"
 
 /** Delivery activity changes only a Grok Bot's status. */
 function refreshGrokConnections(queryClient: QueryClient): void {
@@ -403,6 +404,8 @@ export function applyThreadEvent(
         message.threadId,
         update
       )
+      // Comments sent in this thread show how far their recipient got.
+      if (update) applySentCommentActivity(queryClient, message.threadId, update)
     }
     // Progress while an agent works leaves Pending as it was; a delivery
     // that ends, fails or starts over can change it.

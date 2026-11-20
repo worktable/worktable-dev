@@ -1159,6 +1159,7 @@ function MarkdownDocPage({
                     spaceId,
                     path: page.document.path,
                     ...page.sharing.visitorComments,
+                    contributors: docContributors(page),
                   }
                 : undefined
             }
@@ -1248,6 +1249,7 @@ function MarkdownDocPage({
                         spaceId,
                         path: page.document.path,
                         ...page.sharing.visitorComments,
+                        contributors: docContributors(page),
                       }
                     : undefined
                 }
@@ -2057,6 +2059,7 @@ function BlockNoteDocPage({
                     spaceId,
                     path: page.document.path,
                     ...page.sharing.visitorComments,
+                    contributors: docContributors(page),
                   }
                 : undefined
             }
@@ -2146,6 +2149,7 @@ function BlockNoteDocPage({
                         spaceId,
                         path: page.document.path,
                         ...page.sharing.visitorComments,
+                        contributors: docContributors(page),
                       }
                     : undefined
                 }

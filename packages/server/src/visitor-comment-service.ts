@@ -1,6 +1,13 @@
+import { createHash } from "node:crypto"
 import type { Context } from "hono"
-import type { PassVisitorCommentInput } from "@worktable/types"
-import { createAnnotation } from "./annotation-store.ts"
+import {
+  ANNOTATION_SENT_TO_KEY,
+  type Annotation,
+  type AnnotationSentTo,
+  type PassVisitorCommentInput,
+  type SendVisitorCommentsInput,
+} from "@worktable/types"
+import { createAnnotation, updateAnnotation } from "./annotation-store.ts"
 import {
   ANNOTATION_ORIGIN_KEY,
   VISITOR_ANNOTATION_PREFIX,
@@ -22,6 +29,8 @@ import {
 } from "./visitor-comment-store.ts"
 import { wsManager } from "./ws.ts"
 import { CommentRecipientError, commentRecipients } from "./comment-recipients.ts"
+import { withStoreWriteLock } from "./store.ts"
+import { postThreadMessage } from "./thread-service.ts"
 
 export class VisitorCommentPassError extends Error {
   readonly status: 403 | 404 | 409 | 503
@@ -49,10 +58,9 @@ export async function passVisitorComment(
   )
     throw new VisitorCommentPassError("Your access changed", 403)
   const actor = c.get("identity").principal
-  const note = cleanVisitorText(input.note)
+  const note = cleanVisitorText(input.note ?? "")
   const quote = cleanVisitorText(input.quote)
-  if (!note || !quote)
-    throw new VisitorCommentPassError("Enter a note and quote", 409)
+  if (!quote) throw new VisitorCommentPassError("Enter a quote", 409)
   const to = await commentRecipients(c.get("identity"), spaceId, input.to).catch(
     (error: unknown) => {
       if (error instanceof CommentRecipientError)
@@ -81,10 +89,12 @@ export async function passVisitorComment(
     timeZone: "UTC",
   }).format(row.received_at)
   const attribution = `Outside input, unverified. Visitor comment${name ? ` from "${name}"` : ""} via ${row.link_label || "Untitled link"}, ${when}:`
-  const body = `${note}\n\n${`${attribution}\n${quote}`
+  const quoted = `${attribution}\n${quote}`
     .split("\n")
     .map((line) => `> ${line}`)
-    .join("\n")}`
+    .join("\n")
+  // Without a note, the visitor's words stand on their own, still quoted.
+  const body = note ? `${note}\n\n${quoted}` : quoted
   const result = await createAnnotation(
     spaceId,
     {
@@ -166,4 +176,124 @@ export async function passVisitorComment(
   })
   notifyVisitorComments(spaceId, row.document_id, row.link_id)
   return { annotation: result.annotation, created: result.created }
+}
+
+/** At most this many comments go in one batch. */
+const SEND_LIMIT = 100
+
+/**
+ * Send visitor comments to the team in one go. Each becomes a team comment,
+ * as Pass to Team made it. With a recipient, one thread message in the
+ * comment's Space asks them about all of them: that message is the only ask,
+ * so they are woken once, the way any thread message wakes them. Each comment
+ * records the message, which tells people how far the recipient has got.
+ */
+export async function sendVisitorComments(
+  c: Context,
+  input: SendVisitorCommentsInput
+): Promise<{
+  annotations: Annotation[]
+  thread: { threadId: string; messageId: string } | null
+}> {
+  const spaceId = c.req.param("spaceId")!
+  const identity = c.get("identity")
+  const ids = [...new Set(input.comments.map((comment) => comment.id))]
+  if (ids.length !== input.comments.length || ids.length > SEND_LIMIT)
+    throw new VisitorCommentPassError("Choose each comment once", 409)
+  const to = input.to
+    ? (
+        await commentRecipients(identity, spaceId, [input.to]).catch(
+          (error: unknown) => {
+            if (error instanceof CommentRecipientError)
+              throw new VisitorCommentPassError(error.message, 409)
+            throw error
+          }
+        )
+      )[0]!
+    : null
+  const context = await visitorCommentNamespace()
+  const passed: Array<{ row: StoredVisitorComment; annotation: Annotation }> =
+    []
+  for (const item of input.comments) {
+    passed.push(
+      await withStoreWriteLock(
+        `visitor-comment:${context.root}:${context.worktableId}:${item.id}`,
+        async () => {
+          const row = readVisitorComment(context.worktableId, item.id)
+          if (!row || row.status === "deleted" || !row.body)
+            throw new VisitorCommentPassError("A comment is gone", 404)
+          const { annotation } = await passVisitorComment(c, context, row, {
+            ...(item.note ? { note: item.note } : {}),
+            quote: item.quote ?? row.body,
+            includeName: input.includeName ?? false,
+          })
+          return { row, annotation }
+        }
+      )
+    )
+  }
+  const documentIds = new Set(passed.map(({ row }) => row.document_id))
+  if (documentIds.size !== 1)
+    throw new VisitorCommentPassError("Send comments from one page at a time", 409)
+  if (!to) return { annotations: passed.map(({ annotation }) => annotation), thread: null }
+
+  const { identities } = await readDocumentIdentities(spaceId)
+  const document = identities.current.get(passed[0]!.row.document_id)
+  if (!document)
+    throw new VisitorCommentPassError("This document no longer opens here", 404)
+  const count = passed.length
+  const ids_ = passed.map(({ annotation }) => annotation.id)
+  const posted = await postThreadMessage(identity, {
+    location: { kind: "space", spaceId },
+    title: threadTitle(document.title),
+    to: to.id,
+    expectsReply: true,
+    body: [
+      `${count === 1 ? "1 comment" : `${count} comments`} on [${linkText(document.title)}](/${document.path}#comments) ${count === 1 ? "is" : "are"} for you. Answer each in its comment, then reply here.`,
+      "",
+      `Comments: ${ids_.map((id) => `\`${id}\``).join(", ")}`,
+    ].join("\n"),
+    idempotencyKey: `visitor-comments:${createHash("sha256")
+      .update(`${identity.principal.id}\0${input.requestId}`)
+      .digest("base64url")
+      .slice(0, 32)}`,
+  })
+  const sentTo: AnnotationSentTo = {
+    threadId: posted.threadId,
+    messageId: posted.messageId,
+    to,
+    at: new Date().toISOString(),
+  }
+  const annotations: Annotation[] = []
+  for (const { annotation } of passed) {
+    const updated = await updateAnnotation(
+      spaceId,
+      annotation.id,
+      { metadata: { [ANNOTATION_SENT_TO_KEY]: sentTo } },
+      identity.principal.id
+    )
+    annotations.push(updated)
+    wsManager.broadcast(spaceId, {
+      type: "annotation_update",
+      spaceId,
+      data: { annotationId: updated.id, annotation: updated, event: "updated" },
+    })
+  }
+  for (const link of new Set(passed.map(({ row }) => row.link_id)))
+    notifyVisitorComments(spaceId, passed[0]!.row.document_id, link)
+  return {
+    annotations,
+    thread: { threadId: posted.threadId, messageId: posted.messageId },
+  }
+}
+
+/** Link text that can't break the Markdown link around it. */
+function linkText(title: string): string {
+  return title.replace(/[[\]\\]/g, "").trim() || "this page"
+}
+
+function threadTitle(title: string): string {
+  const name = title.trim() || "this page"
+  const full = `Comments on ${name}`
+  return full.length <= 120 ? full : `${full.slice(0, 119).trimEnd()}…`
 }

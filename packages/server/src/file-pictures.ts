@@ -82,10 +82,14 @@ export interface FilePictureOptions {
   width?: number
   timeoutMs?: number
   signal?: AbortSignal
+  /** PNG, which agents take, or WebP, smaller, for pictures in lists. */
+  format?: "png" | "webp"
+  /** Made for a list nobody waits on: it waits until no one else does. */
+  background?: boolean
 }
 
 export interface FilePicture {
-  mimeType: "image/png"
+  mimeType: "image/png" | "image/webp"
   bytes: Uint8Array
   width: number
   height: number
@@ -148,6 +152,7 @@ export async function renderFilePicture(
   if (kind === "none")
     throw new FilePictureError("no-picture", "No preview for this file type.")
   const width = options.width ?? DEFAULT_WIDTH
+  const mimeType = options.format === "webp" ? "image/webp" : "image/png"
   if (kind === "image") {
     if (options.page !== undefined && options.page !== 1)
       throw new FilePictureError("no-page", "An image has one page.", 1)
@@ -164,9 +169,10 @@ export async function renderFilePicture(
         maxPixels: MAX_DOCUMENT_PREVIEW_PIXELS,
         maxBytes: MAX_DOCUMENT_PREVIEW_BYTES,
         piece: READ_PIECE_BYTES,
+        mimeType,
       })
     )
-    return picture(result, IMAGE_RENDERER_VERSION)
+    return picture(result, IMAGE_RENDERER_VERSION, mimeType)
   }
   if (!makerEnabled("pdf"))
     throw new FilePictureError("off", "Pictures of PDF pages are turned off.")
@@ -181,12 +187,20 @@ export async function renderFilePicture(
       maxImagePixels: IMAGE_MAX_PIXELS,
       maxBytes: MAX_DOCUMENT_PREVIEW_BYTES,
       piece: READ_PIECE_BYTES,
+      mimeType,
     })
   )
-  return { ...picture(result, PDF_RENDERER_VERSION), page: pageNumber }
+  return {
+    ...picture(result, PDF_RENDERER_VERSION, mimeType),
+    page: pageNumber,
+  }
 }
 
-function picture(result: PageResult, rendererVersion: string): FilePicture {
+function picture(
+  result: PageResult,
+  rendererVersion: string,
+  mimeType: FilePicture["mimeType"]
+): FilePicture {
   if (!result.ok) {
     if (result.code === "password")
       throw new FilePictureError(
@@ -202,7 +216,7 @@ function picture(result: PageResult, rendererVersion: string): FilePicture {
     throw new FilePictureError("damaged", "Couldn't draw a preview of this file.")
   }
   return {
-    mimeType: "image/png",
+    mimeType,
     bytes: new Uint8Array(Buffer.from(result.data, "base64")),
     width: result.width,
     height: result.height,
@@ -398,6 +412,7 @@ async function inPicturePage(
         signal: options.signal
           ? AbortSignal.any([options.signal, deadline.signal])
           : deadline.signal,
+        background: options.background ?? false,
       }
     )
   } finally {
@@ -423,6 +438,7 @@ async function drawImage(input: {
   maxPixels: number
   maxBytes: number
   piece: number
+  mimeType: string
 }): Promise<PageResult> {
   const parts: Uint8Array<ArrayBuffer>[] = []
   for (let at = 0; at < input.size; at += input.piece) {
@@ -470,7 +486,10 @@ async function drawImage(input: {
       if (!context) return { ok: false, code: "damaged" }
       context.imageSmoothingQuality = "high"
       context.drawImage(bitmap, 0, 0, width, height)
-      const blob = await canvas.convertToBlob({ type: "image/png" })
+      const blob = await canvas.convertToBlob({
+        type: input.mimeType,
+        quality: 0.85,
+      })
       if (blob.size <= input.maxBytes) {
         const output = new Uint8Array(await blob.arrayBuffer())
         let text = ""
@@ -501,6 +520,7 @@ async function drawPdfPage(input: {
   maxImagePixels: number
   maxBytes: number
   piece: number
+  mimeType: string
 }): Promise<PageResult> {
   const read = async (begin: number, end: number) => {
     const bytes = new Uint8Array(end - begin)
@@ -573,7 +593,7 @@ async function drawPdfPage(input: {
       canvas.height = Math.max(1, Math.floor(viewport.height))
       await pdfPage.render({ canvas, viewport }).promise
       const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, "image/png")
+        canvas.toBlob(resolve, input.mimeType, 0.85)
       )
       if (!blob) return { ok: false, code: "damaged", pageCount }
       if (blob.size <= input.maxBytes) {

@@ -24,8 +24,10 @@ import {
   type ResolvedStartHerePin,
   type SpaceFile,
   type WithContentRevision,
+  type WithPicture,
 } from "@worktable/types";
 import { withContentRevisions } from "../document-content-revision.ts";
+import { pictureVersions } from "../item-pictures.ts";
 import { resolveStartHere, setStartHere, StartHereError } from "../space-start-here.ts";
 import { wsManager } from "../ws.ts";
 import { hasScope } from "../token-store.ts";
@@ -164,11 +166,21 @@ spacesRouter.get("/:spaceId/index", requireScope("docs:read"), async (c) => {
 export async function readSpacePage(spaceId: string, scopes: string[]) {
   const { data: space, error } = await readSpace(spaceId);
   if (error || !space) return { error: error ?? "Not found" } as const;
+  const resolved = hasScope(scopes, "documents:read")
+    ? await resolveStartHere(spaceId, space)
+    : [];
+  const pictures = await pictureVersions(
+    spaceId,
+    resolved.flatMap((pin) => (pin.status === "active" ? [pin.path] : []))
+  ).catch(() => new Map<string, string>());
   const pins = hasScope(scopes, "documents:read")
     ? await withContentRevisions(
-        await resolveStartHere(spaceId, space),
+        resolved.map((pin) => {
+          const picture = pictures.get(pin.path);
+          return picture ? { ...pin, picture } : pin;
+        }),
         (pin) => (pin.status === "missing" ? null : { spaceId, path: pin.path }),
-        (pin, revision): WithContentRevision<ResolvedStartHerePin> => ({
+        (pin, revision): WithPicture<WithContentRevision<ResolvedStartHerePin>> => ({
           ...pin,
           revision,
         })

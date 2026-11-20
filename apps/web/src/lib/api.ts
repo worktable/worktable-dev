@@ -8,6 +8,7 @@ import type {
   SearchResult,
   SpaceFile,
   WithContentRevision,
+  WithPicture,
 } from "@worktable/types"
 import type { PersonalSetup } from "@worktable/types/setup"
 import type { WorktableLogo } from "@worktable/types/recognition"
@@ -148,7 +149,7 @@ export function getSpaces() {
 export function getSpace(spaceId: string, options?: ReadOptions) {
   return fetchJSON<{
     space: SpaceView
-    pins?: WithContentRevision<ResolvedStartHerePin>[]
+    pins?: WithPicture<WithContentRevision<ResolvedStartHerePin>>[]
   }>(`/api/spaces/${spaceId}`, options).then((result) => {
     // A document opened directly learns its Space's content key here.
     rememberOneSpaceAccess(result.space)

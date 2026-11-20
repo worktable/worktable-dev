@@ -34,6 +34,8 @@ export type DrawingRenderOptions = {
   labels?: boolean
   timeoutMs?: number
   signal?: AbortSignal
+  /** Made for a list nobody waits on: it waits until no one else does. */
+  lowPriority?: boolean
 }
 export type DrawingRenderResult = {
   mimeType: "image/png" | "image/svg+xml"

@@ -26,6 +26,7 @@ import { listDocEvents } from "./activity-log.ts"
 import { agentNamesByPrincipal } from "./agent-connection-store.ts"
 import { createDocAliasResolver } from "./doc-aliases.ts"
 import { withContentRevisions } from "./document-content-revision.ts"
+import { pictureVersions } from "./item-pictures.ts"
 import { listDocumentsWithAliases } from "./document-query.ts"
 import { isGettingStartedSpace } from "./getting-started.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
@@ -312,8 +313,29 @@ export async function resolveHomePins(
       formatId: document.format.id,
     }
   })
+  const pictures = new Map(
+    await Promise.all(
+      [...new Set(pins.map((pin) => pin.spaceId))].map(
+        async (spaceId) =>
+          [
+            spaceId,
+            await pictureVersions(
+              spaceId,
+              pins.flatMap((pin) =>
+                pin.spaceId === spaceId && pin.status === "active"
+                  ? [pin.path]
+                  : []
+              )
+            ).catch(() => new Map<string, string>()),
+          ] as const
+      )
+    )
+  )
   return withContentRevisions(
-    pins,
+    pins.map((pin) => {
+      const picture = pictures.get(pin.spaceId)?.get(pin.path)
+      return picture ? { ...pin, picture } : pin
+    }),
     (pin) =>
       pin.status === "active" ? { spaceId: pin.spaceId, path: pin.path } : null,
     (pin, revision) => ({ ...pin, revision })

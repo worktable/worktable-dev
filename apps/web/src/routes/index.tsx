@@ -265,6 +265,7 @@ function HomePage() {
                       title={pin.title ?? pin.path.split("/").at(-1) ?? pin.path}
                       formatId={pin.formatId}
                       revision={pin.revision}
+                      picture={pin.picture}
                       tint={tintOf(space, pin.spaceId)}
                       disabled={
                         pin.status === "active"

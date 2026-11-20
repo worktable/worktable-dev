@@ -3,6 +3,7 @@ import { teamsEnabled } from "../team-database.ts";
 import { commentReplier } from "../comment-recipients.ts"
 import { passageAuthor } from "../passage-author.ts"
 import { assertSpaceAccess } from "../team-policy.ts"
+import { itemPicture, ItemPictureError } from "../item-pictures.ts"
 import { reservedAnnotationInput } from "../annotation-origin.ts"
 import { visitorCommentPageSummary, visitorCommentReader } from "../visitor-comment-access.ts"
 import { documentSourceDisposition } from "../content-disposition.ts"
@@ -592,6 +593,49 @@ documentsRouter.get("/file", requireScope("documents:read"), async (c) => {
       )
     }
     throw error
+  }
+})
+
+// A small picture of an item at one version, for a list or card that would
+// otherwise show its icon. The address names the version, so the browser
+// keeps it for good; a version the item is no longer at has none.
+documentsRouter.get("/picture", requireScope("documents:read"), async (c) => {
+  const spaceId = c.req.param("spaceId") ?? ""
+  const path = exactDocumentPath(c.req.query("path"))
+  const version = c.req.query("v")
+  const theme = c.req.query("theme") === "dark" ? "dark" : "light"
+  if (!path || !version || version.length > 256) {
+    return c.json(
+      { error: "Enter a valid path and version.", code: "VALIDATION_ERROR" },
+      400
+    )
+  }
+  assertSpaceAccess(spaceId, "read", c.get("identity"))
+  try {
+    const picture = await itemPicture({ spaceId, path, version, theme })
+    return new Response(Buffer.from(picture.bytes), {
+      headers: {
+        "Content-Type": picture.mimeType,
+        "Cache-Control": "private, max-age=31536000, immutable",
+        // Kept answers are for this signed-in reader only.
+        Vary: "Cookie, Authorization",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+        "Cross-Origin-Resource-Policy": "same-origin",
+        "X-Content-Type-Options": "nosniff",
+      },
+    })
+  } catch (error) {
+    if (!(error instanceof ItemPictureError)) throw error
+    // An item with no picture at this version never gets one; the browser
+    // keeps that answer a day. A busy one may have one later.
+    c.header(
+      "Cache-Control",
+      error.kind === "none" ? "private, max-age=86400" : "no-store"
+    )
+    if (error.kind === "none") c.header("Vary", "Cookie, Authorization")
+    return error.kind === "none"
+      ? c.json({ error: "No picture.", code: "NOT_FOUND" }, 404)
+      : c.json({ error: "Not yet.", code: "PREVIEW_BUSY" }, 503)
   }
 })
 

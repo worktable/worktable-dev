@@ -21,6 +21,11 @@ import type { McpSurface } from "./mcp/surface.ts"
 import { withSyntheticPreview } from "./test-support/synthetic-preview.ts"
 import { noteSpaceChanged } from "./workspace-read-model.ts"
 import sharp from "sharp"
+import { Hono } from "hono"
+import type { HomeFeed } from "@worktable/types"
+import { ownerIdentity } from "./auth.ts"
+import { documentsRouter } from "./routes/documents.ts"
+import { homeRouter } from "./routes/home.ts"
 
 let root: string
 let previousRelease: string | undefined
@@ -373,4 +378,111 @@ it("shows agents a PDF's page and an image scaled down, on the preview surface, 
     status: "unavailable",
     error: "Visual previews are not available for worktable.file.",
   })
+}, 120_000)
+
+it("shows a pinned PDF, image and drawing as a picture of its version, and a Doc as its icon", async () => {
+  const docs = join(root, "workspace", "spaces", "preview", "docs")
+  await mkdir(join(docs, "files"), { recursive: true })
+  await writeFile(join(docs, "files", "report.pdf"), pdfOf(["Quarterly"]))
+  await writeFile(
+    join(docs, "files", "shot.png"),
+    await sharp({
+      create: { width: 1600, height: 1000, channels: 3, background: { r: 200, g: 40, b: 40 } },
+    })
+      .png()
+      .toBuffer()
+  )
+  await writeFile(join(docs, "files", "notes.zip"), new Uint8Array([80, 75, 5, 6, ...new Array(18).fill(0)]))
+  noteSpaceChanged("preview")
+  const client = await connect(["documents:read", "documents:write"])
+  const drawn = await withSyntheticPreview(() =>
+    client.callTool({
+      name: "worktable_drawings_write",
+      arguments: {
+        request: {
+          spaceId: "preview",
+          path: "flow",
+          action: "create",
+          lifetime: "durable",
+          title: "Flow",
+          requestId: "flow",
+          operations: [
+            { op: "add", ref: "a", object: { type: "rectangle", text: "Start", x: 0, y: 0 } },
+          ],
+        },
+      },
+    })
+  )
+  expect(drawn.isError).not.toBe(true)
+  await writeFile(join(docs, "plan.md"), "# Plan\n")
+  noteSpaceChanged("preview")
+
+  const server = new Hono()
+  server.use("*", async (c, next) => {
+    c.set("identity", ownerIdentity())
+    return next()
+  })
+  server.route("/api/spaces/:spaceId/documents", documentsRouter)
+  server.route("/api/home", homeRouter)
+  const get = (path: string) =>
+    withSyntheticPreview(async () => server.fetch(new Request(`http://localhost${path}`)))
+  const pinned = ["files/report.pdf", "files/shot.png", "flow", "plan", "files/notes.zip"]
+  const saved = await server.fetch(
+    new Request("http://localhost/api/home/pins", {
+      method: "PUT",
+      body: JSON.stringify({ pins: pinned.map((path) => ({ spaceId: "preview", path })) }),
+      headers: { "Content-Type": "application/json" },
+    })
+  )
+  expect(saved.status).toBeLessThan(300)
+  const home = (await (await server.fetch(new Request("http://localhost/api/home"))).json()) as HomeFeed
+  const version = (path: string) => home.pins!.find((pin) => pin.path === path)!.picture
+
+  // A PDF, an image and a drawing name the version their picture is of; a
+  // Doc and a file with no picture don't, and keep their icon.
+  for (const path of ["files/report.pdf", "files/shot.png", "flow"])
+    expect(version(path), path).toEqual(expect.any(String))
+  expect(version("plan")).toBeUndefined()
+  expect(version("files/notes.zip")).toBeUndefined()
+
+  const picture = (path: string, v: string, theme = "light") =>
+    get(
+      `/api/spaces/preview/documents/picture?path=${encodeURIComponent(path)}&v=${encodeURIComponent(v)}&theme=${theme}`
+    )
+  for (const path of ["files/report.pdf", "files/shot.png"]) {
+    const response = await picture(path, version(path)!)
+    expect(response.status, path).toBe(200)
+    // Kept for good: the address names the version.
+    expect(response.headers.get("cache-control")).toBe("private, max-age=31536000, immutable")
+    // Kept for this signed-in reader only.
+    expect(response.headers.get("vary")).toBe("Cookie, Authorization")
+    expect(response.headers.get("content-type")).toBe("image/webp")
+    const meta = await sharp(Buffer.from(await response.arrayBuffer())).metadata()
+    expect(meta).toMatchObject({ format: "webp", width: 480 })
+  }
+  const drawing = await picture("flow", version("flow")!, "dark")
+  expect(drawing.status).toBe(200)
+  expect(drawing.headers.get("content-type")).toBe("image/png")
+
+  // A version the file is no longer at has no picture, so a picture
+  // never shows another version's content under its address.
+  const old = version("files/shot.png")!
+  await writeFile(
+    join(docs, "files", "shot.png"),
+    await sharp({
+      create: { width: 800, height: 800, channels: 3, background: { r: 0, g: 0, b: 200 } },
+    })
+      .png()
+      .toBuffer()
+  )
+  noteSpaceChanged("preview")
+  expect((await picture("files/shot.png", old)).status).toBe(404)
+  // A drawing changed on disk is at a new version too.
+  const drawingFile = join(docs, "flow.quickdraw")
+  await writeFile(drawingFile, `${await Bun.file(drawingFile).text()}\n`)
+  noteSpaceChanged("preview")
+  expect((await picture("flow", version("flow")!)).status).toBe(404)
+  // Nor do a Doc, or a file of a type that has no picture.
+  expect((await picture("plan", "x")).status).toBe(404)
+  expect((await picture("files/notes.zip", "x")).status).toBe(404)
 }, 120_000)

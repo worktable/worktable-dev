@@ -27,7 +27,9 @@ const readers: Record<string, ParsingReader> = {
   hang: {
     version: 1,
     async read() {
-      for (;;) {}
+      for (;;) {
+        // Never yields.
+      }
     },
   },
   balloon: {

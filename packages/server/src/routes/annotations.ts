@@ -2,7 +2,7 @@ import { requireScope, restWriteActor } from "../auth.ts";
 import { reservedAnnotationInput } from "../annotation-origin.ts";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { AnnotationTargetSchema, WidgetIdSchema, type Annotation, type AnnotationAuthor, type AnnotationTarget } from "@worktable/types";
+import { ANNOTATION_SENT_TO_KEY, AnnotationTargetSchema, WidgetIdSchema, annotationSentTo, type Annotation, type AnnotationAuthor, type AnnotationTarget } from "@worktable/types";
 import {
   createAnnotation,
   annotationForReader,
@@ -16,6 +16,7 @@ import {
 import { wsManager } from "../ws.ts";
 import { listThreadParticipantsForDisplay } from "../thread-service.ts";
 import { pendingMarks } from "../pending-list.ts";
+import { commentDeliveryStates, readThreadActivities, type ThreadActivityLookup } from "../thread-delivery-store.ts";
 import { passageAuthorForTarget } from "../passage-author.ts";
 import {
   CommentRecipientError,
@@ -107,16 +108,42 @@ function shown<T extends Annotation>(c: Context, annotation: T): T {
   return annotationForReader(annotation, c.get("identity").scopes);
 }
 
-function withMarks<T extends Annotation>(annotation: T): T {
+type DeliveryStates = Awaited<ReturnType<typeof commentDeliveryStates>>;
+
+/** Where an agent's runtime is with a comment, as a person needs to know it. */
+function deliveryOf(requestId: string, deliveries: DeliveryStates | null) {
+  const delivery = deliveries?.get(requestId);
+  if (!delivery) return {};
+  if (["working", "receiving"].includes(delivery.state)) return { delivery: "working" as const };
+  // Retired means the comment stopped asking, not that the agent stopped answering.
+  if (delivery.state === "failed" && delivery.error !== "DELIVERY_RETIRED") return { delivery: "failed" as const };
+  return {};
+}
+
+function withMarks<T extends Annotation>(annotation: T, deliveries: DeliveryStates | null = null): T {
   if (!annotation.requests?.some((request) => request.status === "open")) return annotation;
   return {
     ...annotation,
     requests: annotation.requests.map((request) =>
       request.status === "open"
-        ? { ...request, ...pendingMarks(`cmt:${annotation.id}:${request.id}`) }
+        ? { ...request, ...pendingMarks(`cmt:${annotation.id}:${request.id}`), ...deliveryOf(request.id, deliveries) }
         : request
     ),
   };
+}
+
+/**
+ * A comment sent in a batch, with how far its recipient has got: the state of
+ * the thread message that asked them, from one cached read of deliveries.
+ */
+function withSentState<T extends Annotation>(annotation: T, activities: ThreadActivityLookup): T {
+  const sent = annotationSentTo(annotation);
+  if (!sent) return annotation;
+  const activity = activities({ kind: "space", spaceId: annotation.spaceId }, sent.threadId)
+    .filter((candidate) => candidate.messageId === sent.messageId)
+    .at(-1);
+  if (!activity) return annotation;
+  return { ...annotation, metadata: { ...annotation.metadata, [ANNOTATION_SENT_TO_KEY]: { ...sent, state: activity.state } } };
 }
 
 function parseCsv(value: string | undefined): string[] | undefined {
@@ -172,7 +199,10 @@ annotationsRouter.get("/", requireScope("annotations:read"), async (c) => {
     limit: Number.isFinite(limit) ? limit : 100,
     offset: Number.isFinite(offset) ? offset : 0,
   });
-  return c.json({ ...result, annotations: result.annotations.map((annotation) => shown(c, withMarks(annotation))) });
+  const activities = result.annotations.some((annotation) => annotationSentTo(annotation)) ? await readThreadActivities() : null;
+  // Delivery states from one cached read, only when a comment still asks someone.
+  const deliveries = result.annotations.some((annotation) => annotation.requests?.some((request) => request.status === "open")) ? await commentDeliveryStates() : null;
+  return c.json({ ...result, annotations: result.annotations.map((annotation) => shown(c, withMarks(activities ? withSentState(annotation, activities) : annotation, deliveries))) });
 });
 
 // People comment and reply on what they can read; changing or resolving a

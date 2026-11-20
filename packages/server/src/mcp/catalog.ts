@@ -212,6 +212,12 @@ const threadsRename = fieldsOf("worktable_threads_write", "rename")
 const threadsAssign = fieldsOf("worktable_threads_write", "assign_response")
 const deliveryProgress = fieldsOf("worktable_thread_delivery", "progress")
 const deliveryFail = fieldsOf("worktable_thread_delivery", "fail")
+const deliveryReply = fieldsOf("worktable_thread_delivery", "reply")
+// Comments for runtimes are held for the preview surface.
+const { comments: claimComments, ...deliveryClaim } = fieldsOf(
+  "worktable_thread_delivery",
+  "claim"
+)
 const deleteDocument = fieldsOf("worktable_delete", "document")
 const deleteRecord = fieldsOf("worktable_delete", "record")
 const mermaidPreview = fieldsOf("worktable_mermaid", "preview")
@@ -839,7 +845,7 @@ const TOOLS: CatalogTool[] = [
     description:
       "For an agent runtime that delivers thread messages: claim the messages addressed to you, waiting up to waitSeconds. Each comes with a leaseId for worktable_delivery_report. Pass registerAs on first use to register as a participant.",
     annotations: writes(),
-    inputSchema: flatInput([], [fieldsOf("worktable_thread_delivery", "claim")], {
+    inputSchema: flatInput([], [deliveryClaim], {
       registerAs: described(
         fieldsOf("worktable_thread_delivery", "register_participant").name!,
         "Register the authenticated agent under this participant name first."
@@ -978,6 +984,40 @@ export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
  * until agent directories review them. Each takes a released tool's place.
  */
 const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
+  // Storage: orientation says when the Worktable is close to its limit,
+  // and a file's history says when older versions were removed there.
+  worktable_state: (tool) => ({
+    ...tool,
+    description: `${tool.description} When the Worktable is close to its storage limit, it says so.`,
+    outputFields: {
+      ...tool.outputFields,
+      storage: z
+        .object({
+          usedBytes: z.number().int().nonnegative(),
+          limitBytes: z.number().int().positive(),
+          message: z.string(),
+        })
+        .optional()
+        .describe(
+          "Present when the Worktable has used 80% or more of its storage limit. At the limit its oldest history is removed to make room, and writes that still don't fit are refused."
+        ),
+    },
+  }),
+  worktable_files_read: (tool) => ({
+    ...tool,
+    outputFields: {
+      ...tool.outputFields,
+      pruned: z
+        .object({
+          versions: z.number().int().positive(),
+          at: z.string(),
+        })
+        .optional()
+        .describe(
+          "With versions: how many older versions were removed to make room at the storage limit, and when last."
+        ),
+    },
+  }),
   // Pictures of plain files: one page of a PDF, and an image scaled down,
   // which shows an agent an image too large to read as one.
   worktable_files_render: (tool) => ({
@@ -1003,6 +1043,38 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
     route: (args) =>
       args.threadId === undefined && !args.participants
         ? tool.route({ ...args, includeArchived: args.includeArchived ?? false })
+        : tool.route(args),
+  }),
+
+  // Runtimes that deliver to agents may take comments too: a page of them at
+  // once, answered with status replied.
+  worktable_delivery_claim: (tool) => ({
+    ...tool,
+    description:
+      "For an agent runtime that delivers thread messages: claim the messages addressed to you, waiting up to waitSeconds. Set comments to also claim comments sent to you; the comments waiting on one page come together as kind comments. Each comes with a leaseId for worktable_delivery_report. Pass registerAs on first use to register as a participant.",
+    inputSchema: z.strictObject({
+      ...tool.inputSchema.shape,
+      comments: claimComments!,
+    }),
+  }),
+  worktable_delivery_report: (tool) => ({
+    ...tool,
+    description:
+      "Report a claimed message's delivery: accepted when received, progress with a phase while working, failed with a code, message and whether it is retryable, or for comments, replied with the body to post on each one you haven't answered yourself.",
+    inputSchema: z.strictObject({
+      ...tool.inputSchema.shape,
+      status: z
+        .enum(["accepted", "progress", "failed", "replied"])
+        .describe(
+          "accepted acknowledges receipt; progress reports a phase; failed reports why delivery stopped; replied answers a page of comments."
+        ),
+      // Only replied takes a body; the reply operation requires it there.
+      body: deliveryReply.body!.optional(),
+    }),
+    runs: [...tool.runs, ["worktable_thread_delivery", "reply"]],
+    route: (args) =>
+      args.status === "replied"
+        ? step("worktable_thread_delivery", "reply", without(args, "status"))
         : tool.route(args),
   }),
 }

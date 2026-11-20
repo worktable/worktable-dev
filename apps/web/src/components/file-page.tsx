@@ -1,4 +1,11 @@
-import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import {
@@ -11,23 +18,20 @@ import {
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 import {
-  delimiterForFilename,
   filePolicy,
-  parseDelimitedText,
   type DocumentPage,
   type FileSurfacePolicies,
 } from "@worktable/types"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { DataTooltips } from "@/components/document/data-tooltip"
 import { ImageViewControl } from "@/components/viewer/image-view-control"
-import { mergeRefs, usePaneWidth } from "@/hooks/use-pane-width"
 import { useSetPageMeta } from "@/hooks/use-page-meta"
-import { DocTable } from "@/components/document/doc-table"
 import { DocumentByline } from "@/components/document/document-byline"
 import { TipCard } from "@/components/help/help"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { documentRoute } from "@/lib/document-views"
-import { authenticatedFetch, fetchJSON, refusalReason } from "@/lib/http"
+import { fetchJSON, refusalReason } from "@/lib/http"
+import { filePreviewTextKey, readPreviewText } from "@/lib/file-preview-text"
 import {
   FileChangedError,
   fileSourceUrl,
@@ -43,6 +47,9 @@ const ImportRecordsDialog = lazy(() =>
   }))
 )
 
+// The grid loads only when a table file opens.
+const TableFileView = lazy(() => import("@/components/viewer/table-file-view"))
+
 /** How a file shows on its page: the file type table's page policy. */
 type FileView = FileSurfacePolicies["page"]
 
@@ -55,39 +62,6 @@ function openFileAsHtmlDoc(
     `/api/spaces/${encodeURIComponent(spaceId)}/documents/open-as-html`,
     { method: "POST", body: JSON.stringify({ path }) }
   )
-}
-
-/** Text larger than this shows as a card with Download instead. */
-const PREVIEW_MAX_BYTES = 5 * 1024 * 1024
-/** Rows a table shows; the rest stay in the file. */
-const TABLE_MAX_ROWS = 1000
-/** Cells a table shows at most, so one very wide row can't stall the tab. */
-const TABLE_MAX_CELLS = 50_000
-/** Columns a table shows at most. */
-const TABLE_MAX_COLUMNS = 200
-
-/** The file's text, or null once it passes the preview limit. */
-async function readPreviewText(url: string): Promise<string | null> {
-  const response = await authenticatedFetch(url)
-  if (!response.ok) throw new Error(`File read failed: ${response.status}`)
-  const length = Number(response.headers.get("content-length") ?? "0")
-  if (length > PREVIEW_MAX_BYTES) return null
-  // Without a length to trust, read only as far as the limit.
-  const reader = response.body?.getReader()
-  if (!reader) return response.text()
-  const decoder = new TextDecoder()
-  let text = ""
-  let bytes = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) return text + decoder.decode()
-    bytes += value.byteLength
-    if (bytes > PREVIEW_MAX_BYTES) {
-      await reader.cancel()
-      return null
-    }
-    text += decoder.decode(value, { stream: true })
-  }
 }
 
 /**
@@ -108,9 +82,6 @@ export function FilePage({
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const fade = useScrollFade<HTMLDivElement>(8, { top: false })
-  // A table's Expand widens it to this pane, as it does in a Doc.
-  const paneWidth = usePaneWidth<HTMLDivElement>()
-  const scrollRef = useMemo(() => mergeRefs(fade, paneWidth), [fade, paneWidth])
   const picker = useRef<HTMLInputElement>(null)
   const article = useRef<HTMLElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -140,6 +111,16 @@ export function FilePage({
   const openableAsHtml = canEdit && view === "frame" && path.endsWith(".html")
   const [openingAsHtml, setOpeningAsHtml] = useState(false)
   const url = fileSourceUrl(spaceId, path, version)
+  // A table fills the pane as a grid. Past what a preview reads, or when
+  // the read fails, it is a card like any other file.
+  const tableView = view === "table" && page.noHistory === undefined
+  const tableText = useQuery({
+    queryKey: filePreviewTextKey(url),
+    queryFn: () => readPreviewText(url),
+    enabled: tableView,
+    staleTime: Infinity,
+  })
+  const tableOn = tableView && !tableText.isError && tableText.data !== null
 
   const uploadVersion = useCallback(
     async (file: File, over: string | undefined) => {
@@ -264,8 +245,8 @@ export function FilePage({
     uploading,
   ])
 
-  return (
-    <div className="flex h-full flex-col">
+  const dialogs = (
+    <>
       <DeferredMount active={importOpen}>
         <ImportRecordsDialog
           open={importOpen}
@@ -299,8 +280,40 @@ export function FilePage({
           if (file) void uploadVersion(file, basedOn)
         }}
       />
+    </>
+  )
+
+  if (tableOn) {
+    return (
+      <div className="flex h-full flex-col">
+        {dialogs}
+        <Suspense fallback={null}>
+          <TableFileView
+            key={url}
+            name={name}
+            text={tableText.data ?? undefined}
+            leading={
+              <DocumentByline
+                spaceId={spaceId}
+                docPath={path}
+                {...(page.document.updatedAt
+                  ? { updatedAt: page.document.updatedAt }
+                  : {})}
+                {...(page.backlinks ? { backlinks: page.backlinks } : {})}
+                {...(page.referrers ? { referrers: page.referrers } : {})}
+              />
+            }
+          />
+        </Suspense>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      {dialogs}
       <div
-        ref={scrollRef}
+        ref={fade}
         data-document-scroll-root
         className="scroll-fade h-full w-full flex-1 overflow-auto"
       >
@@ -324,7 +337,13 @@ export function FilePage({
             view={view}
             url={url}
             name={name}
-            tooLarge={page.noHistory !== undefined}
+            // A table's text is read above, once; this only says why it
+            // shows as a card, so the card never starts the read again.
+            tooLarge={
+              page.noHistory !== undefined ||
+              (tableView && tableText.data === null)
+            }
+            readFailed={tableView && tableText.isError}
           />
           {page.noHistory ? (
             <p className="text-sm text-muted-foreground">
@@ -352,18 +371,21 @@ function FileContent({
   url,
   name,
   tooLarge,
+  readFailed,
 }: {
   view: FileView
   url: string
   name: string
-  /** Past what a version holds: no preview is read. */
+  /** Past what a version holds, or what a preview reads: no preview. */
   tooLarge: boolean
+  /** The file's text couldn't be read for its page. */
+  readFailed: boolean
 }) {
   const [imageFailed, setImageFailed] = useState(false)
   const text = useQuery({
-    queryKey: ["file-preview", url],
+    queryKey: filePreviewTextKey(url),
     queryFn: () => readPreviewText(url),
-    enabled: !tooLarge && (view === "table" || view === "text"),
+    enabled: !tooLarge && view === "text",
     staleTime: Infinity,
   })
   if (view === "card") {
@@ -372,7 +394,7 @@ function FileContent({
   if (tooLarge || text.data === null) {
     return <FileCard name={name} status="Too large to preview" />
   }
-  if (text.isError || imageFailed) {
+  if (readFailed || text.isError || imageFailed) {
     return <FileCard name={name} status="Couldn’t load preview" />
   }
   if (view === "image") {
@@ -404,6 +426,7 @@ function FileContent({
     )
   }
   if (text.data === undefined) return null
+  // A table that loaded shows as a grid in the pane, never here.
   if (view === "text") {
     return (
       <pre>
@@ -411,55 +434,7 @@ function FileContent({
       </pre>
     )
   }
-  // Only the rows a table can show are kept; the rest are counted.
-  const table = parseDelimitedText(text.data, delimiterForFilename(name), {
-    maxRows: TABLE_MAX_ROWS,
-  })
-  // A row longer than the header keeps its values, under unnamed columns,
-  // up to what the table shows; the whole file stays one Download away.
-  let widest = table.header.length
-  for (const row of table.rows) {
-    widest = Math.max(widest, row.length)
-  }
-  const columns = Math.min(widest, TABLE_MAX_COLUMNS)
-  const rows = table.rows.slice(
-    0,
-    Math.min(TABLE_MAX_ROWS, Math.floor(TABLE_MAX_CELLS / Math.max(columns, 1)))
-  )
-  return (
-    <>
-      <DocTable>
-        <thead>
-          <tr>
-            {Array.from({ length: columns }, (_, index) => (
-              <th key={index} className="whitespace-pre-wrap">
-                {table.header[index] ?? ""}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rowIndex) => (
-            <tr key={rowIndex}>
-              {Array.from({ length: columns }, (_, index) => (
-                <td key={index} className="whitespace-pre-wrap">
-                  {row[index] ?? ""}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </DocTable>
-      <p className="text-sm text-muted-foreground">
-        {table.rowCount > rows.length
-          ? `First ${rows.length.toLocaleString()} of ${table.rowCount.toLocaleString()} rows`
-          : `${table.rowCount.toLocaleString()} ${table.rowCount === 1 ? "row" : "rows"}`}
-        {widest > columns
-          ? `, first ${columns.toLocaleString()} of ${widest.toLocaleString()} columns`
-          : ""}
-      </p>
-    </>
-  )
+  return null
 }
 
 function FileCard({ name, status }: { name: string; status: string }) {

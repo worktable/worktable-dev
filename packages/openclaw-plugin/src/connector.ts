@@ -1,12 +1,15 @@
 import { createClaimableDedupe } from "openclaw/plugin-sdk/persistent-dedupe"
 import {
   decideAccess,
+  memberId,
   resolveOwnership,
   type WorktableAccess,
 } from "./access.js"
 import type { ReplyOutbox, RetainedWorktableReply } from "./reply-outbox.js"
+import { createHash } from "node:crypto"
 import type {
   AgentDispatcher,
+  ClaimedWorktableComments,
   ClaimedWorktableDelivery,
   WorktableClient,
   WorktableParticipant,
@@ -98,6 +101,20 @@ function safeErrorMessage(error: unknown): string {
   return `OpenClaw could not complete this message (${code}).`
 }
 
+/**
+ * What OpenClaw answers in place of a turn the Gateway cut short to restart.
+ * It is a notice to the person, not the agent's answer: the turn didn't
+ * finish, so the work waits for its next lease instead of being answered.
+ */
+const GATEWAY_RESTART_NOTICES = new Set([
+  "⚠️ Gateway is restarting. Please wait a few seconds and try again.",
+  "Gateway is restarting. Please try again shortly.",
+])
+
+export function isGatewayRestartNotice(reply: string): boolean {
+  return GATEWAY_RESTART_NOTICES.has(reply.trim())
+}
+
 function channelStoppedError(): Error {
   return Object.assign(new Error("Worktable channel stopped"), {
     code: "CHANNEL_STOPPED",
@@ -174,6 +191,136 @@ function upgradeRetainedReply(
     authorIdentityId: delivery.identityId,
     body: reply.body,
     idempotencyKey: reply.idempotencyKey,
+  }
+}
+
+/**
+ * What one claimed delivery means for a turn: which conversation it runs in,
+ * what the agent reads, whose words they are, and where the answer goes. A
+ * thread message and a page of comments differ only here; leases, dedupe,
+ * the reply outbox and recovery are the same code for both.
+ */
+interface DeliveryTurn {
+  conversationId: string
+  eventId: string
+  threadTarget: string
+  threadId: string
+  /** What the agent reads. */
+  body: string
+  /** Whose words start the turn; each must pass the owner rule. */
+  authors: Array<{
+    id: string
+    listed?: WorktableParticipant
+    /** Who connected this author, when Worktable says so per author. */
+    connectedBy?: string | null
+  }>
+  /** The retained answer for this delivery, from the turn's reply. */
+  retain(reply: string): RetainedWorktableReply
+  /** A retained answer brought up to date for this lease. */
+  upgrade(reply: RetainedWorktableReply): RetainedWorktableReply
+}
+
+function threadTurn(
+  delivery: ClaimedWorktableDelivery,
+  worktableOrigin: string | undefined
+): DeliveryTurn {
+  const location = deliveryLocation(delivery)
+  return {
+    conversationId: deliveryConversationId(delivery),
+    eventId: deliveryEventId(delivery),
+    threadTarget: deliveryThreadTarget(delivery),
+    threadId: delivery.threadId,
+    body: delivery.message.body,
+    authors: [deliveryAuthor(delivery)],
+    retain: (reply) => ({
+      location,
+      ...(location.kind === "space" ? { spaceId: location.spaceId } : {}),
+      threadId: delivery.threadId,
+      inReplyTo: delivery.messageId,
+      responseTo: delivery.messageId,
+      authorIdentityId: delivery.identityId,
+      body: portableWorktableDocLinks(
+        reply,
+        location.kind === "space" ? location.spaceId : "",
+        worktableOrigin
+      ),
+      idempotencyKey: `openclaw:${delivery.messageId}:${delivery.identityId}:reply`,
+    }),
+    upgrade: (reply) => upgradeRetainedReply(delivery, reply),
+  }
+}
+
+/** The comments, as the agent reads them: where, what each says, and how to answer. */
+function commentsText(delivery: ClaimedWorktableComments): string {
+  const { page, comments } = delivery
+  // The page by its path, not its title: anyone who can edit the page can
+  // change the title, and the owner rule checks only the comments' authors.
+  const where = `\`${page.path}\` in Space \`${page.spaceId}\``
+  const lines = [
+    comments.length === 1
+      ? `A comment on ${where} was sent to you in Worktable.`
+      : `${comments.length} comments on ${where} were sent to you in Worktable.`,
+  ]
+  for (const comment of comments) {
+    lines.push("", `Comment ${comment.annotationId}, from ${comment.from.name}:`)
+    if (comment.quote) lines.push(`On the text: “${comment.quote}”`)
+    // Only the words that asked: earlier replies may come from people the
+    // owner rule never checked. The agent can read them with its tools.
+    lines.push(comment.body)
+  }
+  lines.push(
+    "",
+    "Do what they ask with your Worktable tools. You can answer a comment in it yourself; what you answer here is posted on each comment you didn't answer."
+  )
+  return lines.join("\n")
+}
+
+function commentsTurn(delivery: ClaimedWorktableComments): DeliveryTurn {
+  const { spaceId, path } = delivery.page
+  // Keyed on the page's id when Worktable gives one, so a renamed page keeps
+  // its conversation and a retried batch its retained answer.
+  const conversationId = `${spaceId}/comments/${delivery.page.id ?? path}`
+  // A batch keeps its id across retries, so a turn retried under a new lease
+  // meets its retained answer. Without one, the same comments make the
+  // same event.
+  const requests = delivery.comments.map((comment) => comment.requestId).sort()
+  const eventId = `${conversationId}/${
+    delivery.batchId ??
+    createHash("sha256")
+      .update(requests.join(","))
+      .digest("base64url")
+      .slice(0, 22)
+  }`
+  return {
+    conversationId,
+    eventId,
+    // Names the comments this turn answers, so an answer OpenClaw recovers
+    // after a restart goes to them through the outbound route.
+    threadTarget: `comments:${spaceId}/${delivery.comments
+      .map((comment) => comment.annotationId)
+      .join(",")}`,
+    threadId: `comments:${path}`,
+    body: commentsText(delivery),
+    authors: delivery.comments.map((comment) => ({
+      id: comment.from.id,
+      listed: comment.from,
+      ...(comment.from.connectedBy !== undefined
+        ? { connectedBy: comment.from.connectedBy }
+        : {}),
+    })),
+    // Thread-reply fields too, so every version of the outbox reads it.
+    retain: (reply) => ({
+      comments: true,
+      location: delivery.location,
+      spaceId,
+      threadId: conversationId,
+      inReplyTo: delivery.messageId,
+      responseTo: delivery.messageId,
+      authorIdentityId: delivery.identityId,
+      body: reply,
+      idempotencyKey: `openclaw:${eventId}:reply`,
+    }),
+    upgrade: (reply) => reply,
   }
 }
 
@@ -582,14 +729,17 @@ export class WorktableConnector {
   }
 
   async #handle(
-    delivery: ClaimedWorktableDelivery,
+    delivery: ClaimedWorktableDelivery | ClaimedWorktableComments,
     signal?: AbortSignal,
     stopOnLocalFailure?: (error: unknown) => void
   ): Promise<void> {
     const namespace = this.#accountId
-    const location = deliveryLocation(delivery)
-    const conversationId = deliveryConversationId(delivery)
-    const eventId = deliveryEventId(delivery)
+    const location = delivery.location
+    const turn =
+      delivery.kind === "comments"
+        ? commentsTurn(delivery)
+        : threadTurn(delivery, this.#worktableOrigin)
+    const { conversationId, eventId } = turn
 
     let heartbeat: ReturnType<typeof setInterval> | undefined
     let heartbeatRunning = false
@@ -661,15 +811,31 @@ export class WorktableConnector {
     try {
       // Before anything reaches OpenClaw: a refused author's words never
       // start a turn, and the refusal shows on their message.
-      const author = deliveryAuthor(delivery)
       const access = this.#access()
       const ownership = await resolveOwnership(
         delivery.connectedBy,
         access.ownerMemberId,
         this.#isOnePersonWorktable
       )
-      const authorRef = { id: author.id, kind: author.listed?.kind }
-      const decision = decideAccess(access, ownership, authorRef, this.#name)
+      // Every author must pass: a page of comments is one turn, so a
+      // refused author's words would reach it alongside the rest.
+      const decide = (current: WorktableAccess) => {
+        const decisions = turn.authors.map((author) =>
+          decideAccess(
+            current,
+            // Each agent on a page is judged by who connected it, not by
+            // whoever's comment came first.
+            author.connectedBy === undefined
+              ? ownership
+              : { ...ownership, authorOwner: memberId(author.connectedBy) },
+            { id: author.id, kind: author.listed?.kind },
+            this.#name
+          )
+        )
+        return decisions.find((decision) => !decision.allowed) ?? decisions[0]!
+      }
+      const decision = decide(access)
+      const author = turn.authors[0]!
       if (!decision.allowed) {
         this.#logger.warn?.(
           `Refused Worktable message ${delivery.messageId} from ${author.id || "an unnamed author"} (${decision.code})`
@@ -718,16 +884,11 @@ export class WorktableConnector {
       claimed = true
       await this.#withThreadTurn(conversationId, turnAbort.signal, async () => {
         let retained = await this.#replyOutbox.get(eventId)
-        if (retained) retained = upgradeRetainedReply(delivery, retained)
+        if (retained) retained = turn.upgrade(retained)
         if (!retained) {
           // The turn may have waited behind another in its thread. The rule
           // it meets is the one saved now, not the one it was claimed under.
-          const current = decideAccess(
-            this.#access(),
-            ownership,
-            authorRef,
-            this.#name
-          )
+          const current = decide(this.#access())
           if (!current.allowed) {
             terminalAfterDispatch = true
             throw Object.assign(
@@ -740,13 +901,13 @@ export class WorktableConnector {
               accountId: this.#accountId,
               location,
               conversationId,
-              threadTarget: deliveryThreadTarget(delivery),
+              threadTarget: turn.threadTarget,
               ...(location.kind === "space"
                 ? { spaceId: location.spaceId }
                 : {}),
-              threadId: delivery.threadId,
+              threadId: turn.threadId,
               messageId: delivery.messageId,
-              body: delivery.message.body,
+              body: turn.body,
               sender,
               commandAuthorized: current.owner,
             },
@@ -758,12 +919,14 @@ export class WorktableConnector {
           )
           // OpenClaw returns normally from an interrupted turn. Its output is
           // incomplete, so the message must be retried rather than finalized.
-          if (turnAbort.signal.aborted) throw channelStoppedError()
+          // A Gateway restart can answer before the channel hears it stop.
+          if (turnAbort.signal.aborted || isGatewayRestartNotice(reply))
+            throw channelStoppedError()
           if (!reply.trim()) {
             terminalAfterDispatch = true
             // OpenClaw answers nothing to a command from someone it does not
             // take commands from. Say so, rather than report a failed turn.
-            if (!current.owner && /^\s*[/!]/.test(delivery.message.body)) {
+            if (!current.owner && /^\s*[/!]/.test(turn.body)) {
               throw Object.assign(
                 new Error("OpenClaw did not run a command from this author"),
                 {
@@ -776,20 +939,7 @@ export class WorktableConnector {
               code: "EMPTY_REPLY",
             })
           }
-          retained = {
-            location,
-            ...(location.kind === "space" ? { spaceId: location.spaceId } : {}),
-            threadId: delivery.threadId,
-            inReplyTo: delivery.messageId,
-            responseTo: delivery.messageId,
-            authorIdentityId: delivery.identityId,
-            body: portableWorktableDocLinks(
-              reply,
-              location.kind === "space" ? location.spaceId : "",
-              this.#worktableOrigin
-            ),
-            idempotencyKey: `openclaw:${delivery.messageId}:${delivery.identityId}:reply`,
-          }
+          retained = turn.retain(reply)
           try {
             await this.#replyOutbox.put(eventId, retained)
           } catch (error) {
@@ -799,12 +949,19 @@ export class WorktableConnector {
         }
         if (turnAbort.signal.aborted) throw channelStoppedError()
         if (lostLease) throw lostLease
-        await this.#client.reply({
-          ...retained,
-          ...(delivery.thread.version === 3
-            ? { deliveryLeaseId: delivery.leaseId }
-            : {}),
-        })
+        if (delivery.kind === "comments")
+          await this.#client.replyToComments({
+            messageId: delivery.messageId,
+            leaseId: delivery.leaseId,
+            body: retained.body,
+          })
+        else
+          await this.#client.reply({
+            ...retained,
+            ...(delivery.thread.version === 3
+              ? { deliveryLeaseId: delivery.leaseId }
+              : {}),
+          })
         replyAppended = true
       })
       try {

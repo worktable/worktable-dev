@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { ANNOTATION_SENT_TO_KEY } from "@worktable/types"
+
 export const ANNOTATION_ORIGIN_KEY = "worktable.origin"
 export const VISITOR_ANNOTATION_PREFIX = "visitor-comment:"
 export type AnnotationWriteGuard = (documentId?: string) => void | Promise<void>
@@ -12,7 +14,8 @@ export function reservedAnnotationInput(input: unknown): boolean {
   return Boolean(
     (metadata &&
       typeof metadata === "object" &&
-      Object.hasOwn(metadata, ANNOTATION_ORIGIN_KEY)) ||
+      (Object.hasOwn(metadata, ANNOTATION_ORIGIN_KEY) ||
+        Object.hasOwn(metadata, ANNOTATION_SENT_TO_KEY))) ||
     (typeof value.idempotencyKey === "string" &&
       value.idempotencyKey.startsWith(VISITOR_ANNOTATION_PREFIX))
   )

@@ -157,7 +157,7 @@
   {
     "name": "worktable_state",
     "title": "Read Worktable state",
-    "description": "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId, set index for the Space's full document and Record index. It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow.",
+    "description": "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId, set index for the Space's full document and Record index. It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow. When the Worktable is close to its storage limit, it says so.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -534,6 +534,31 @@
             ],
             "additionalProperties": {}
           }
+        },
+        "storage": {
+          "description": "Present when the Worktable has used 80% or more of its storage limit. At the limit its oldest history is removed to make room, and writes that still don't fit are refused.",
+          "type": "object",
+          "properties": {
+            "usedBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "limitBytes": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "usedBytes",
+            "limitBytes",
+            "message"
+          ],
+          "additionalProperties": false
         },
         "notices": {
           "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
@@ -2289,6 +2314,25 @@
             "message"
           ],
           "additionalProperties": {}
+        },
+        "pruned": {
+          "description": "With versions: how many older versions were removed to make room at the storage limit, and when last.",
+          "type": "object",
+          "properties": {
+            "versions": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "versions",
+            "at"
+          ],
+          "additionalProperties": false
         },
         "notices": {
           "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
@@ -13077,7 +13121,7 @@
   {
     "name": "worktable_delivery_claim",
     "title": "Claim Worktable messages",
-    "description": "For an agent runtime that delivers thread messages: claim the messages addressed to you, waiting up to waitSeconds. Each comes with a leaseId for worktable_delivery_report. Pass registerAs on first use to register as a participant.",
+    "description": "For an agent runtime that delivers thread messages: claim the messages addressed to you, waiting up to waitSeconds. Set comments to also claim comments sent to you; the comments waiting on one page come together as kind comments. Each comes with a leaseId for worktable_delivery_report. Pass registerAs on first use to register as a participant.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -13095,6 +13139,10 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 120
+        },
+        "comments": {
+          "description": "Also claim comments sent to you. Comments on one page come together, as kind comments; answer them with status replied.",
+          "type": "boolean"
         }
       },
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -13877,7 +13925,7 @@
   {
     "name": "worktable_delivery_report",
     "title": "Report Worktable delivery status",
-    "description": "Report a claimed message's delivery: accepted when received, progress with a phase while working, or failed with a code, message and whether it is retryable.",
+    "description": "Report a claimed message's delivery: accepted when received, progress with a phase while working, failed with a code, message and whether it is retryable, or for comments, replied with the body to post on each one you haven't answered yourself.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -13919,9 +13967,16 @@
           "enum": [
             "accepted",
             "progress",
-            "failed"
+            "failed",
+            "replied"
           ],
-          "description": "accepted acknowledges receipt; progress reports a phase; failed reports why delivery stopped."
+          "description": "accepted acknowledges receipt; progress reports a phase; failed reports why delivery stopped; replied answers a page of comments."
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000,
+          "description": "Posted as your reply on each claimed comment you haven't answered yet."
         }
       },
       "required": [

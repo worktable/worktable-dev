@@ -10,6 +10,7 @@ import {
   FileVideo,
   Paperclip,
   Pencil,
+  Presentation,
   type LucideIcon,
 } from "lucide-react"
 import { filePolicy, type FileSurfacePolicies } from "@worktable/types"
@@ -74,6 +75,7 @@ const FILE_ICONS: Readonly<Record<FileSurfacePolicies["icon"], LucideIcon>> = {
   image: FileImage,
   spreadsheet: FileSpreadsheet,
   document: FileText,
+  presentation: Presentation,
   audio: FileAudio,
   video: FileVideo,
   archive: FileArchive,

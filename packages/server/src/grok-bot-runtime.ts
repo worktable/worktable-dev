@@ -1,7 +1,9 @@
 import {
   expireGrokBotDeliveries,
   grokBotDeliveries,
+  takesComments,
 } from "./thread-delivery-store.ts"
+import { onPendingChange } from "./pending-list.ts"
 import {
   applyGrokBotIdentityDefaults,
   onGrokBotChange,
@@ -109,9 +111,12 @@ export function startGrokBotRuntime(
           ["threads:read", "threads:write", "threads:participate"].every(
             (scope) => hasScope(agent.scopeCeiling!, scope)
           ))
+      // SPIKE: a comment rings Grok only once its routine asks for comments.
+      const comments = await takesComments(connection.participantId)
       const queued = deliveries.filter(
         (d) =>
           d.state === "queued" &&
+          (!d.comment || comments) &&
           (connection.verifiedAt ||
             connection.probe?.messageId === d.messageId) &&
           (!team ||
@@ -232,6 +237,13 @@ export function startGrokBotRuntime(
   }
   const offConfig = onGrokBotChange(nudge)
   const offPolicy = onTeamPolicyChange(nudge)
+  // SPIKE: a comment sent to Grok is work, as a thread message is.
+  const offPending = onPendingChange((change) => {
+    if (change.type === "added" && change.entry.kind === "comment") {
+      canonicalRevision += 1
+      nudge()
+    }
+  })
   const offWorkspace = onWorkspaceChange((event) => {
     if (event.type === "thread" || event.type === "workspaceReset")
       canonicalRevision += 1
@@ -247,6 +259,7 @@ export function startGrokBotRuntime(
     stopped = true
     offConfig()
     offPolicy()
+    offPending()
     offWorkspace()
     abort.abort()
     if (timer) clearTimeout(timer)

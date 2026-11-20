@@ -54,6 +54,9 @@ import { apiErrorResponse } from "./api-error-response.ts"
 import { ownerIdentity } from "./auth.ts"
 import { documentsRouter } from "./routes/documents.ts"
 import type { TokenIdentity } from "./token-store.ts"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
+import { createWorktableMcpServer } from "./mcp/server.ts"
 import { appendThreadMessage, createThread } from "./thread-store.ts"
 import { WorkspaceWatcher } from "./watcher.ts"
 import {
@@ -240,6 +243,38 @@ describe("storage limit", () => {
     expect(history.versions).toHaveLength(2)
     expect(history.pruned?.versions).toBe(1)
     expect(storageSummary()!.pruned).toMatchObject({ versions: 1, deletedItems: 1 })
+
+    // Agents on the preview surface are told too, and that the Worktable is
+    // at its limit when they orient; the released surface is unchanged.
+    const agentReads = async (surface: "released" | "preview") => {
+      const server = createWorktableMcpServer({ version: "test", scopes: ["*"], surface })
+      const client = new Client({ name: "storage-test", version: "1" })
+      const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
+      await Promise.all([server.connect(serverSide), client.connect(clientSide)])
+      try {
+        const state = await client.callTool({ name: "worktable_state", arguments: {} })
+        const versions = await client.callTool({
+          name: "worktable_files_read",
+          arguments: { spaceId: "notes", path: "older", versions: true, all: true },
+        })
+        return {
+          state: state.structuredContent as { storage?: unknown },
+          versions: versions.structuredContent as { pruned?: unknown },
+        }
+      } finally {
+        await client.close()
+      }
+    }
+    const preview = await agentReads("preview")
+    expect(preview.versions.pruned).toEqual({ versions: 1, at: expect.any(String) })
+    expect(preview.state.storage).toEqual({
+      usedBytes: storageSummary()!.limit.countedBytes,
+      limitBytes: storageLimitBytes(),
+      message: expect.stringContaining(`${Math.round(storageLimitBytes() / KB)} KB limit`),
+    })
+    const released = await agentReads("released")
+    expect(released.versions).not.toHaveProperty("pruned")
+    expect(released.state).not.toHaveProperty("storage")
   })
 
   it("admits restores and saved versions for what they keep, prunes a version once no restore holds it, and refuses when nothing is left", async () => {
@@ -650,6 +685,24 @@ describe("storage limit", () => {
         idempotencyKey: "status-2",
       }).catch((error) => error)
     ).toBeInstanceOf(StorageLimitError)
+  })
+
+  it("refuses a write that doesn't fit from the first moment after start", async () => {
+    await createDoc("big", 32 * KB)
+    // A server just started: nothing counted yet, the first count still a
+    // minute away.
+    for (const stop of stops) await stop()
+    setStorageLimitForTests(80 * KB, { promptPruneMs: 1_000 })
+    stops = [startStorageLimits(), startStorageAccounting({ firstCountDelayMs: 60_000 })]
+    expect(storageUsage()).toBeNull()
+    const started = Date.now()
+    expect(await createDoc("more", 16 * KB).catch((error) => error)).toBeInstanceOf(
+      StorageLimitError
+    )
+    // The write started the count instead of waiting out its delay.
+    expect(Date.now() - started).toBeLessThan(30_000)
+    expect(storageUsage()).not.toBeNull()
+    await createDoc("small", 1 * KB)
   })
 
   it("takes its limit from the environment, within the ceiling outside Cloud", () => {

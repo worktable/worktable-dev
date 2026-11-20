@@ -5,8 +5,8 @@
 // One write path for every upload: the app's Upload and Upload New Version,
 // the one-time links agents send files to, directly or through Worktable
 // Link, and files attached in ChatGPT. Each body is staged on disk as it
-// arrives, so no transfer holds a file in memory, and saved from there. A
-// storage quota, when it comes, goes here.
+// arrives, so no transfer holds a file in memory, and saved from there. The
+// write service checks it against the storage limit (storage-limit.ts).
 
 import { DOCUMENT_GENERATION_MAX_ENTRY_BYTES } from "@worktable/types"
 import {

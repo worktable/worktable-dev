@@ -44,14 +44,14 @@ function matchesNoneOf(c: Context, etag: string): boolean {
     .some((tag) => tag === "*" || tag === etag)
 }
 
-type ByteRange = { start: number; end: number } | "unsatisfiable" | null
+export type ByteRange = { start: number; end: number } | "unsatisfiable" | null
 
 /**
  * The one range a request asks for, inclusive, or null for the whole file:
  * when it asks for none, for several, in a form this doesn't read, or under
  * an If-Range that no longer holds.
  */
-function requestedRange(c: Context, size: number, etag: string): ByteRange {
+export function requestedRange(c: Context, size: number, etag: string): ByteRange {
   const header = c.req.header("range")
   if (header === undefined) return null
   const ifRange = c.req.header("if-range")

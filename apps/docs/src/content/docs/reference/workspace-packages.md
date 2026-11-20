@@ -15,6 +15,12 @@ Spaces, prose documents, HTML docs, drawings, records, annotations, threads, and
 any version history selected for export. Current exports also include a read-only offline browser
 for inspecting the snapshot without a running Worktable server.
 
+Packages since version 3 store bytes once: a version history file whose bytes
+match a file already in the package is listed in the manifest with `sameAs`,
+naming that file, and has no archive entry of its own. Importing recreates it
+and checks its hash. Worktable imports version 2 and version 3 packages; a
+release that reads only version 2 refuses a version 3 package.
+
 Machine-local credentials, owner sessions, participant registrations, thread
 delivery state, service configuration, logs, caches, and realtime editor state
 are excluded. Importing a conversation therefore does not reconnect its agent.
@@ -34,15 +40,17 @@ Keep the source package until the destination has opened successfully. See
 
 Current import limits are:
 
-| Boundary                   |   Limit |
-| -------------------------- | ------: |
-| Compressed archive         |   2 GiB |
-| Portable workspace content |   8 GiB |
-| One file                   |   2 GiB |
-| Workspace entries          | 100,000 |
-| Total archive entries      | 200,000 |
-| Manifest                   |  32 MiB |
+| Boundary                   |    Limit |
+| -------------------------- | -------: |
+| Compressed archive         | 2.25 GiB |
+| Portable workspace content |    8 GiB |
+| One file                   |    2 GiB |
+| Workspace entries          |  100,000 |
+| Total archive entries      |  200,000 |
+| Manifest                   |   32 MiB |
 
 Cloud transfers use 8 MiB upload chunks and an unfinished transfer expires
-after 24 hours of inactivity. A valid package must also pass path, entry-type,
+after 24 hours of inactivity. An export download that breaks off can resume
+where it stopped: the server answers byte ranges, under `If-Range` with the
+package's hash. A valid package must also pass path, entry-type,
 manifest-version, integrity, and workspace-contract validation.

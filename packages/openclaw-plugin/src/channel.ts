@@ -141,8 +141,22 @@ async function withClient<T>(
   }
 }
 
+/** The comments a recovered turn answers, named in its target. */
+const COMMENTS_TARGET =
+  /^comments:([A-Za-z0-9][A-Za-z0-9_-]*)\/(ann_[A-Za-z0-9_-]+(?:,ann_[A-Za-z0-9_-]+)*)$/
+
+export function resolveWorktableCommentsTarget(
+  target: string
+): { spaceId: string; annotationIds: string[] } | null {
+  const match = COMMENTS_TARGET.exec(target)
+  return match
+    ? { spaceId: match[1]!, annotationIds: match[2]!.split(",") }
+    : null
+}
+
 function normalizeTarget(raw: string): string | undefined {
   const target = raw.trim()
+  if (COMMENTS_TARGET.test(target)) return target
   if (/^thread:[A-Za-z0-9][A-Za-z0-9_-]*\/thr_[A-Za-z0-9_-]+$/.test(target)) {
     return target
   }
@@ -427,7 +441,7 @@ export const worktableChannel = createChatChannelPlugin({
       },
     },
     messaging: {
-      targetPrefixes: ["participant:", "thread:"],
+      targetPrefixes: ["participant:", "thread:", "comments:"],
       normalizeTarget,
       inferTargetChatType: ({ to }) =>
         to.startsWith("thread:") ? "group" : "direct",
@@ -449,6 +463,19 @@ export const worktableChannel = createChatChannelPlugin({
         const account = resolveWorktableAccount(ctx.cfg, ctx.accountId)
         const target = normalizeTarget(ctx.to)
         if (!target) throw new Error(`Invalid Worktable target: ${ctx.to}`)
+        // A turn about comments, finished after a restart: its answer goes on
+        // the ones still waiting, not into a thread.
+        const commentsTarget = resolveWorktableCommentsTarget(target)
+        if (commentsTarget) {
+          const answered = await withClient(account, (client) =>
+            client.answerComments({
+              ...commentsTarget,
+              body: ctx.text,
+              ...(ctx.deliveryQueueId ? { deliveryId: ctx.deliveryQueueId } : {}),
+            })
+          )
+          return { messageId: answered[0] ?? "", conversationId: target }
+        }
         const threadTarget = target.startsWith("thread:")
           ? resolveWorktableThreadTarget(target)
           : null

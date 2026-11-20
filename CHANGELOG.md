@@ -12,19 +12,27 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **Pinned pictures:** On Home and Space Home, a pinned image, PDF or drawing shows a picture of it instead of its icon.
+- **Export downloads resume:** A Worktable export that stops downloading partway can pick up where it stopped, in a browser or download tool that resumes downloads.
 - **Agents (preview):** With preview tools on, agents asked for slides learn what makes a deck work in Worktable: one 16:9 slide at a time with keys and tap, a stack on a phone, one slide per page in print, and the slide kept in the address so an edit doesn't move the presenter. What the slides hold and how they look is left to the request.
 - **Agents (preview):** With preview tools on, an agent can look at one page of a PDF, including a scanned one, and at an image too large to read directly, through `worktable_files_render`.
 - **QR codes for share links:** Share shows a link's QR code beside Copy. Download it, copy it as an image, or show it full screen with the link written under it. Links under More links have QR Code in their menu.
+- **Agents (preview):** With preview tools on, an agent orienting in a Worktable that is close to its storage limit is told so, and a file's history says when older versions were removed to make room.
 
 ### Changed
 
+- **Smaller exports:** A file and the copy of it kept in its version history are stored once in an export, so a Worktable of uploaded files exports at about half the size. Exports from this version need this version of Worktable or later to import; older exports still import.
 - **HTML Docs:** When an agent saves a new version of a page you have open, it opens where you were: the same scroll position, and a deck on the same slide if it keeps the slide number in its address. The loading placeholder no longer covers the page while the new version loads, and a deck's arrow keys work as soon as it fills the screen.
 - **HTML Docs:** Print PDF in an HTML Doc's menu, and Ctrl or Cmd+P, print the page itself instead of the app around it. A page prints with its own page rules, so a deck can print one slide per page; other pages print on white paper with the margins Docs print with. Large titles in the display font keep sturdy strokes.
+- **Visitor comments:** Send a visitor's comment to an agent in one click, or tick several and send them together. Choose who gets them in **To**; each page remembers your pick. A note is optional, and the visitor's name is left out unless you include it. The agent gets one thread message for each send, and each comment shows whether it was sent, is being worked on or is done.
 - **Share links:** A link made under More links can take visitor comments, with its own Allow comments switch. Each link says when comments are on.
+- **CSV and TSV files:** A table file fills its page as a grid. Every row shows, not only the first 1,000, with the header and row numbers kept in view as you scroll, and each column sized to its values.
 - **Full Worktable:** Making room at the storage limit never removes the version your last change replaced, so that change can always be undone. A replace that would need it gone is refused instead. A drawing keeps saving a little past the limit, so you don't lose what you were drawing.
 
 ### Fixed
 
+- **Full Worktable:** A Worktable at its storage limit refuses writes that don't fit from the moment it starts, not only once it has counted its storage a few seconds later.
+- **Export and import:** When a Worktable is too large to export with all its history, a package is too large to import, or the disk is full, Settings says so and what to do next, instead of "Export failed." with a technical reason.
+- **Export:** A Worktable at its 2 GiB limit always exports with all its history: packages can now be up to 2.25 GiB, room for the history, the offline viewer and a drawing saved a little past the limit. Before, a full Worktable of photos or PDFs could fail to export.
 - **Full Worktable:** When a Worktable is at its storage limit, or a file is larger than 64 MiB, uploads, new Docs and drawings, saved versions and pasted images now say so instead of asking you to try again. A drawing that can't save says why and saves once there is room, and a pasted image that can't be saved no longer leaves an empty block.
 
 ## [0.1.52] - 2026-11-19

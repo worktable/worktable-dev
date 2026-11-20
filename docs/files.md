@@ -346,9 +346,6 @@ work without knowing it.
 
 **Gaps:**
 
-- The released MCP surface still describes `expectedRevision` as optional for
-  `worktable_files_write`, though a replace without it is refused; the preview
-  surface says it's required.
 - No test covers a ChatGPT attachment replace.
 
 ### 9. A revision is one state
@@ -500,8 +497,7 @@ the type table allows), `packages/types/src/file-types.ts`,
   password, damage and a size past the limits each end in a reason, never a
   picture.
 
-The one binary format Worktable decodes is AVIF, for agents on the MCP preview
-surface: the sandboxed preview browser converts it to PNG, with no network,
+The one binary format Worktable decodes for agents is AVIF: the sandboxed preview browser converts it to PNG, with no network,
 within 15 seconds, for a file up to 5 MiB whose container declares pictures up
 to 8192 pixels a side and 40 million pixels (read from its box headers before
 anything decodes it), and a PNG up to 5 MiB (`agent-image-conversion.ts`).
@@ -592,10 +588,17 @@ person typing in a Doc keeps saving at the limit, counted but never refused. A
 person's drawing saves may go past the limit by 5% of it, at most 64 MiB
 (`storageGraceBytes`), so nobody loses a stroke when the Worktable fills; past
 that they are refused like any write. At its limit a Worktable
-still opens, reads, deletes and exports. What people delete leaves the
-backed-up folder at once and is removed after the history window.
+still opens, reads, deletes and exports. On the MCP preview surface,
+`worktable_state` tells an agent once the Worktable has used 80% of its
+limit, and a file's versions say how many older ones were removed at the
+limit, as Settings and the History panel tell a person. What people delete
+leaves the backed-up folder at once and is removed after the history window.
 
-The default limit is 2 GiB, the most today's export can carry.
+The default limit is 2 GiB (`PROVEN_WORKTABLE_BYTES` in `worktable-size.ts`).
+An export holds up to that plus 256 MiB (`EXPORT_HEADROOM_BYTES`): room for
+what a person's drawing saves may add past the limit, the offline viewer and
+ZIP headers, so a Worktable within its limit always exports with all its
+history.
 `WORKTABLE_STORAGE_LIMIT_BYTES` sets another; outside Cloud it is capped at
 2 GiB. Cloud can pass a plan's limit the same way, but passes none today, so
 every Cloud Worktable has the default.
@@ -615,6 +618,9 @@ export can carry, can't be recovered.
   left": reads, a smaller replace and a delete still work at the limit.
 - `storage-limit.test.ts` "leaves transfers out, counts a write on disk past the
   limit, and refuses the next new write".
+- `storage-limit.test.ts` "refuses a write that doesn't fit from the first
+  moment after start": before the first count, a write starts it at once and
+  is refused, instead of going through uncounted.
 - `storage-limit.test.ts` "keeps the version a replace supersedes, and lets a
   person keep drawing, at the limit": a replace prunes older history, never
   the version it replaced, and is refused when only that could make room; a
@@ -626,7 +632,9 @@ export can carry, can't be recovered.
 
 **Gaps:**
 
-- Nothing is refused until the first count, a few seconds after start.
+- A write that needs room in the first seconds after start waits for the
+  first count, up to 10 seconds; on a Worktable too large to count in that
+  time, it goes through uncounted.
 - Typing in a Doc has no bound past the limit: a person who keeps typing, or
   sends large edits through the editor connection, keeps adding bytes.
 - Each file's current version is also kept as a history copy that pruning
@@ -662,7 +670,7 @@ reason for both), `mcp/file-results.ts`.
 - `mcp-document-previews.test.ts` "keeps HTML saved when preview runtime is
   unavailable and fences standalone captures to the source revision".
 - `mcp-documents.test.ts` "reads code the type table doesn't list and a
-  Dockerfile as text, and an AVIF as an image": on the preview surface only.
+  Dockerfile as text, and an AVIF as an image".
 - `mcp-document-previews.test.ts` "shows agents a PDF's page and an image
   scaled down, on the preview surface, and says why a file has no preview":
   the picture names the revision it is of, and the released surface is as it
@@ -670,17 +678,16 @@ reason for both), `mcp/file-results.ts`.
 
 Code files the table knows (`.js`, `.ts`, `.css`) show as text on their page,
 as agents read them. Plain text and logs are text to both; CSV and TSV are a
-table to people and text to agents, which carries the same content. On the MCP
-preview surface, source code the table doesn't list (such as `.py` or `.go`)
-and a `Dockerfile` read as text, and an AVIF as a PNG agents can see
-(`mcp/file-results.ts`). There too, `worktable_files_render` gives an agent a
+table to people and text to agents, which carries the same content. Source
+code the table doesn't list (such as `.py` or `.go`) and a `Dockerfile` read
+as text to agents, and an AVIF as a PNG they can see (`mcp/file-results.ts`).
+On the MCP preview surface, `worktable_files_render` gives an agent a
 picture of a plain file: one page of a PDF, with its page count, or an image
 scaled down, which shows it an image too large to read as one. People see no
 pictures of files yet.
 
 **Gaps:** a code type the table doesn't list, and a `Dockerfile`, is a card to
-people, and base64 to agents on the released surface. AVIF is an image to
-people but base64 to agents on the released surface. No test checks that the
+people but text to agents. No test checks that the
 HTTP API and agent tools report the same identity and revision for one file.
 
 ### 16. Everything can be taken out
@@ -692,10 +699,18 @@ support for any file type.
 **Why:** people trust a place with their files when they can leave with all of
 them.
 
-**Enforced in:** `workspace-transfer-v2.ts`, `workspace-transfer-jobs.ts`.
+**Enforced in:** `workspace-transfer-v2.ts`, `workspace-transfer-jobs.ts`,
+`routes/workspace.ts` (a package downloads by range, under `If-Range` with
+its hash, so a broken-off download resumes and never mixes two packages). A
+package stores a history file once when its bytes match a file already in it
+(package version 3, `sameAs`), so a file and the history copy of its current
+version take its size once; importing recreates the copy and checks its hash.
 
 **Proved by:**
 
+- `routes-workspace.test.ts` "keeps a browser navigation alive until a
+  deferred export downloads": a download resumes by range, a tag from
+  another package gets the whole package, and a range past the end gets 416.
 - `workspace-transfer-v2.test.ts` "creates a standard, independently browsable
   ZIP and round-trips content".
 - `workspace-transfer-v2.test.ts` "keeps a file opened as an HTML Doc one
@@ -707,11 +722,13 @@ them.
 - `workspace-transfer-v2.test.ts` "leaves links and special files out of a
   person's export, keeps hidden items, and refuses unsafe destinations".
 
-**Gaps:** export stops at 2 GiB compressed and 8 GiB expanded, and the
-storage limit is a separate 2 GiB figure of uncompressed bytes, so a
-Worktable near its limit with files that don't compress may not export. No
-test exports at the limit. Share links and visitor comments live in app data,
-so an export doesn't carry them.
+**Gaps:** export stops at 2.25 GiB compressed and 8 GiB expanded. A
+Worktable carried well past its limit, by typing in a Doc or by files written
+on disk, may still not export with all its history; it exports with less. A
+Cloud plan's limit, once Cloud passes one, isn't tied to the export cap yet.
+The round trip at the limit is measured on a remote runner, not in a test.
+Share links and visitor comments live in app data, so an export doesn't carry
+them.
 
 ## Hidden files
 

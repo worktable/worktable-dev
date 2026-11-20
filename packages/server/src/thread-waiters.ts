@@ -113,6 +113,11 @@ export function threadSignalRevision(
   return threadRevisions.get(key) ?? 0
 }
 
+/** SPIKE: wake a participant's waiting claim for something other than a thread. */
+export function signalInbox(participantId: string): void {
+  wake(inboxWaiters, inboxRevisions, participantId)
+}
+
 export function inboxSignalRevision(participantId: string): number {
   return inboxRevisions.get(participantId) ?? 0
 }

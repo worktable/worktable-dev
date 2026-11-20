@@ -222,10 +222,12 @@ function ExportControls() {
             ? `${failedJob.failure.affectedFiles.toLocaleString()} history ${failedJob.failure.affectedFiles === 1 ? "file blocks" : "files block"} export.`
             : failedJob.failure
               ? "Some filenames need attention."
-              : "Export failed."}
+              : failedJob.errorForPeople && failedJob.error
+                ? failedJob.error
+                : "Export failed."}
         </OperationStatus>
       ) : null}
-      {failedJob ? (
+      {failedJob && !(failedJob.errorForPeople && !failedJob.failure) ? (
         <TransferDetails title="Details">
           {failedJob.failure ? (
             <>

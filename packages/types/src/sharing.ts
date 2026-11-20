@@ -391,14 +391,40 @@ export const PassVisitorCommentInputSchema = z.strictObject({
   category: AnnotationCategorySchema.default("comment"),
   /** Participants the passed comment is sent to. */
   to: z.array(z.string().min(1)).max(10).optional(),
-  /** What should happen. */
-  note: z.string().trim().min(1).max(10_000),
+  /** What should happen; the visitor's words can stand on their own. */
+  note: z.string().trim().max(10_000).optional(),
   /** Starts as the visitor's text; the member may trim it. */
   quote: CommentBodySchema,
   includeName: z.boolean(),
 })
 export type PassVisitorCommentInput = z.input<
   typeof PassVisitorCommentInputSchema
+>
+
+/**
+ * Send visitor comments to the team in one go. Each becomes a team comment;
+ * with a recipient, one thread message asks them about all of them.
+ */
+export const SendVisitorCommentsInputSchema = z.strictObject({
+  comments: z
+    .array(
+      z.strictObject({
+        id: z.string().regex(/^vc_[A-Za-z0-9_-]{22}$/),
+        note: z.string().trim().max(10_000).optional(),
+        /** Starts as the visitor's text; the member may trim it. */
+        quote: CommentBodySchema.optional(),
+      })
+    )
+    .min(1)
+    .max(100),
+  /** The participant asked about them; null keeps them as comments only. */
+  to: z.string().min(1).nullable(),
+  includeName: z.boolean().default(false),
+  /** Repeats with the same id send once. */
+  requestId: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/),
+})
+export type SendVisitorCommentsInput = z.input<
+  typeof SendVisitorCommentsInputSchema
 >
 
 /** A comment as visitors see it on the share page. Replies come from the team, never another visitor. */

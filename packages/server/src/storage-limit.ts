@@ -3,8 +3,8 @@
 // ============================================================
 //
 // Every Worktable has a limit, on every surface: 2 GiB by default
-// (DEFAULT_STORAGE_LIMIT_BYTES), the most today's export can carry, so every
-// Worktable stays exportable. `WORKTABLE_STORAGE_LIMIT_BYTES` sets another:
+// (DEFAULT_STORAGE_LIMIT_BYTES), the size export and import are proven to
+// carry (worktable-size.ts), so every Worktable stays exportable. `WORKTABLE_STORAGE_LIMIT_BYTES` sets another:
 // on Cloud, the plan's storage, which the control plane passes in the tenant
 // environment (hosted-contract ENV.STORAGE_LIMIT_BYTES); elsewhere an
 // operator may set any value up to STORAGE_LIMIT_CEILING_BYTES. It counts
@@ -30,8 +30,10 @@
 // limit: pruning starts and Worktable writes that add bytes are refused
 // until it is back under.
 //
-// Until the first count, a few seconds after the server starts, nothing is
-// refused.
+// The first count runs a few seconds after the server starts. A write that
+// needs room before then starts it at once and waits for it, a few seconds
+// at most; only if it takes longer than that is the write let through
+// uncounted.
 
 import { ENV } from "@worktable/hosted-contract"
 import { logError } from "./debug-log.ts"
@@ -43,16 +45,17 @@ import {
 } from "./storage-pruned.ts"
 import {
   onStorageApplied,
+  storageCounted,
   storageNoteSequences,
   storageUsage,
   type StorageUsage,
 } from "./storage-usage.ts"
 import { prunableHistoryEpoch } from "./prunable-history.ts"
+import { PROVEN_WORKTABLE_BYTES } from "./worktable-size.ts"
 
-const GIB = 1024 * 1024 * 1024
 
 /** The limit for every Worktable that sets none. */
-export const DEFAULT_STORAGE_LIMIT_BYTES = 2 * GIB
+export const DEFAULT_STORAGE_LIMIT_BYTES = PROVEN_WORKTABLE_BYTES
 /** The most an operator may set outside Cloud. */
 export const STORAGE_LIMIT_CEILING_BYTES = DEFAULT_STORAGE_LIMIT_BYTES
 /** How far past the limit a person's drawing saves may go: this share of it... */
@@ -247,6 +250,7 @@ export async function reserveStorage(room: {
   replaces?: () => Promise<number>
 }): Promise<StorageReservation> {
   if (!(room.adds > 0)) return NO_RESERVATION
+  if (!storageUsage()) await storageCounted()
   const usage = storageUsage()
   if (!usage) return NO_RESERVATION
   if (usedBytes(usage) + room.adds <= storageLimitBytes()) {
@@ -283,6 +287,8 @@ export function withAdmittedRoom<T>(
   write: (admit: (bytes: number, options?: StorageAdmission) => void) => Promise<T>
 ): Promise<T> {
   return retryAfterPruning(async () => {
+    // Before the first count, start it and wait, rather than admit uncounted.
+    if (!storageUsage()) await storageCounted()
     const room: { reservation: StorageReservation | null } = { reservation: null }
     try {
       return await write((bytes, options) => {

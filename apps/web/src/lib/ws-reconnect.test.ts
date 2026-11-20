@@ -342,6 +342,18 @@ describe("Space events in the query cache", () => {
         grokBots: [{ status: "needs-attention" }],
       })
       expect(grok.reads).toBe(1)
+      // So does a comment's delivery failing.
+      applyThreadEvent(
+        client,
+        {
+          type: "thread_activity",
+          threadId: "ann_bot",
+          data: { state: "failed" },
+        },
+        { kind: "worktable" }
+      )
+      await settle(client)
+      expect(grok.reads).toBe(2)
       expect(other.reads).toBe(0)
       // An agent that starts answering on its own changes any agent list.
       applySpaceEvent(client, "space-a", { type: "participants_update" })

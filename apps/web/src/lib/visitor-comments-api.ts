@@ -1,4 +1,4 @@
-import type { Annotation, PassVisitorCommentInput, VisitorCommentsResponse } from "@worktable/types"
+import type { Annotation, SendVisitorCommentsInput, VisitorCommentsResponse } from "@worktable/types"
 import { fetchJSON } from "./http"
 
 export { visitorCommentsQueryKey } from "./visitor-comment-events"
@@ -13,6 +13,7 @@ export function replyToVisitor(spaceId: string, id: string, body: string): Promi
 export function finishVisitorComment(spaceId: string, id: string, remove: boolean): Promise<{ok: true}> {
   return fetchJSON(`${base(spaceId)}/${encodeURIComponent(id)}${remove ? "" : "/done"}`, {method: remove ? "DELETE" : "POST"})
 }
-export function passVisitorToTeam(spaceId: string, id: string, input: PassVisitorCommentInput): Promise<{annotation: Annotation; created: boolean}> {
-  return fetchJSON(`${base(spaceId)}/${encodeURIComponent(id)}/pass`, {method: "POST", body: JSON.stringify(input)})
+/** Send comments to the team in one go; with a recipient, as one thread message to them. */
+export function sendVisitorComments(spaceId: string, input: SendVisitorCommentsInput): Promise<{annotations: Annotation[]; thread: {threadId: string; messageId: string} | null}> {
+  return fetchJSON(`${base(spaceId)}/send`, {method: "POST", body: JSON.stringify(input)})
 }

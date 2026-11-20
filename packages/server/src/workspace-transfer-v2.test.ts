@@ -1,4 +1,9 @@
 import { WorkspaceExportPathError } from "./workspace-package-path.ts"
+import {
+  STORAGE_LIMIT_CEILING_BYTES,
+  storageGraceBytes,
+  storageLimitBytes,
+} from "./storage-limit.ts"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
   chmod,
@@ -55,6 +60,7 @@ import {
   WORKSPACE_EXPORT_V2_MAX_MANIFEST_BYTES,
   WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES,
   WORKSPACE_EXPORT_V2_MAX_WORKSPACE_MANIFEST_BYTES,
+  type WorkspaceExportV2Manifest,
 } from "./workspace-transfer-v2.ts"
 import {
   ensureWorkspaceManifest,
@@ -352,7 +358,17 @@ describe("workspace export v2", () => {
   })
 
   it("publishes the supported transfer envelope as one coherent contract", () => {
-    expect(WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES).toBe(2 * 1024 ** 3)
+    // A Worktable at its limit fits in a package with all its history: its
+    // counted bytes, what a person's drawing saves may add past the limit,
+    // the offline viewer, and ZIP headers for every entry an archive holds.
+    const limit = storageLimitBytes()
+    expect(WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES).toBeGreaterThanOrEqual(
+      limit +
+        storageGraceBytes(limit) +
+        64 * 1024 ** 2 +
+        WORKSPACE_EXPORT_V2_MAX_ARCHIVE_ENTRIES * 200
+    )
+    expect(STORAGE_LIMIT_CEILING_BYTES).toBe(limit)
     expect(WORKSPACE_EXPORT_V2_MAX_EXPANDED_BYTES).toBe(8 * 1024 ** 3)
     expect(WORKSPACE_EXPORT_V2_MAX_FILE_BYTES).toBe(2 * 1024 ** 3)
     expect(WORKSPACE_EXPORT_V2_MAX_WORKSPACE_ENTRIES).toBe(100_000)
@@ -385,6 +401,27 @@ describe("workspace export v2", () => {
       join(source, "spaces", "notes", "docs", ".worktable-write-1-a.tmp"),
       "authored lookalike\n"
     )
+    // The current version of welcome.md kept in its history: the same bytes.
+    const historyCopy =
+      "versions/notes/documents/doc_WWWWWWWWWWWWWWWWWWWWWW/2026-01-01T00-00-00-000Z-000000-aaaaaaaa"
+    await writeDocumentGenerationV2({
+      workspaceRoot: source,
+      spaceId: "notes",
+      documentId: "doc_WWWWWWWWWWWWWWWWWWWWWW" as DocumentId,
+      generationId: "2026-01-01T00-00-00-000Z-000000-aaaaaaaa",
+      logicalPath: "welcome",
+      format: { id: BUILTIN_DOCUMENT_FORMATS.markdown, sourceVersion: 1 },
+      operation: "update",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      createdBy: "test",
+      source: "test",
+      authoredSource: {
+        kind: "file",
+        entries: [
+          { path: "document.md", bytes: Buffer.from("# Welcome\n\nPortable content.\n") },
+        ],
+      },
+    })
     const result = await writeWorkspaceExportV2(join(root, "portable"))
 
     expect(result.destination).toBe(join(root, "portable.wtb"))
@@ -401,6 +438,16 @@ describe("workspace export v2", () => {
     for (const path of transactionArtifacts) {
       expect(listing.stdout).not.toContain(path)
     }
+    // A history copy with the bytes of a live file is stored once, under the
+    // live file's path, and listed with sameAs.
+    expect(result.manifest.version).toBe(3)
+    expect(listing.stdout).not.toContain(`${historyCopy}/source/document.md`)
+    expect(listing.stdout).toContain(`${historyCopy}/manifest.json`)
+    expect(
+      result.manifest.integrity.files.find(
+        (file) => file.path === `${historyCopy}/source/document.md`
+      )?.sameAs
+    ).toBe("spaces/notes/docs/welcome.md")
     // Authored hidden names are a complete copy's, though no list shows them.
     expect(listing.stdout).toContain("docs/.pending-guide.md")
     expect(listing.stdout).toContain("docs/.worktable-write-1-a.tmp")
@@ -462,9 +509,45 @@ describe("workspace export v2", () => {
         "utf8"
       )
     ).toBe("# Welcome\n\nPortable content.\n")
+    // The copy stored once is restored, byte for byte, where it was.
+    expect(
+      await readFile(join(destination, ...historyCopy.split("/"), "source", "document.md"), "utf8")
+    ).toBe("# Welcome\n\nPortable content.\n")
     for (const path of transactionArtifacts) {
       await expect(stat(join(destination, path))).rejects.toThrow()
     }
+
+    // A version 2 package, which stores every file, still imports.
+    const older = await writeWorkspaceExportV2(join(root, "older"), {
+      formatVersionForTests: 2,
+    })
+    expect(older.manifest.version).toBe(2)
+    expect(older.manifest.integrity.files.some((file) => file.sameAs)).toBe(false)
+    const olderRestored = join(root, "older-restored")
+    await importWorkspaceExportV2(older.destination, olderRestored)
+    expect(
+      await readFile(join(olderRestored, ...historyCopy.split("/"), "source", "document.md"), "utf8")
+    ).toBe("# Welcome\n\nPortable content.\n")
+
+    // A package whose sameAs names bytes that differ is refused.
+    const forged = JSON.parse(
+      spawnSync("unzip", ["-p", result.destination, `${result.manifest.archive.root}/worktable-export.json`], {
+        encoding: "utf8",
+      }).stdout
+    ) as WorkspaceExportV2Manifest
+    const forgedFile = forged.integrity.files.find((file) => file.sameAs)!
+    // An earlier file with different bytes.
+    forgedFile.sameAs = "spaces/notes/docs/.pending-guide.md"
+    const forgedArchive = join(root, "forged.wtb")
+    await replaceArchiveEntry(
+      result.destination,
+      forgedArchive,
+      `${result.manifest.archive.root}/worktable-export.json`,
+      Buffer.from(JSON.stringify(forged))
+    )
+    await expect(inspectWorkspaceExportV2(forgedArchive)).rejects.toThrow(
+      "invalid workspace package file"
+    )
     expect(
       await readFile(
         join(destination, "spaces", "notes", "docs", ".pending-guide.md"),
@@ -592,7 +675,7 @@ describe("workspace export v2", () => {
 
     await expect(
       writeWorkspaceExportV2(join(root, "bounded-archive"))
-    ).rejects.toThrow(/archive limit/)
+    ).rejects.toThrow("too large to export with all its history")
     await expect(stat(join(root, "bounded-archive.wtb"))).rejects.toThrow()
     expect(
       (await readdir(root)).some((name) => name.includes("bounded-archive"))
@@ -1083,7 +1166,7 @@ describe("workspace export v2", () => {
 
     await expect(
       writeWorkspaceExportV2(join(root, "too-expanded"))
-    ).rejects.toThrow(/expanded-size limit/)
+    ).rejects.toThrow("files are too large to export together")
   })
 
   it("revalidates the destination inode immediately before publication", async () => {

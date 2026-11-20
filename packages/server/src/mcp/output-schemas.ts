@@ -219,6 +219,7 @@ const CommentActivityOutput = z.looseObject({
 const ClaimedCommentsOutput = z.looseObject({
   delivery: z.looseObject({
     kind: z.literal("comments"),
+    batchId: z.string(),
     messageId: z.string(),
     threadId: z.string(),
     leaseId: z.string(),

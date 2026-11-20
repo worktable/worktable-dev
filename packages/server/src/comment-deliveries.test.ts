@@ -118,6 +118,7 @@ async function runtime(
 /** A page of comments as a runtime receives it. */
 interface ClaimedPage {
   kind: string
+  batchId: string
   messageId: string
   leaseId: string
   page: { spaceId: string; path: string }
@@ -355,9 +356,28 @@ describe("comments delivered to an agent's runtime", () => {
         if (record.leaseId === page.leaseId)
           record.leaseExpiresAt = new Date(0).toISOString()
       await writeFile(path, JSON.stringify(file))
+      // A comment that came meanwhile doesn't change the retried batch, so
+      // the runtime knows it as the turn it already ran.
+      await writer.call("worktable_annotations_write", {
+        action: "create",
+        spaceId: "demo",
+        target: { type: "doc", docPath: "deck" },
+        body: "From Atlas: one more.",
+        to: [agentId],
+      })
       const again = (await claim(preview.call))!
       expect(again.leaseId).not.toBe(page.leaseId)
+      expect(again.batchId).toBe(page.batchId)
       expect(again.comments).toHaveLength(2)
+      await preview.call("worktable_thread_delivery", {
+        action: "reply",
+        messageId: again.messageId,
+        leaseId: again.leaseId,
+        body: "Checked.",
+      })
+      const next = (await claim(preview.call))!
+      expect(next.batchId).not.toBe(page.batchId)
+      expect(next.comments.map((c) => c.body)).toEqual(["From Atlas: one more."])
     } finally {
       await writer.close()
       await narrow.close()

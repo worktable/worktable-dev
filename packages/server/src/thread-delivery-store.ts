@@ -42,6 +42,11 @@ interface DeliveryRecord {
   comment?: CommentDeliveryRef
   /** The lease whose reply answered this comment, so a retry finds it done. */
   repliedUnder?: string
+  /**
+   * The page batch this comment went out in. A retry keeps it and its
+   * comments, so a runtime can tell the turn it already answered.
+   */
+  batchId?: string
   /** The comment's pending-list revision, so an older snapshot can't retire it. */
   pendingRevision?: number
   receivedCharacters?: number
@@ -94,6 +99,8 @@ export interface ClaimedDelivery {
   identityId: string
   /** Comments on one page, leased together, instead of a thread message. */
   comments?: CommentDeliveryRef[]
+  /** The comments' batch, the same on every retry of it. */
+  batchId?: string
 }
 
 const LEASE_MS = 60_000
@@ -1211,6 +1218,12 @@ export async function claimThreadDelivery(
       return null
     }
 
+    // A batch whose lease ran out goes out again as itself; comments that
+    // came since wait for a batch of their own.
+    const retrying =
+      candidate?.comment && candidate.state !== "queued"
+        ? candidate.batchId
+        : undefined
     if (candidate) {
       candidate.state = "leased"
       candidate.leaseId = `lease_${randomBytes(18).toString("base64url")}`
@@ -1230,9 +1243,9 @@ export async function claimThreadDelivery(
     // under the same lease, so one turn answers them all.
     const batch: DeliveryRecord[] = candidate ? [candidate] : []
     if (candidate?.comment) {
+      candidate.batchId =
+        retrying ?? `bat_${randomBytes(12).toString("base64url")}`
       for (const record of file.deliveries) {
-        // Waiting ones, and the rest of an expired batch, which retries as
-        // one page within its attempts.
         const waiting =
           record.state === "queued" &&
           !(record.nextAttemptAt && Date.parse(record.nextAttemptAt) > nowMs)
@@ -1241,14 +1254,20 @@ export async function claimThreadDelivery(
           active(record) &&
           record.attempts < MAX_ATTEMPTS &&
           (!record.leaseExpiresAt || Date.parse(record.leaseExpiresAt) <= nowMs)
+        // A retry takes the rest of its own batch; a new batch takes the
+        // page's waiting comments, and any expired from before batches had ids.
+        const joins = retrying
+          ? expired && record.batchId === retrying
+          : waiting || (expired && record.batchId === undefined)
         if (
           record === candidate ||
           record.participantId !== participantId ||
           record.comment?.page !== candidate.comment.page ||
           record.comment.spaceId !== candidate.comment.spaceId ||
-          (!waiting && !expired)
+          !joins
         )
           continue
+        record.batchId = candidate.batchId
         record.state = "leased"
         record.leaseId = candidate.leaseId
         record.leaseExpiresAt = candidate.leaseExpiresAt
@@ -1277,7 +1296,10 @@ export async function claimThreadDelivery(
       attempt: candidate.attempts,
       identityId: candidate.identityId,
       ...(candidate.comment
-        ? { comments: batch.map((record) => record.comment!) }
+        ? {
+            comments: batch.map((record) => record.comment!),
+            batchId: candidate.batchId!,
+          }
         : {}),
     }
   })

@@ -79,18 +79,18 @@ describe("the derived store", () => {
       ],
     })
     expect(store.readContentsLines(key(), 1, 3)).toEqual({
-      text: "## Page 1\nQuarterly report\nRevenue grew\n",
+      text: "<!-- Page 1 -->\nQuarterly report\nRevenue grew\n",
       startLine: 1,
       endLine: 3,
       totalLines: 6,
       nextOffset: 4,
     })
     expect(store.readContentsLines(key(), 4)).toMatchObject({
-      text: "## Page 2\n## Page 3\nAppendix\n",
+      text: "<!-- Page 2 -->\n<!-- Page 3 -->\nAppendix\n",
       endLine: 6,
     })
     // A page stops at its bytes; a line too long for one is cut there.
-    expect(store.readContentsLines(key(), 1, 10, 30)).toMatchObject({ endLine: 2, nextOffset: 3 })
+    expect(store.readContentsLines(key(), 1, 10, 36)).toMatchObject({ endLine: 2, nextOffset: 3 })
     expect(store.readContentsLines(key(), 2, 10, 5)).toMatchObject({ text: "Quart\n", cutLine: 2 })
 
     // Another version, or an older reader, never answers.

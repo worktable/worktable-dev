@@ -62,7 +62,7 @@ export type StoredContents = DerivedState & {
   facts: ContentsOutput["facts"]
   missing: ContentsGap[]
   totalLines: number
-  /** Each part's label and the line its heading is on. */
+  /** Each part's label and the line its mark is on. */
   outline: { label: string; line: number }[]
 }
 
@@ -112,11 +112,15 @@ function announce(change: DerivedChange): void {
 
 const SCHEMA_VERSION = 1
 
-/** A part as the page shows it: its heading, then its text. */
+/**
+ * A part as the page shows it: a line marking where it starts, then its
+ * text. The mark is a Markdown comment, so a file's own headings, which a
+ * reader keeps as Markdown, stay as they are.
+ */
 function partLines(label: string, text: string): string[] {
   const lines = text.length === 0 ? [] : text.split("\n")
   if (lines.at(-1) === "") lines.pop()
-  return [`## ${label}`, ...lines]
+  return [`<!-- ${label.replaceAll("--", "- -")} -->`, ...lines]
 }
 
 /** At most `maxBytes` of a line, ending on a whole character. */
@@ -295,7 +299,7 @@ export class DerivedStore {
   }
 
   /**
-   * A page of a file's kept contents, by line: each part's heading, then its
+   * A page of a file's kept contents, by line: each part's mark, then its
    * text, at most `limit` lines and a page's bytes. Reads only the parts the
    * page covers.
    */

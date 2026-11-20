@@ -303,6 +303,7 @@ export function FilePage({
             name={name}
             fileUrl={url}
             byteLength={page.byteLength!}
+            refusal={(status) => <FileCard name={name} status={status} />}
             leading={
               <DocumentByline
                 spaceId={spaceId}

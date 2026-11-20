@@ -137,3 +137,14 @@
   text-decoration: underline 2px var(--accent-bronze);
   text-underline-offset: 0.2em;
 }
+
+/* A rich-text file block's name opens a PDF full screen (PdfViewControl). */
+[data-content-type="file"][data-url$=".pdf" i] .bn-file-name-with-icon {
+  cursor: pointer;
+}
+[data-content-type="file"][data-url$=".pdf" i]
+  .bn-file-name-with-icon:hover
+  .bn-file-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

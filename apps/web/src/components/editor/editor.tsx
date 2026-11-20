@@ -82,6 +82,7 @@ import {
 } from "./placed-upload"
 import { TableExpandControl } from "./table-expand"
 import { ImageViewControl } from "@/components/viewer/image-view-control"
+import { PdfViewControl } from "@/components/viewer/pdf-view-control"
 
 import {
   WorktableMermaidBlock,
@@ -250,7 +251,8 @@ class LatestFiles {
   }
   upload(file: File): Promise<string> {
     const upload = this.files?.upload
-    if (!upload) return Promise.reject(new Error("Files can't be added to this Doc now"))
+    if (!upload)
+      return Promise.reject(new Error("Files can't be added to this Doc now"))
     return upload(file)
   }
 }
@@ -672,6 +674,12 @@ function EditorInner({
           frameRef={editorContainerRef}
           openOnClick={!editable}
         />
+        {files ? (
+          <PdfViewControl
+            frameRef={editorContainerRef}
+            resolve={files.resolve}
+          />
+        ) : null}
         <DataTooltips rootRef={editorContainerRef} />
         <AnnotationBadges
           annotations={annotations}
@@ -957,7 +965,11 @@ function AnnotationBadges({
   useEffect(() => {
     const report = (ids: Set<string>) => {
       const previous = reportedDetached.current
-      if (previous.size === ids.size && [...ids].every((id) => previous.has(id))) return
+      if (
+        previous.size === ids.size &&
+        [...ids].every((id) => previous.has(id))
+      )
+        return
       reportedDetached.current = ids
       latestPassages.current?.onDetached(ids)
     }
@@ -1068,11 +1080,16 @@ function AnnotationBadges({
           // whole Doc, from its words and what surrounds them.
           const range =
             rangeForPassage(model, { quote }) ??
-            rangeForPassage((wholeDoc ??= readPassageText(container.querySelector(".bn-editor") ?? container)), {
-              quote,
-              prefix: "prefix" in target ? target.prefix : undefined,
-              suffix: "suffix" in target ? target.suffix : undefined,
-            })
+            rangeForPassage(
+              (wholeDoc ??= readPassageText(
+                container.querySelector(".bn-editor") ?? container
+              )),
+              {
+                quote,
+                prefix: "prefix" in target ? target.prefix : undefined,
+                suffix: "suffix" in target ? target.suffix : undefined,
+              }
+            )
           if (range) ranges.set(annotation.id, range)
           else gone.add(annotation.id)
         }
@@ -1176,7 +1193,9 @@ function caretPointAt(
       : null
   }
   const range = document.caretRangeFromPoint?.(x, y)
-  return range ? { node: range.startContainer, offset: range.startOffset } : null
+  return range
+    ? { node: range.startContainer, offset: range.startOffset }
+    : null
 }
 
 function createAnnotationFromEditor(

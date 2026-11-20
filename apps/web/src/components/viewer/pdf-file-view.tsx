@@ -21,7 +21,6 @@ import {
 import { Button } from "@worktable/ui/components/button"
 import { Input } from "@worktable/ui/components/input"
 import { Skeleton } from "@worktable/ui/components/skeleton"
-import { FileCard } from "@/components/file-card"
 import {
   ViewerFrame,
   type ViewerFrameHandle,
@@ -62,6 +61,7 @@ const REFUSALS: Record<ViewerRefusal, string> = {
   password: "Password protected",
   damaged: "Couldn’t load preview",
   failed: "Couldn’t load preview",
+  "too-large": "Too large to preview",
 }
 
 /**
@@ -75,14 +75,30 @@ export default function PdfFileView({
   fileUrl,
   byteLength,
   leading,
+  onDismiss,
+  onFileChanged,
+  refusal,
 }: {
   spaceId: string
   path: string
   name: string
   fileUrl: string
-  byteLength: number
+  /** The file's size when the page knows it. */
+  byteLength?: number | undefined
   /** What the page says about the file, before the viewer's tools. */
-  leading: ReactNode
+  leading?: ReactNode
+  /** Escape while reading, when nothing else in the viewer is open. */
+  onDismiss?: () => void
+  /**
+   * The file changed while it was being read. By default its page is
+   * checked again, which opens the new version.
+   */
+  onFileChanged?: () => void
+  /**
+   * What shows in place of a file the viewer can't show, given why; by
+   * default the reason alone, centred.
+   */
+  refusal?: (status: string) => ReactNode
 }) {
   const queryClient = useQueryClient()
   const frame = useRef<ViewerFrameHandle>(null)
@@ -342,9 +358,15 @@ export default function PdfFileView({
         ) : null}
       </div>
       {refused ? (
-        <div className="mx-auto w-full max-w-3xl px-6">
-          <FileCard name={name} status={REFUSALS[refused]} />
-        </div>
+        refusal ? (
+          <div className="mx-auto w-full max-w-3xl px-6">
+            {refusal(REFUSALS[refused])}
+          </div>
+        ) : (
+          <p className="m-auto p-6 text-sm text-muted-foreground">
+            {REFUSALS[refused]}
+          </p>
+        )
       ) : (
         <div className="relative min-h-0 flex-1">
           {shown ? null : (
@@ -411,13 +433,16 @@ export default function PdfFileView({
               setTyped(null)
             }}
             onRefused={setRefused}
-            onChanged={reload}
+            onChanged={onFileChanged ?? reload}
             onFind={setFound}
             onPassword={(retry) => setAsking({ retry })}
             onRail={setRail}
             onKey={(key) => {
               if (key === "find") openFind()
-              else if (key === "Escape" && find !== null) closeFind()
+              else if (key === "Escape") {
+                if (find !== null) closeFind()
+                else onDismiss?.()
+              }
             }}
           />
         </div>

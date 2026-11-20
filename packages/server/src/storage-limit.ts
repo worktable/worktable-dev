@@ -200,21 +200,24 @@ export class StorageLimitError extends Error {
   readonly details: { limitBytes: number; usedBytes: number }
   /** What the refused write asked for; 0 when pruning can't help it. */
   readonly requestedBytes: number
-  /** The most the write may take the Worktable to: the limit, or past it by an allowance. */
-  readonly ceilingBytes: number
+  /**
+   * How far past the total limit the write may go (a person's drawing
+   * saves); pruning compares against the limit in force when it runs.
+   */
+  readonly allowanceBytes: number
 
   constructor(
     limitBytes: number,
     usedBytes: number,
     message?: string,
     requestedBytes = 0,
-    ceilingBytes = limitBytes
+    allowanceBytes = 0
   ) {
     super(message ?? storageLimitMessage(limitBytes))
     this.name = "StorageLimitError"
     this.details = { limitBytes, usedBytes }
     this.requestedBytes = requestedBytes
-    this.ceilingBytes = ceilingBytes
+    this.allowanceBytes = allowanceBytes
   }
 }
 
@@ -357,7 +360,7 @@ export function admitStorageWrite(
       now.files,
       storageLimitMessage(limit, "close to"),
       bytes,
-      ceiling
+      grace
     )
   }
   return reserve(Math.max(0, bytes), Math.max(0, files))
@@ -461,7 +464,7 @@ export async function retryAfterPruning<T>(write: () => Promise<T>): Promise<T> 
     if (!(error instanceof StorageLimitError) || !(error.requestedBytes > 0)) {
       throw error
     }
-    await waitForRoom(error.requestedBytes, error.ceilingBytes)
+    await waitForRoom(error.requestedBytes, error.allowanceBytes)
     return write()
   }
 }
@@ -487,7 +490,7 @@ let again = false
 let stopped = true
 let promptPruneMs = PROMPT_PRUNE_MS
 /** Writes waiting for room, in the order they asked. */
-const waiting = new Set<{ bytes: number; ceiling: number }>()
+const waiting = new Set<{ bytes: number; allowance: number }>()
 /** What the last plan could remove, still; null when it may be stale. */
 let known: {
   epoch: number
@@ -508,7 +511,7 @@ function dueBytes(reclaimable: number): number {
   let fitting = 0
   for (const write of waiting) {
     // One that can't fit even if all of it went isn't pruned for.
-    if (used + fitting + write.bytes - reclaimable > write.ceiling) continue
+    if (used + fitting + write.bytes - reclaimable > limit + write.allowance) continue
     fitting += write.bytes
   }
   if (fitting > 0) {
@@ -571,11 +574,13 @@ function runPruning(): Promise<void> {
 
 /**
  * A write of `bytes` waits, a few seconds at most, while pruning makes room
- * for it under `ceiling`: the limit, or past it by the write's allowance.
+ * for it under the total limit in force, or past it by its `allowance`. The
+ * limit is read when pruning runs, not when the write was refused: a lower
+ * limit noticed meanwhile keeps what the Worktable held.
  */
-async function waitForRoom(bytes: number, ceiling: number): Promise<void> {
+async function waitForRoom(bytes: number, allowance: number): Promise<void> {
   if (stopped) return
-  const write = { bytes, ceiling }
+  const write = { bytes, allowance }
   waiting.add(write)
   let timer: ReturnType<typeof setTimeout> | undefined
   try {

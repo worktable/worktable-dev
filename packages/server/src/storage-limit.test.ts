@@ -503,6 +503,12 @@ describe("storage limit", () => {
         (await readRegisteredDocumentSource({ spaceId: "notes", path: "sketch" })).bytes
       )
     ).toContain(stroke)
+    // A quick next save continues that version, so it is charged only for
+    // what it adds, even near the end of the allowance.
+    const next = await save(ownerIdentity(), `${stroke}${"e".repeat(Math.round(storageGraceBytes() / 3))}`)
+    expect(next.status).toBe(200)
+    sketch = (await next.json()) as typeof sketch
+    await settled()
     const tooMuch = await save(ownerIdentity(), "d".repeat(storageGraceBytes() * 2))
     expect(tooMuch.status).toBe(507)
     await settled()

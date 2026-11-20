@@ -1926,9 +1926,15 @@ async function replaceRegisteredDocumentWithRoom(options: {
           // A person's drawing keeps saving a little past the limit, so
           // nobody loses a stroke when the Worktable fills; bounded, so
           // saves can't fill the disk (storageGraceBytes).
-          if (options.personSave && isDrawingFormat(current.format.id))
-            return admit(adds, { grace: true })
-          if (creates || storageFits(adds)) return admit(adds)
+          const admission =
+            options.personSave && isDrawingFormat(current.format.id)
+              ? { grace: true }
+              : undefined
+          if (creates || storageFits(adds)) return admit(adds, admission)
+          // A save continues the open version when nothing below marks it
+          // as a version of its own (writeDocumentGenerationV2).
+          const mayContinue =
+            !options.separateVersion && !options.checkpoint && !options.agentMutation
           admit(
             adds -
               (await reclaimableAfterReplacementV2({
@@ -1936,8 +1942,21 @@ async function replaceRegisteredDocumentWithRoom(options: {
                 spaceId: options.spaceId,
                 documentId,
                 writesCheckpoint: Boolean(options.checkpoint),
-                mayContinue: !options.separateVersion,
-              }))
+                mayContinue,
+                ...(mayContinue
+                  ? {
+                      save: {
+                        operation: "update" as const,
+                        createdAt: now,
+                        createdBy: options.updatedBy,
+                        source: options.source,
+                        logicalPath: current.path,
+                        format: current.format,
+                      },
+                    }
+                  : {}),
+              })),
+            admission
           )
         },
       })

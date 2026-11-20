@@ -1310,6 +1310,8 @@ export async function reclaimableAfterReplacementV2(input: {
   writesCheckpoint: boolean
   /** Whether the write may continue the current version; true unless known otherwise. */
   mayContinue?: boolean
+  /** The save, when known: whether it continues the current version is then exact. */
+  save?: Parameters<typeof continuesDocumentGeneration>[1]
 }): Promise<number> {
   const newestFirst = await listDocumentGenerationsV2(input).catch(() => [])
   const current = newestFirst[0]
@@ -1352,7 +1354,10 @@ export async function reclaimableAfterReplacementV2(input: {
     current.checkpoint?.meaningful
   )
     return asNew
-  return Math.min(asNew, freed(newestFirst.slice(1), current.id))
+  const asContinued = freed(newestFirst.slice(1), current.id)
+  if (input.save)
+    return continuesDocumentGeneration(current, input.save) ? asContinued : asNew
+  return Math.min(asNew, asContinued)
 }
 
 /**

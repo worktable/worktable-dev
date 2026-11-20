@@ -113,8 +113,36 @@ export interface SearchResult {
   excerpt?: string;
   /** Present on temporary documents: when the document archives itself. */
   archiveOn?: string;
+  /**
+   * The result or its Space is archived. Only on a search that asked for
+   * archived results after the rest.
+   */
+  archived?: true;
   /** The Library skill this Doc is, when the reader sees the Library. */
   skill?: SearchSkill;
+}
+
+/** The kinds a search can be narrowed to. */
+export const SEARCH_KINDS = ["doc", "html", "drawing", "file", "record"] as const;
+export type SearchKind = (typeof SEARCH_KINDS)[number];
+
+/** Which kind a search result is, from its type and format. */
+export function searchResultKind(result: {
+  type: SearchResult["type"];
+  format?: { id: string };
+}): SearchKind {
+  if (result.type === "record") return "record";
+  switch (result.format?.id) {
+    case "worktable.html":
+      return "html";
+    case "worktable.file":
+      return "file";
+    case "worktable.quickdraw":
+    case "worktable.excalidraw":
+      return "drawing";
+    default:
+      return "doc";
+  }
 }
 
 export interface DocFile {

@@ -77,7 +77,8 @@ configuration; don't remove authentication to get past a startup error.
 
 ## Missing work
 
-Check the selected workspace and Space, then search archived documents.
+Check the selected workspace and Space, then search: archived documents
+show under **Archived** in the results.
 Temporary documents are archived, not deleted, when they expire. Restore any
 you need.
 

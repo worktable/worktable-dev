@@ -14,7 +14,6 @@ import {
   useEffect,
   useMemo,
   useRef,
-  type Ref,
   type ReactNode,
 } from "react"
 import {
@@ -124,11 +123,9 @@ const UnpinDocumentButton = lazy(() =>
     default: module.UnpinDocumentButton,
   }))
 )
-import {
-  SidebarSearchInput,
-  SidebarSearchResults,
-  type SidebarSearchResultsHandle,
-} from "@/components/sidebar-search"
+import { SearchPalette } from "@/components/search/search-palette"
+import { SidebarSearchButton } from "@/components/search/sidebar-search-button"
+import { RecentOpensRecorder } from "@/components/search/recent-opens-recorder"
 import { openSettings } from "@/lib/settings-open"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
 import { UpdateIndicatorDot } from "@/components/update-indicator"
@@ -2566,26 +2563,6 @@ function shellSection(pathname: string): ShellSection {
   return pathname === "/activity" ? "activity" : null
 }
 
-function SidebarSearchPanel({
-  query,
-  onNavigate,
-  ref,
-}: {
-  query: string
-  onNavigate: () => void
-  ref?: Ref<SidebarSearchResultsHandle>
-}) {
-  const currentPath = useRouterState({ select: (s) => s.location.pathname })
-  return (
-    <SidebarSearchResults
-      ref={ref}
-      query={query}
-      currentPath={currentPath}
-      onNavigate={onNavigate}
-    />
-  )
-}
-
 type GroupDialogState =
   | { mode: "new"; spaceId?: string }
   | { mode: "rename"; group: PersonalGroup }
@@ -2613,11 +2590,6 @@ export function AppSidebar() {
   const [groupDialog, setGroupDialog] = useState<GroupDialogState>(null)
   // Which sections are folded, remembered on this device.
   const [sectionOpen, setSectionOpen] = useState<Record<string, boolean>>({})
-  // Kept across navigation so multiple results can be triaged; cleared only
-  // via the input's clear button or Escape.
-  const [searchQuery, setSearchQuery] = useState("")
-  const searching = searchQuery.trim().length > 0
-  const searchResultsRef = useRef<SidebarSearchResultsHandle>(null)
 
   // Every Space socket hears spaces_changed; keeping the first Space's socket
   // open lets the shared socket refresh the Spaces list when any Space changes.
@@ -2784,12 +2756,12 @@ export function AppSidebar() {
     >
       <WorktableHeader />
 
-      {/* Workspace search (every Space, whatever the list shows) */}
+      {/* Opens search, which covers every Space whatever the list shows. */}
       <div className="shrink-0 px-3 pt-1 pb-1">
-        <SidebarSearchInput
-          query={searchQuery}
-          onQueryChange={setSearchQuery}
-          onSubmit={() => searchResultsRef.current?.openTopResult()}
+        <SidebarSearchButton
+          onOpen={() => {
+            if (isMobile) setOpen(false)
+          }}
         />
       </div>
 
@@ -2798,168 +2770,156 @@ export function AppSidebar() {
         fadeSize={24}
         className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:opacity-0 [&_[data-slot=scroll-area-scrollbar]]:transition-opacity [&_[data-slot=scroll-area-scrollbar]]:duration-300 [&:hover_[data-slot=scroll-area-scrollbar]]:opacity-100"
       >
-        {searching ? (
-          <div className="px-2 py-3">
-            <SidebarSearchPanel
-              ref={searchResultsRef}
-              query={searchQuery}
+        <div className="px-2 py-3">
+          {/* Home link */}
+          <Link
+            to="/"
+            onClick={handleNavigateHome}
+            className={`mx-1 mb-0.5 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
+              section === "home"
+                ? "bg-sidebar-accent font-medium text-sidebar-primary"
+                : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+            }`}
+          >
+            <LayoutDashboard className="size-4 shrink-0" />
+            <span>Home</span>
+          </Link>
+
+          <Link
+            to="/threads/$"
+            params={{ _splat: "" }}
+            search={{ location: "all" }}
+            onClick={() => {
+              if (isMobile) setOpen(false)
+            }}
+            className={`mx-1 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
+              section === "threads"
+                ? "bg-sidebar-accent font-medium text-sidebar-primary"
+                : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+            }`}
+          >
+            <MessageCircle className="size-4 shrink-0" />
+            <span>Threads</span>
+          </Link>
+
+          <Link
+            to="/activity"
+            onClick={() => {
+              if (isMobile) setOpen(false)
+            }}
+            className={`mx-1 ${skillLibraries ? "" : "mb-3"} flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
+              section === "activity"
+                ? "bg-sidebar-accent font-medium text-sidebar-primary"
+                : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+            }`}
+          >
+            <History className="size-4 shrink-0" />
+            <span>Activity</span>
+          </Link>
+
+          {skillLibraries && (
+            <Link
+              to="/library/$"
+              params={{ _splat: "" }}
+              onClick={() => {
+                if (isMobile) setOpen(false)
+              }}
+              className={`mx-1 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
+                section === "library"
+                  ? "bg-sidebar-accent font-medium text-sidebar-primary"
+                  : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+              }`}
+            >
+              <LibraryIcon className="size-4 shrink-0" />
+              <span>Library</span>
+            </Link>
+          )}
+
+          {gettingStarted && (
+            <GettingStartedRow
+              space={gettingStarted.space}
+              progress={gettingStarted.progress}
+              active={currentSpaceId === gettingStarted.space.id}
               onNavigate={() => {
                 if (isMobile) setOpen(false)
               }}
             />
-          </div>
-        ) : (
-          <div className="px-2 py-3">
-            {/* Home link */}
-            <Link
-              to="/"
-              onClick={handleNavigateHome}
-              className={`mx-1 mb-0.5 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
-                section === "home"
-                  ? "bg-sidebar-accent font-medium text-sidebar-primary"
-                  : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
-              }`}
-            >
-              <LayoutDashboard className="size-4 shrink-0" />
-              <span>Home</span>
-            </Link>
+          )}
 
-            <Link
-              to="/threads/$"
-              params={{ _splat: "" }}
-              search={{ location: "all" }}
-              onClick={() => {
-                if (isMobile) setOpen(false)
-              }}
-              className={`mx-1 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
-                section === "threads"
-                  ? "bg-sidebar-accent font-medium text-sidebar-primary"
-                  : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
-              }`}
-            >
-              <MessageCircle className="size-4 shrink-0" />
-              <span>Threads</span>
-            </Link>
-
-            <Link
-              to="/activity"
-              onClick={() => {
-                if (isMobile) setOpen(false)
-              }}
-              className={`mx-1 ${skillLibraries ? "" : "mb-3"} flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
-                section === "activity"
-                  ? "bg-sidebar-accent font-medium text-sidebar-primary"
-                  : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
-              }`}
-            >
-              <History className="size-4 shrink-0" />
-              <span>Activity</span>
-            </Link>
-
-            {skillLibraries && (
-              <Link
-                to="/library/$"
-                params={{ _splat: "" }}
-                onClick={() => {
-                  if (isMobile) setOpen(false)
-                }}
-                className={`mx-1 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
-                  section === "library"
-                    ? "bg-sidebar-accent font-medium text-sidebar-primary"
-                    : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
-                }`}
-              >
-                <LibraryIcon className="size-4 shrink-0" />
-                <span>Library</span>
-              </Link>
-            )}
-
-            {gettingStarted && (
-              <GettingStartedRow
-                space={gettingStarted.space}
-                progress={gettingStarted.progress}
-                active={currentSpaceId === gettingStarted.space.id}
-                onNavigate={() => {
-                  if (isMobile) setOpen(false)
-                }}
+          {pinnedSpaces.length > 0 &&
+            renderSection("pinned", "Pinned", pinnedSpaces, undefined, {
+              pinned: true,
+            })}
+          {groups.map((group) =>
+            renderSection(
+              `group:${group.id}`,
+              group.name,
+              activeSpaces.filter((space) => groupOf(space.id) === group.id),
+              <GroupActions
+                name={group.name}
+                onNewSpace={() => setNewSpace({ groupId: group.id })}
+                onRename={() => setGroupDialog({ mode: "rename", group })}
+                onRemove={() => handleRemoveGroup(group)}
               />
-            )}
+            )
+          )}
+          {renderSection(
+            "spaces",
+            "Spaces",
+            ungrouped,
+            <>
+              <NewSpaceOrGroupButton
+                onNewSpace={() => setNewSpace({ groupId: null })}
+                onNewGroup={navigation ? () => openNewGroup() : null}
+              />
+              {/* Keeps the + in the rows' + column, beside their menus. */}
+              {!isMobile && <span aria-hidden className="w-6" />}
+            </>,
+            // The list's own empty state covers a Worktable with no Spaces.
+            {
+              revealActions: false,
+              emptyHint: false,
+              footer: archivedSpaces.length > 0 && (
+                <div className="mt-0.5">
+                  <TreeSection
+                    label="Archived"
+                    icon={Archive}
+                    count={archivedSpaces.length}
+                    open={archivedSpacesOpen}
+                    onOpenChange={transitionOpenChange(setArchivedSpacesOpen)}
+                    listLabel="Archived Spaces"
+                    spaceRows
+                    dimmed
+                  >
+                    {archivedSpaces.map((space) => spaceRow(space))}
+                  </TreeSection>
+                </div>
+              ),
+            }
+          )}
 
-            {pinnedSpaces.length > 0 &&
-              renderSection("pinned", "Pinned", pinnedSpaces, undefined, {
-                pinned: true,
-              })}
-            {groups.map((group) =>
-              renderSection(
-                `group:${group.id}`,
-                group.name,
-                activeSpaces.filter((space) => groupOf(space.id) === group.id),
-                <GroupActions
-                  name={group.name}
-                  onNewSpace={() => setNewSpace({ groupId: group.id })}
-                  onRename={() => setGroupDialog({ mode: "rename", group })}
-                  onRemove={() => handleRemoveGroup(group)}
+          {spacesLoading && (
+            <div className="flex flex-col gap-2 px-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-7 animate-pulse rounded-md bg-sidebar-accent/50"
                 />
-              )
-            )}
-            {renderSection(
-              "spaces",
-              "Spaces",
-              ungrouped,
-              <>
-                <NewSpaceOrGroupButton
-                  onNewSpace={() => setNewSpace({ groupId: null })}
-                  onNewGroup={navigation ? () => openNewGroup() : null}
-                />
-                {/* Keeps the + in the rows' + column, beside their menus. */}
-                {!isMobile && <span aria-hidden className="w-6" />}
-              </>,
-              // The list's own empty state covers a Worktable with no Spaces.
-              {
-                revealActions: false,
-                emptyHint: false,
-                footer: archivedSpaces.length > 0 && (
-                  <div className="mt-0.5">
-                    <TreeSection
-                      label="Archived"
-                      icon={Archive}
-                      count={archivedSpaces.length}
-                      open={archivedSpacesOpen}
-                      onOpenChange={transitionOpenChange(setArchivedSpacesOpen)}
-                      listLabel="Archived Spaces"
-                      spaceRows
-                      dimmed
-                    >
-                      {archivedSpaces.map((space) => spaceRow(space))}
-                    </TreeSection>
-                  </div>
-                ),
-              }
-            )}
+              ))}
+            </div>
+          )}
 
-            {spacesLoading && (
-              <div className="flex flex-col gap-2 px-2">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-7 animate-pulse rounded-md bg-sidebar-accent/50"
-                  />
-                ))}
-              </div>
-            )}
-
-            {spaces && spaces.length === 0 && (
-              <div className="px-2 py-6 text-center">
-                <p className="text-xs text-sidebar-foreground/40">
-                  No spaces yet
-                </p>
-                <p className="mt-1 text-[11px] text-sidebar-foreground/30">
-                  Ask your AI agent to create one
-                </p>
-              </div>
-            )}
-          </div>
-        )}
+          {spaces && spaces.length === 0 && (
+            <div className="px-2 py-6 text-center">
+              <p className="text-xs text-sidebar-foreground/40">
+                No spaces yet
+              </p>
+              <p className="mt-1 text-[11px] text-sidebar-foreground/30">
+                Ask your AI agent to create one
+              </p>
+            </div>
+          )}
+        </div>
       </ScrollFadeArea>
 
       <div
@@ -2981,6 +2941,11 @@ export function AppSidebar() {
           defaultGroup={newSpace?.groupId ?? null}
         />
       </DeferredMount>
+
+      {/* Search lives with the sidebar's code, which every page loads once it
+          is quiet, so opening it waits on nothing. */}
+      <SearchPalette />
+      <RecentOpensRecorder />
 
       {navigation && (
         <DeferredMount active={groupDialog !== null}>

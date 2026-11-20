@@ -1,5 +1,10 @@
 import { Hono } from "hono";
-import type { SearchResult, WithContentRevision } from "@worktable/types";
+import {
+  SEARCH_KINDS,
+  type SearchKind,
+  type SearchResult,
+  type WithContentRevision,
+} from "@worktable/types";
 import { requireScope } from "../auth.ts";
 import { withContentRevisions } from "../document-content-revision.ts";
 import { searchWithStatus } from "../search-index.ts";
@@ -27,6 +32,17 @@ searchRouter.get("/", async (c) => {
   const spaceId = c.req.query("spaceId") || undefined;
   const searchBlocks = c.req.query("searchBlocks") !== "false";
   const includeArchived = c.req.query("includeArchived") === "true";
+  // The app's order: archived results marked, after the rest.
+  const archivedLast = includeArchived && c.req.query("archivedLast") === "true";
+  const kindsRaw = c.req.query("kinds");
+  const kinds = kindsRaw
+    ?.split(",")
+    .filter((kind): kind is SearchKind =>
+      (SEARCH_KINDS as readonly string[]).includes(kind)
+    );
+  if (kindsRaw !== undefined && kinds?.length === 0) {
+    return c.json({ error: "Unknown kinds", code: "BAD_REQUEST" }, 400);
+  }
   const maxResultsRaw = c.req.query("maxResults");
   const maxResults = maxResultsRaw ? Math.max(1, Math.min(100, Number(maxResultsRaw) || 20)) : 20;
 
@@ -34,13 +50,17 @@ searchRouter.get("/", async (c) => {
     spaceId,
     searchBlocks,
     includeArchived,
+    archivedLast,
+    ...(kinds ? { kinds } : {}),
     maxResults,
     documentAccess: commonDocuments ? "common" : "legacy",
   });
 
-  // Skills show only to a reader the Library itself would admit.
+  // Skills show only to a reader the Library itself would admit. A skill is
+  // a Doc, so a search for other kinds has none.
   const found =
-    hasScope(c.get("identity")?.scopes ?? [], "documents:read")
+    hasScope(c.get("identity")?.scopes ?? [], "documents:read") &&
+    (!kinds || kinds.includes("doc"))
       ? await withSkills(c.get("identity"), query, results, { spaceId, maxResults })
       : results;
 

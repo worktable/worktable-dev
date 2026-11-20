@@ -634,14 +634,14 @@ export function installInstrumentation(): void {
         text(panel).length > 0
       )
     },
-    // Search: highlighted matches for the current query in the sidebar.
+    // Search: marked matches for the current query in its results.
     search: (args) => {
       const tokens = (args["tokens"] as string[]).map((token) =>
         token.toLowerCase()
       )
-      return all(
-        "[data-worktable-sidebar-root] a span.bg-surface-selected"
-      ).some((span) => tokens.includes(text(span).toLowerCase()))
+      return all("[data-worktable-search-results] a mark").some((mark) =>
+        tokens.includes(text(mark).toLowerCase())
+      )
     },
   }
 

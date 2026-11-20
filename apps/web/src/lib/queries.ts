@@ -11,6 +11,9 @@ import { abandonableRead } from "./http"
 import { getRecordCollectionHealth, listRecordCollections, listRecords, queryRecords } from "./records-api"
 import type { RecordQuery, SearchResult } from "@worktable/types"
 
+/** What a search asks for. */
+export type SearchOptions = Parameters<typeof searchWorkspace>[0]
+
 /** Grid-facing query params; a stable subset of RecordQuery used as a cache key. */
 export interface RecordPageParams {
   search?: string
@@ -37,12 +40,7 @@ export const queryKeys = {
   // Nested under records(...) so the WS record_update invalidation covers it.
   recordPages: (spaceId: string, collectionId: string, params: RecordPageParams) =>
     ["spaces", spaceId, "records", collectionId, "pages", params] as const,
-  search: (opts: {
-    query: string
-    spaceId?: string
-    includeArchived?: boolean
-    maxResults?: number
-  }) => ["search", opts] as const,
+  search: (opts: SearchOptions) => ["search", opts] as const,
 }
 
 // Every Space socket hears spaces_changed, and the sidebar keeps one open, so
@@ -133,12 +131,7 @@ export const recordPagesQueryOptions = (
     staleTime: 30_000,
   })
 
-export const searchQueryOptions = (opts: {
-  query: string
-  spaceId?: string
-  includeArchived?: boolean
-  maxResults?: number
-}) =>
+export const searchQueryOptions = (opts: SearchOptions) =>
   queryOptions({
     queryKey: queryKeys.search(opts),
     queryFn: (context) =>
@@ -230,11 +223,8 @@ export function useRecordPages(
   })
 }
 
-export function useSearchResults(opts: {
-  query: string
-  spaceId?: string
-  includeArchived?: boolean
-  maxResults?: number
-}): ReturnType<typeof useQuery<SearchResult[]>> {
+export function useSearchResults(
+  opts: SearchOptions
+): ReturnType<typeof useQuery<SearchResult[]>> {
   return useQuery(searchQueryOptions(opts))
 }

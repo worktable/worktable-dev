@@ -483,6 +483,106 @@ describe("search excerpts", () => {
     expect(await searchResults(app, "future/live-canvas", common)).toEqual([]);
   });
 
+  it("finds archived documents from the same index, marked and after the rest when asked", async () => {
+    const find = async (query: string, extra = "") => {
+      const res = await req(
+        app,
+        "GET",
+        `/api/search?query=${encodeURIComponent(query)}&documentMode=common${extra}`,
+      );
+      expect(res.status).toBe(200);
+      return res.json.results as SearchResult[];
+    };
+    const docsDir = join(workspaceDir, "spaces", "meta", "docs");
+    writeFileSync(join(docsDir, "pairing-today.md"), "# Pairing today\n\nPairing rota for this week.");
+    expect((await req(app, "POST", "/api/spaces", { name: "Zulu" })).status).toBe(201);
+    writeFileSync(
+      join(workspaceDir, "spaces", "zulu", "docs", "pairing-old.md"),
+      "# Pairing, last year\n\nPairing notes from a shelved project.",
+    );
+    ageDocuments(join(workspaceDir, "spaces"));
+    invalidateSearchIndex();
+    expect(
+      (await req(app, "POST", "/api/spaces/meta/docs/pairing-notes/archive", {})).status,
+    ).toBe(200);
+    expect((await req(app, "POST", "/api/spaces/zulu/archive", {})).status).toBe(200);
+
+    // A search without archived work finds neither the archived Doc nor the
+    // archived Space's.
+    expect((await find("pairing")).map((result) => result.path)).toEqual(["pairing-today"]);
+
+    // One with it reads no document again: both searches share one index.
+    let reread = 0;
+    setSearchIndexRebuildHookForTests(async ({ documents }) => {
+      reread += documents;
+    });
+    const all = await find("pairing", "&includeArchived=true&archivedLast=true");
+    expect(reread).toBe(0);
+    expect(all.map((result) => [result.spaceId, result.path, result.archived])).toEqual([
+      ["meta", "pairing-today", undefined],
+      ...all.slice(1).map((result) => [result.spaceId, result.path, true]),
+    ]);
+    expect(all.slice(1).map((result) => result.path).sort()).toEqual([
+      "pairing-notes",
+      "pairing-old",
+    ]);
+
+    // Without the app's order, results say nothing more than before.
+    const plain = await find("pairing", "&includeArchived=true");
+    expect(plain).toHaveLength(3);
+    expect(plain.every((result) => result.archived === undefined)).toBe(true);
+
+    // A current Doc whose name differs from the archived one's only by case
+    // shares its path: it is itself to a search without archived work, and
+    // one of two claims to a search with it.
+    writeFileSync(join(docsDir, "Pairing-Notes.md"), "# Pairing, again\n\nPairing afresh.");
+    invalidateSearchIndex({ spaceId: "meta" });
+    expect(await find("afresh")).toEqual([
+      expect.objectContaining({ path: "Pairing-Notes", documentKind: "document" }),
+    ]);
+    expect(await find("pairing-notes", "&includeArchived=true&archivedLast=true")).toContainEqual(
+      expect.objectContaining({ documentKind: "conflict" }),
+    );
+    expect(await find("afresh", "&includeArchived=true")).toEqual([]);
+    rmSync(join(docsDir, "Pairing-Notes.md"));
+    invalidateSearchIndex({ spaceId: "meta" });
+
+    // Restored, the Doc is current again.
+    expect(
+      (await req(app, "POST", "/api/spaces/meta/docs/pairing-notes/restore", {})).status,
+    ).toBe(200);
+    expect((await find("pairing")).map((result) => result.path).sort()).toEqual([
+      "pairing-notes",
+      "pairing-today",
+    ]);
+  });
+
+  it("narrows a search to the kinds asked for", async () => {
+    const find = async (query: string, kinds: string) =>
+      req(app, "GET", `/api/search?query=${query}&documentMode=common&kinds=${kinds}`);
+    const created = await req(app, "POST", "/api/spaces/meta/widgets", {
+      name: "Aqueduct map",
+      html: "<h1>Aqueduct map</h1><p>Every aqueduct span, drawn.</p>",
+    });
+    expect(created.status).toBeLessThan(300);
+    writeFileSync(
+      join(workspaceDir, "spaces", "meta", "docs", "aqueduct-notes.md"),
+      "# Aqueduct notes\n\nThe aqueduct needs paint.",
+    );
+    invalidateSearchIndex();
+
+    const kindsOf = async (kinds: string) =>
+      ((await find("aqueduct", kinds)).json.results as SearchResult[]).map((result) =>
+        result.type === "record" ? "record" : (result.format?.id ?? "doc"),
+      );
+    expect((await kindsOf("record")).every((kind) => kind === "record")).toBe(true);
+    expect(await kindsOf("record")).not.toHaveLength(0);
+    expect(await kindsOf("doc")).toEqual(["worktable.markdown"]);
+    expect(await kindsOf("html")).toEqual(["worktable.html"]);
+    expect((await kindsOf("doc,html")).sort()).toEqual(["worktable.html", "worktable.markdown"]);
+    expect((await find("aqueduct", "poem")).status).toBe(400);
+  });
+
   it("indexes every document's content and re-reads only what changed", async () => {
     const docsDir = join(workspaceDir, "spaces", "meta", "docs");
     // More documents than the 128 whose content search once indexed.

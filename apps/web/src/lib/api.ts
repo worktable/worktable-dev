@@ -5,6 +5,7 @@ import { acceptWorkspaceContentEpoch } from "./workspace-content-epoch"
 import type {
   PersonalNavigation,
   ResolvedStartHerePin,
+  SearchKind,
   SearchResult,
   SpaceFile,
   WithContentRevision,
@@ -222,7 +223,11 @@ export function searchWorkspace(
   opts: {
     query: string
     spaceId?: string
+    /** Only results of this kind. */
+    kind?: SearchKind
     includeArchived?: boolean
+    /** With includeArchived: archived results marked, after the rest. */
+    archivedLast?: boolean
     maxResults?: number
   },
   options?: ReadOptions
@@ -230,8 +235,10 @@ export function searchWorkspace(
   const params = new URLSearchParams({ query: opts.query })
   params.set("documentMode", "common")
   if (opts.spaceId) params.set("spaceId", opts.spaceId)
+  if (opts.kind) params.set("kinds", opts.kind)
   if (opts.includeArchived !== undefined)
     params.set("includeArchived", String(opts.includeArchived))
+  if (opts.archivedLast) params.set("archivedLast", "true")
   if (opts.maxResults !== undefined)
     params.set("maxResults", String(opts.maxResults))
   return fetchJSON<{

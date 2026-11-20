@@ -142,6 +142,7 @@ import {
 } from "./exposure-notice.ts";
 import { WorkspaceWatcher, type WatcherEvent } from "./watcher.ts";
 import { startSearchWarmup } from "./search-index.ts";
+import { keepSearchIndexOnDisk } from "./search-store.ts";
 import {
   resetSourceKindRecords,
   scheduleSourceKindRecords,
@@ -1667,6 +1668,7 @@ export function startServer(
     lifetimeSweepTimer = null;
     lifetimeSweepStopping = true;
     recordIndex.stop();
+    keepSearchIndexOnDisk(false);
   };
   const WIDGET_CHANGE_COALESCE_MS = 250;
   if (!workspaceRejected) {
@@ -2404,6 +2406,8 @@ export function startServer(
   startEventLoopLagSampler();
 
   // Build the search index while the server is quiet, not on the first search.
+  // It is kept on disk, so a start re-reads only what changed.
+  if (!workspaceRejected) keepSearchIndexOnDisk(true);
   const stopSearchWarmup = workspaceRejected
     ? () => Promise.resolve()
     : startSearchWarmup();
@@ -2544,6 +2548,11 @@ export function startServer(
         await settle(() => recordIndex.whenIdle());
         try {
           recordIndex.stop();
+        } catch (err) {
+          shutdownErrors.push(err);
+        }
+        try {
+          keepSearchIndexOnDisk(false);
         } catch (err) {
           shutdownErrors.push(err);
         }

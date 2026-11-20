@@ -244,10 +244,16 @@ export function searchWorkspace(
   return fetchJSON<{
     results: WithContentRevision<SearchResult>[]
     indexing?: boolean
+    corrected?: string[]
   }>(
     `/api/search?${params.toString()}`,
     options
-  ).then((r) => ({ results: r.results, indexing: r.indexing === true }))
+  ).then((r) => ({
+    results: r.results,
+    indexing: r.indexing === true,
+    // Words searched for in place of misspelled ones.
+    corrected: r.corrected ?? [],
+  }))
 }
 
 export async function deleteSpace(spaceId: string): Promise<void> {

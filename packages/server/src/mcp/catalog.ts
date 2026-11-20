@@ -1126,6 +1126,12 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
         .describe(
           "With exact or regex: Docs and files in scope that could not be searched, so a match there would be missing. too-large: a file with more text than one search reads, which a download can still search; not-text: a file that isn't UTF-8 text."
         ),
+      corrected: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Words searched for in place of ones in query that matched nothing, as the results show them. One that replaces the last word of query can be the start of a word."
+        ),
     },
   }),
   // Threads archive when they go quiet. The list leaves those out unless

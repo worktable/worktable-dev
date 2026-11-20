@@ -2884,7 +2884,7 @@ async function _dispatchOperationInner(
       // folder's best matches are not crowded out before filtering.
       const candidateLimit = pathPrefix ? 500 : limit
       // Ask for one more than needed so `truncated` means more matches exist.
-      const { results: ranked, complete } = await searchWithStatus(query, {
+      const { results: ranked, complete, corrected } = await searchWithStatus(query, {
         spaceId,
         searchBlocks: false,
         includeArchived: includeArchived ?? false,
@@ -2914,6 +2914,8 @@ async function _dispatchOperationInner(
           ...(pathPrefix ? { pathPrefix } : {}),
           includeArchived: includeArchived ?? false,
         },
+        // Words searched for in place of misspelled ones, on the preview surface.
+        ...(context.surface === "preview" && corrected.length > 0 ? { corrected } : {}),
       }
     }
     case "annotations.list": {

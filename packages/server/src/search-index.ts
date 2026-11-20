@@ -1,12 +1,12 @@
 // ============================================================
-// MiniSearch-based full-text search index for Worktable
+// Full-text search index for Worktable
 // Indexes documents and records, archived ones included: a search leaves
 // them out or takes them in when it runs. The common mode projects every
 // authorized document format inertly; the legacy mode preserves the
 // historical Doc-only result set for callers without documents:read.
+// Entries are kept by search-store.ts.
 // ============================================================
 
-import MiniSearch from "minisearch";
 import { assertSpaceAccess, canAccessSpace, readableSpaceIds, runWithoutTeamIdentity } from "./team-policy.ts";
 import {
   docStat,
@@ -37,55 +37,21 @@ import {
   markdownPlainText,
   recordTitleFieldKey,
   type DocumentFormatClaim,
-  type DocumentHealth,
-  searchResultKind,
   type RecordFile,
   type SearchKind,
   type SearchResult,
 } from "@worktable/types";
 import { logError } from "./debug-log.ts";
+import {
+  entryKind,
+  openVariantIndex,
+  type DocEntry,
+  type IndexEntry,
+  type VariantIndex,
+} from "./search-store.ts";
+import { foldWord } from "./search-words.ts";
 
 export type DocumentSearchAccess = "legacy" | "common";
-
-interface DocEntry {
-  id: string;
-  spaceId: string;
-  path: string;
-  type: "doc";
-  title: string;
-  body: string;
-  documentKind?: "document" | "conflict";
-  documentView?: "doc" | "html";
-  formatId?: string;
-  sourceVersion?: number;
-  health?: DocumentHealth;
-  archiveOn?: string;
-  /** The searches that see this entry, when not every one does. */
-  view?: "live" | "archived";
-  /** The document itself is archived. */
-  archived?: true;
-}
-
-interface RecordEntry {
-  id: string;
-  spaceId: string;
-  path: string;
-  type: "record";
-  collectionId: string;
-  recordId: string;
-  title: string;
-  body: string;
-}
-
-type IndexEntry = DocEntry | RecordEntry;
-
-function entryKind(entry: IndexEntry): SearchKind {
-  return searchResultKind(
-    entry.type === "doc" && entry.formatId
-      ? { type: "doc", format: { id: entry.formatId } }
-      : { type: entry.type },
-  );
-}
 
 /** `titleKey` is the collection's title field (recordTitleFieldKey). */
 export function recordTitle(record: RecordFile, collectionName: string, titleKey: string | null = null): string {
@@ -243,14 +209,16 @@ export function makeExcerpt(body: string, terms: string[]): string | undefined {
 
 // ── Incremental index ────────────────────────────────────────
 //
-// One MiniSearch per variant: document access mode and whether records live
-// in MiniSearch. Archived documents and Spaces are in it too, marked, so a
+// One index per variant: document access mode and whether records live in
+// it. Archived documents and Spaces are in it too, marked, so a
 // search with them and one without share one copy. Each variant is divided
 // into Space segments. Change events mark a segment dirty, and document events also name
 // the document. The next search that covers the Space re-checks its catalog
 // and re-reads only documents whose revision changed or that an event named,
 // replacing their entries in place. Space-scoped searches use the same index,
-// filtered to the Space, and sync only that Space.
+// filtered to the Space, and sync only that Space. An index kept on disk
+// starts from the entries and revisions it stored, so after a restart a
+// sync re-reads only what changed.
 
 /** How long one sync holds a Space's lock while projecting. */
 const PROJECTION_SLICE_MS = 250;
@@ -282,11 +250,7 @@ interface SpaceSegment {
 interface IndexVariant {
   documentAccess: DocumentSearchAccess;
   includesRecords: boolean;
-  idx: MiniSearch<IndexEntry>;
-  // Display bodies for excerpt extraction, keyed by index entry id.
-  // MiniSearch does not store raw field text, and records index JSON while
-  // excerpts want readable "key: value" text, hence the separate map.
-  displayBodies: Map<string, string>;
+  index: VariantIndex;
   segments: Map<string, SpaceSegment>;
   spacesListed: boolean;
   listing: Promise<void> | null;
@@ -324,32 +288,6 @@ function recordSearchMode(): RecordSearchMode {
   return recordBuildWatch.settled ? "files" : "building";
 }
 
-function createIndex(): MiniSearch<IndexEntry> {
-  return new MiniSearch<IndexEntry>({
-    fields: ["title", "body"],
-    storeFields: [
-      "spaceId",
-      "path",
-      "type",
-      "title",
-      "collectionId",
-      "recordId",
-      "documentKind",
-      "documentView",
-      "formatId",
-      "sourceVersion",
-      "health",
-      "view",
-      "archived",
-    ],
-    searchOptions: {
-      boost: { title: 3 },
-      fuzzy: 0.2,
-      prefix: true,
-    },
-  });
-}
-
 function variantKey(
   documentAccess: DocumentSearchAccess,
   includesRecords: boolean,
@@ -363,22 +301,59 @@ function variantFor(
 ): IndexVariant {
   const key = variantKey(documentAccess, includesRecords);
   let variant = variants.get(key);
+  // A store closed or replaced (a start, a stop) leaves its variants behind.
+  if (variant && !variant.index.current()) {
+    retireVariant(key, variant);
+    variant = undefined;
+  }
   if (!variant) {
     // Records move to the record index once it is ready (or back, through its
     // kill switch). Keep one copy of the documents, not one per record mode.
-    variants.delete(variantKey(documentAccess, !includesRecords));
+    const other = variantKey(documentAccess, !includesRecords);
+    const replaced = variants.get(other);
+    if (replaced) retireVariant(other, replaced);
+    const index = openVariantIndex(documentAccess, includesRecords);
     variant = {
       documentAccess,
       includesRecords,
-      idx: createIndex(),
-      displayBodies: new Map(),
+      index,
       segments: new Map(),
       spacesListed: false,
       listing: null,
     };
+    for (const stored of index.stored()) {
+      let segment = variant.segments.get(stored.spaceId);
+      if (!segment) {
+        segment = newSegment(includesRecords);
+        variant.segments.set(stored.spaceId, segment);
+      }
+      if (stored.key === null) segment.recordIds.push(stored.id);
+      else segment.documents.set(stored.key, stored);
+    }
     variants.set(key, variant);
   }
   return variant;
+}
+
+function newSegment(includesRecords: boolean): SpaceSegment {
+  return {
+    documents: new Map(),
+    recordIds: [],
+    built: false,
+    archivedSpace: false,
+    dirty: true,
+    recordsDirty: includesRecords,
+    forced: new Set(),
+    retryAt: null,
+    syncing: null,
+  };
+}
+
+/** Stops a variant: its syncs stop at their next step, and write nothing. */
+function retireVariant(key: string, variant: IndexVariant): void {
+  if (variants.get(key) === variant) variants.delete(key);
+  variant.index.retire();
+  variant.segments.clear();
 }
 
 function documentKey(variant: IndexVariant, path: string): string {
@@ -473,7 +448,7 @@ onWorkspaceChange((event) => {
       break;
     case "workspaceReset":
       resetEpoch += 1;
-      variants.clear();
+      for (const [key, variant] of [...variants]) retireVariant(key, variant);
       recordBuildWatch = null;
       break;
   }
@@ -487,21 +462,16 @@ export function setSearchIndexRebuildHookForTests(hook: SyncHook | null): void {
   rebuildHookForTests = hook;
 }
 
-function putEntry(variant: IndexVariant, entry: IndexEntry, displayBody: string): void {
-  if (variant.idx.has(entry.id)) variant.idx.replace(entry);
-  else variant.idx.add(entry);
-  variant.displayBodies.set(entry.id, displayBody);
-}
-
 function dropEntry(variant: IndexVariant, id: string): void {
-  if (variant.idx.has(id)) variant.idx.discard(id);
-  variant.displayBodies.delete(id);
+  variant.index.drop(id);
 }
 
 function retireSegment(variant: IndexVariant, spaceId: string, segment: SpaceSegment): void {
   variant.segments.delete(spaceId);
-  for (const document of segment.documents.values()) dropEntry(variant, document.id);
-  for (const id of segment.recordIds) dropEntry(variant, id);
+  variant.index.batch(() => {
+    for (const document of segment.documents.values()) dropEntry(variant, document.id);
+    for (const id of segment.recordIds) dropEntry(variant, id);
+  });
 }
 
 function yieldToEventLoop(): Promise<void> {
@@ -707,29 +677,32 @@ async function syncCommonDocuments(
           )),
     });
     if (variant.segments.get(spaceId) !== segment) return projected.size;
-    for (const candidate of pass.candidates) {
-      if (candidate.read === undefined) continue;
-      projected.set(candidate.key, candidate.revision);
-      const previous = segment.documents.get(candidate.key);
-      if (candidate.read === null) {
-        if (previous) dropEntry(variant, previous.id);
-        segment.documents.delete(candidate.key);
-        continue;
+    variant.index.batch(() => {
+      for (const candidate of pass.candidates) {
+        if (candidate.read === undefined) continue;
+        projected.set(candidate.key, candidate.revision);
+        const previous = segment.documents.get(candidate.key);
+        if (candidate.read === null) {
+          if (previous) dropEntry(variant, previous.id);
+          segment.documents.delete(candidate.key);
+          continue;
+        }
+        const { entry, displayBody, transient } = commonEntry(
+          spaceId,
+          candidate.read,
+          candidate.view,
+        );
+        if (previous && previous.id !== entry.id) dropEntry(variant, previous.id);
+        const indexed = {
+          id: entry.id,
+          revision: transient ? "" : candidate.revision,
+          readAt,
+        };
+        variant.index.put(entry, displayBody, { key: candidate.key, ...indexed });
+        segment.documents.set(candidate.key, indexed);
+        if (transient) segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
       }
-      const { entry, displayBody, transient } = commonEntry(
-        spaceId,
-        candidate.read,
-        candidate.view,
-      );
-      if (previous && previous.id !== entry.id) dropEntry(variant, previous.id);
-      putEntry(variant, entry, displayBody);
-      segment.documents.set(candidate.key, {
-        id: entry.id,
-        revision: transient ? "" : candidate.revision,
-        readAt,
-      });
-      if (transient) segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
-    }
+    });
     if (!pass.complete) {
       await betweenSlices(performance.now() - sliceStarted);
       continue;
@@ -745,11 +718,13 @@ async function syncCommonDocuments(
         segment.dirty = true;
       }
     }
-    for (const [key, document] of segment.documents) {
-      if (current.has(key)) continue;
-      dropEntry(variant, document.id);
-      segment.documents.delete(key);
-    }
+    variant.index.batch(() => {
+      for (const [key, document] of segment.documents) {
+        if (current.has(key)) continue;
+        dropEntry(variant, document.id);
+        segment.documents.delete(key);
+      }
+    });
     return projected.size;
   }
 }
@@ -783,16 +758,18 @@ async function syncLegacyDocuments(
       }
       continue;
     }
-    putEntry(variant, indexed.entry, indexed.displayBody);
+    variant.index.put(indexed.entry, indexed.displayBody, { key: docPath, revision, readAt });
     segment.documents.set(docPath, { id: indexed.entry.id, revision, readAt });
   }
   if (variant.segments.get(spaceId) !== segment) return reread;
   const current = new Set(paths);
-  for (const [key, document] of segment.documents) {
-    if (current.has(key)) continue;
-    dropEntry(variant, document.id);
-    segment.documents.delete(key);
-  }
+  variant.index.batch(() => {
+    for (const [key, document] of segment.documents) {
+      if (current.has(key)) continue;
+      dropEntry(variant, document.id);
+      segment.documents.delete(key);
+    }
+  });
   return reread;
 }
 
@@ -805,11 +782,18 @@ async function syncSegmentRecords(
   const displayBodies = new Map<string, string>();
   await addRecordsToIndex(spaceId, entries, displayBodies);
   if (variant.segments.get(spaceId) !== segment) return;
-  for (const id of segment.recordIds) dropEntry(variant, id);
-  for (const entry of entries) {
-    putEntry(variant, entry, displayBodies.get(entry.id) ?? "");
-  }
-  segment.recordIds = entries.map((entry) => entry.id);
+  const kept = new Set(entries.map((entry) => entry.id));
+  variant.index.batch(() => {
+    for (const id of segment.recordIds) if (!kept.has(id)) dropEntry(variant, id);
+    for (const entry of entries) {
+      variant.index.put(entry, displayBodies.get(entry.id) ?? "", {
+        key: null,
+        revision: "",
+        readAt: 0,
+      });
+    }
+  });
+  segment.recordIds = [...kept];
 }
 
 async function runSegmentSync(
@@ -888,15 +872,8 @@ function listVariantSpaces(variant: IndexVariant): Promise<void> {
             continue;
           }
           variant.segments.set(spaceId, {
-            documents: new Map(),
-            recordIds: [],
-            built: false,
+            ...newSegment(variant.includesRecords),
             archivedSpace,
-            dirty: true,
-            recordsDirty: variant.includesRecords,
-            forced: new Set(),
-            retryAt: null,
-            syncing: null,
           });
         }
       } catch (error) {
@@ -1117,7 +1094,12 @@ export async function searchWithStatus(
     /** Select only after caller authorization; common projection needs documents:read. */
     documentAccess?: DocumentSearchAccess;
   }
-): Promise<{ results: SearchResult[]; complete: boolean }> {
+): Promise<{
+  results: SearchResult[];
+  complete: boolean;
+  /** Words searched for in place of misspelled ones, as the results show them. */
+  corrected: string[];
+}> {
   if (opts?.spaceId) assertSpaceAccess(opts.spaceId);
   const allowedSpaces = readableSpaceIds() ?? undefined;
   // Snapshot the record-search mode once per call: MiniSearch is built for
@@ -1131,7 +1113,7 @@ export async function searchWithStatus(
   const documentAccess = opts?.documentAccess ?? "legacy";
   const kinds = opts?.kinds && opts.kinds.length > 0 ? new Set(opts.kinds) : null;
   const {
-    variant: { idx, displayBodies, segments },
+    variant: { index, segments },
     complete: indexComplete,
   } = await runWithoutTeamIdentity(() => indexForSearch(
     documentAccess,
@@ -1141,28 +1123,32 @@ export async function searchWithStatus(
   const inArchivedSpace = (spaceId: string) =>
     segments.get(spaceId)?.archivedSpace === true;
 
-  // Take each hit's display body now: later syncs update the index in place
-  // while the archive checks below await.
-  const hits = idx
-    .search(query, {
-      filter: (result) => {
-        const entry = result as unknown as IndexEntry;
-        if (!canAccessSpace(entry.spaceId)) return false;
-        if (opts?.spaceId && entry.spaceId !== opts.spaceId) return false;
-        if (kinds && !kinds.has(entryKind(entry))) return false;
-        if (entry.type === "doc" && documentAccess === "common") {
-          // Each kind of search has its own view of a path that archived and
-          // current documents both claim.
-          if (entry.view === (includeArchived ? "live" : "archived")) return false;
-          if (!includeArchived && inArchivedSpace(entry.spaceId)) return false;
+  // The checks below can leave hits out, so the index is asked for more
+  // than the limit.
+  const { hits, corrected } = index.search(query, {
+    ...(opts?.spaceId ? { spaceId: opts.spaceId } : {}),
+    accept: (entry) => {
+      if (!canAccessSpace(entry.spaceId)) return false;
+      if (kinds && !kinds.has(entryKind(entry))) return false;
+      if (entry.type === "doc" && documentAccess === "common") {
+        // Each kind of search has its own view of a path that archived and
+        // current documents both claim.
+        if (entry.view === (includeArchived ? "live" : "archived")) return false;
+        if (!includeArchived && inArchivedSpace(entry.spaceId)) return false;
+      }
+      return true;
+    },
+    ...(opts?.archivedLast
+      ? {
+          archivedLast: {
+            spaces: new Set(
+              [...segments].filter(([, segment]) => segment.archivedSpace).map(([id]) => id),
+            ),
+          },
         }
-        return true;
-      },
-    })
-    .map((result) => ({
-      result,
-      displayBody: displayBodies.get(String(result.id)) ?? "",
-    }));
+      : {}),
+    limit: maxResults * 4 + 100,
+  });
 
   // Many hits share a Space: each Space is read once per search.
   const spaces = new Map<string, ReturnType<typeof readSpace>>();
@@ -1198,7 +1184,7 @@ export async function searchWithStatus(
 
   const filtered: typeof hits = [];
   for (const hit of hits) {
-    const entry = hit.result as unknown as IndexEntry;
+    const entry = hit.entry;
     if (
       !indexComplete &&
       entry.type === "doc" &&
@@ -1241,24 +1227,23 @@ export async function searchWithStatus(
   const docHits = opts?.archivedLast
     ? [
         ...filtered
-          .filter((hit) => !isArchived(hit.result as unknown as IndexEntry))
+          .filter((hit) => !isArchived(hit.entry))
           .slice(0, maxResults),
         ...filtered
-          .filter((hit) => isArchived(hit.result as unknown as IndexEntry))
+          .filter((hit) => isArchived(hit.entry))
           .slice(0, maxResults),
       ]
     : filtered.slice(0, maxResults);
-  const results: SearchResult[] = docHits.map(({ result: r, displayBody }) => {
-    const entry = r as unknown as IndexEntry;
-    // r.terms holds the document-side matched terms (prefix/fuzzy already
-    // expanded, e.g. query "pair" → term "pairing"), so they locate in the body.
-    const excerpt = makeExcerpt(displayBody, r.terms);
+  // Excerpt text only for the hits shown.
+  const displayBodies = index.displayBodies(docHits);
+  const results: SearchResult[] = docHits.map(({ entry, score, terms }, at) => {
+    const excerpt = makeExcerpt(displayBodies[at] ?? "", terms);
     return {
       spaceId: entry.spaceId,
       type: entry.type,
       path: entry.path,
-      title: r.title as string,
-      score: r.score,
+      title: entry.title,
+      score,
       ...(entry.type === "doc" && entry.documentKind
         ? {
             documentKind: entry.documentKind,
@@ -1342,13 +1327,18 @@ export async function searchWithStatus(
   }
 
 
+  const found = opts?.archivedLast
+    ? [
+        ...results.filter((result) => !result.archived),
+        ...results.filter((result) => result.archived),
+      ].slice(0, maxResults)
+    : results;
+  // A word is named only where a result shows it: the index's word list
+  // spans Spaces this reader may not see.
+  const shown = found.map((result) => foldWord(`${result.title} ${result.excerpt ?? ""}`));
   return {
-    results: opts?.archivedLast
-      ? [
-          ...results.filter((result) => !result.archived),
-          ...results.filter((result) => result.archived),
-        ].slice(0, maxResults)
-      : results,
+    results: found,
     complete: indexComplete && recordMode !== "building",
+    corrected: corrected.filter((word) => shown.some((text) => text.includes(word))),
   };
 }

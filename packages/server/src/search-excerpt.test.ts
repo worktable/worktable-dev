@@ -37,6 +37,7 @@ import {
 } from "./document-inventory.ts";
 import { recordDocAlias, retireDocAlias } from "./doc-aliases.ts";
 import { notifyWorkspaceChange } from "./workspace-events.ts";
+import { keepSearchIndexOnDisk } from "./search-store.ts";
 
 function buildTestApp() {
   const app = new Hono();
@@ -688,6 +689,73 @@ describe("search excerpts", () => {
     expect(Object.fromEntries(reread)).toEqual({ meta: 1 });
   });
 
+  it("searches a misspelled word as the nearest words the index holds, and nothing else", async () => {
+    const common = { scopes: ["search:read", "documents:read"], documentMode: "common" as const };
+    const answer = async (query: string, kinds?: string) => {
+      const params = new URLSearchParams({ query, documentMode: "common" });
+      if (kinds) params.set("kinds", kinds);
+      const res = await req(app, "GET", `/api/search?${params}`, undefined, common.scopes);
+      expect(res.status).toBe(200);
+      return res.json as { results: SearchResult[]; corrected?: string[] };
+    };
+
+    // Two letters swapped, and one missing from the last word while typing.
+    for (const query of ["observatroy", "the obsrvat"]) {
+      const found = await answer(query);
+      expect(found.results.map((result) => result.path)).toEqual(["richdoc"]);
+      expect(found.results[0]!.excerpt).toContain("observatory dome");
+      expect(found.corrected?.some((word) => "observatory".startsWith(word))).toBe(true);
+    }
+    // Every other word still has to match.
+    expect((await answer("pairing locck")).results.map((result) => result.path)).toEqual(["pairing-notes"]);
+    expect((await answer("zeppelin locck")).results).toEqual([]);
+
+    // A word that matches as typed is never changed.
+    expect(await answer("zeppelin")).toEqual({ results: [expect.objectContaining({ path: "zeppelin" })] });
+    // Short words, numbers and IDs are never corrected.
+    for (const query of ["dme", "pairing2", "observ_atroy"]) {
+      expect(await answer(query)).toEqual({ results: [] });
+    }
+    // Words are named only as results show them.
+    expect(await answer("observatroy", "record")).toEqual({ results: [] });
+  });
+
+  it("keeps its index on disk, so a restart re-reads only what changed", async () => {
+    keepSearchIndexOnDisk(true);
+    try {
+      const docsDir = join(workspaceDir, "spaces", "meta", "docs");
+      writeFileSync(join(docsDir, "gone-soon.md"), "# Gone soon\n\nThe marmoset enclosure.");
+      ageDocuments(join(workspaceDir, "spaces"));
+      const common = { scopes: ["search:read", "documents:read"], documentMode: "common" as const };
+      expect(await searchResults(app, "zeppelin", common)).toEqual([
+        expect.objectContaining({ path: "zeppelin" }),
+      ]);
+      expect(existsSync(join(appDir, "derived"))).toBe(true);
+
+      // While the server is down, one document changes and one is deleted.
+      keepSearchIndexOnDisk(false);
+      writeFileSync(join(docsDir, "zeppelin.md"), "# Zeppelin roadmap\n\nThe dirigible hangar opens.");
+      rmSync(join(docsDir, "gone-soon.md"));
+      invalidateSearchIndex();
+      keepSearchIndexOnDisk(true);
+
+      const reread = new Map<string, number>();
+      setSearchIndexRebuildHookForTests(async ({ spaceId, documents }) => {
+        reread.set(spaceId, (reread.get(spaceId) ?? 0) + documents);
+      });
+      expect(await searchResults(app, "dirigible", common)).toEqual([
+        expect.objectContaining({ path: "zeppelin", excerpt: "The dirigible hangar opens." }),
+      ]);
+      expect(Object.fromEntries(reread)).toEqual({ meta: 1 });
+      expect(await searchResults(app, "marmoset", common)).toEqual([]);
+      expect(await searchResults(app, "observatory", common)).toEqual([
+        expect.objectContaining({ path: "richdoc" }),
+      ]);
+    } finally {
+      keepSearchIndexOnDisk(false);
+    }
+  });
+
   it("sees an outside edit to a legacy HTML page from a catalog event alone", async () => {
     const created = await req(app, "POST", "/api/spaces/meta/widgets", {
       id: "board",
@@ -742,6 +810,7 @@ describe("search excerpts", () => {
     expect(await searchWithStatus("kestrel", { documentAccess: "common" })).toEqual({
       results: [expect.objectContaining({ spaceId: "zulu", path: "kestrel" })],
       complete: true,
+      corrected: [],
     });
 
     // Deleted while a sync before its Space's stalls: the answer comes from
@@ -759,7 +828,7 @@ describe("search excerpts", () => {
     for (const includeArchived of [false, true]) {
       expect(
         await searchWithStatus("kestrel", { documentAccess: "common", includeArchived }),
-      ).toEqual({ results: [], complete: false });
+      ).toEqual({ results: [], complete: false, corrected: [] });
     }
     releaseAgain();
   });
@@ -776,6 +845,7 @@ describe("search excerpts", () => {
         expect(await searchWithStatus("aqueduct", { documentAccess })).toEqual({
           results: [],
           complete: false,
+          corrected: [],
         });
       }
     } finally {

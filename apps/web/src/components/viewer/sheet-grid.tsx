@@ -16,7 +16,7 @@ import { cn } from "@worktable/ui/lib/utils"
  */
 const ROW_HEIGHT = 36
 /** The band of column letters above the column names. */
-const LETTER_HEIGHT = 22
+const LETTER_HEIGHT = 28
 /** The column names' row. */
 const NAME_HEIGHT = 36
 /** Rows drawn beyond each edge of the view, so a quick scroll shows no gap. */
@@ -42,6 +42,17 @@ const NAME_FONT_SIZE = 12
 type Sort = { column: number; direction: "asc" | "desc" } | null
 
 /**
+ * A row's shading: every other row striped with the inset fill, and the
+ * hovered row a step stronger than any stripe, the same on every row, so a
+ * hovered row never reads as a stripe. The row sets the two tints; each
+ * cell lays them over whatever is under it.
+ */
+const ROW_TINTS =
+  "group/row [--sheet-hover:transparent] [--sheet-stripe:transparent] data-[striped]:[--sheet-stripe:var(--surface-inset)] hover:[--sheet-hover:var(--surface-hover)] hover:[--sheet-stripe:var(--surface-inset)]"
+const TINTED =
+  "bg-[image:linear-gradient(var(--sheet-hover),var(--sheet-hover)),linear-gradient(var(--sheet-stripe),var(--sheet-stripe))]"
+
+/**
  * A grid of text cells that fills its container and scrolls both ways, in
  * the look of Records' table: column letters and names that stay at the
  * top, the file's row numbers at the left, and only the rows in view drawn,
@@ -56,7 +67,6 @@ export function SheetGrid({
   columnCount,
   label,
   empty,
-  striped,
 }: {
   /** The header row's text, one per column; a missing one is blank. */
   header: readonly string[]
@@ -70,8 +80,6 @@ export function SheetGrid({
   label: string
   /** What the grid says when no row is shown. */
   empty: string
-  /** Shades every other row, counted as shown, so stripes survive sorting. */
-  striped: boolean
 }) {
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
     null
@@ -163,7 +171,7 @@ export function SheetGrid({
               <th
                 key={index}
                 className={cn(
-                  "sticky top-0 z-20 bg-card px-3 pt-1.5 text-left align-bottom font-mono text-[0.65rem] leading-none font-normal text-muted-foreground/70",
+                  "sticky top-0 z-20 bg-card px-3 text-left align-middle font-mono text-[0.65rem] leading-none font-normal text-muted-foreground/70",
                   // Over its name, which a number column aligns right.
                   numeric[index] && "text-right"
                 )}
@@ -193,7 +201,7 @@ export function SheetGrid({
                         ? "descending"
                         : undefined
                   }
-                  className="sticky z-20 border-t border-r border-b border-t-border/60 border-r-border/40 border-b-border/60 bg-card px-1 text-left font-normal last:border-r-0"
+                  className="sticky z-20 border-t border-r border-b border-t-border/60 border-r-border/40 border-b-border/60 bg-card px-1 text-left font-normal"
                   style={{ top: LETTER_HEIGHT, height: NAME_HEIGHT }}
                 >
                   <button
@@ -261,15 +269,17 @@ export function SheetGrid({
               <tr
                 key={rowIndex}
                 aria-rowindex={first + offset + 2}
-                data-striped={
-                  striped && (first + offset) % 2 === 1 ? "" : undefined
-                }
-                className="group/row data-[striped]:bg-surface-inset hover:[&>td:not(:first-child)]:bg-surface-hover"
+                // Every other row as shown is striped, so stripes stay even
+                // after sorting or searching.
+                data-striped={(first + offset) % 2 === 1 ? "" : undefined}
+                className={ROW_TINTS}
               >
                 <td
-                  // The row numbers stay opaque as cells scroll under them;
-                  // a stripe or hover is laid over the card instead.
-                  className="sticky left-0 z-10 border-r border-b border-border/60 bg-card bg-[image:linear-gradient(var(--sheet-row-tint),var(--sheet-row-tint))] pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums select-none [--sheet-row-tint:transparent] group-hover/row:[--sheet-row-tint:var(--surface-hover)] group-data-[striped]/row:[--sheet-row-tint:var(--surface-inset)]"
+                  // The row numbers stay opaque as cells scroll under them.
+                  className={cn(
+                    TINTED,
+                    "sticky left-0 z-10 border-r border-b border-border/60 bg-card pr-3 text-right font-mono text-xs text-muted-foreground/70 tabular-nums transition-colors select-none group-hover/row:text-foreground"
+                  )}
                   style={{ height: ROW_HEIGHT }}
                 >
                   {rowIndex + 1}
@@ -281,7 +291,8 @@ export function SheetGrid({
                       key={index}
                       title={value || undefined}
                       className={cn(
-                        "truncate border-r border-b border-r-border/40 border-b-border/60 px-3 whitespace-nowrap last:border-r-0",
+                        TINTED,
+                        "truncate border-r border-b border-r-border/40 border-b-border/60 px-3 whitespace-nowrap",
                         numeric[index] && "text-right tabular-nums"
                       )}
                     >

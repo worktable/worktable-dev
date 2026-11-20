@@ -487,10 +487,13 @@ function reserveHtmlRoom(
   html: string,
   reclaimable: () => Promise<number>
 ) {
+  const source = async () => (await stat(htmlPath).catch(() => null))?.size ?? 0;
+  // People's files change by the source alone; its version is history.
   return reserveStorage({
     adds: 2 * Buffer.byteLength(html),
-    replaces: async () =>
-      ((await stat(htmlPath).catch(() => null))?.size ?? 0) + (await reclaimable()),
+    files: Buffer.byteLength(html),
+    replaces: async () => (await source()) + (await reclaimable()),
+    replacesFiles: source,
   });
 }
 

@@ -1251,7 +1251,7 @@ export async function createRegisteredDocument(
   options: CreateRegisteredDocumentOptions
 ): Promise<DocumentWriteResult> {
   assertSpaceAccess(options.spaceId, "edit");
-  return withStorageRoom({ adds: 2 * options.bytes.byteLength }, () =>
+  return withStorageRoom({ adds: 2 * options.bytes.byteLength, files: options.bytes.byteLength }, () =>
     createRegisteredDocumentWithRoom(options)
   )
 }
@@ -1930,7 +1930,10 @@ async function replaceRegisteredDocumentWithRoom(options: {
             options.personSave && isDrawingFormat(current.format.id)
               ? { grace: true }
               : undefined
-          if (creates || storageFits(adds)) return admit(adds, admission)
+          // People's files change by the source alone; its version is history.
+          const files = content.byteLength - before.byteLength
+          if (creates || storageFits(adds, files))
+            return admit(adds, { ...admission, files })
           // A save continues the open version when nothing below marks it
           // as a version of its own (writeDocumentGenerationV2).
           const mayContinue =
@@ -1956,7 +1959,7 @@ async function replaceRegisteredDocumentWithRoom(options: {
                     }
                   : {}),
               })),
-            admission
+            { ...admission, files }
           )
         },
       })
@@ -2182,7 +2185,7 @@ async function checkpointRegisteredDocumentWithRoom(options: {
   label?: string
   reason?: string
   registry?: DocumentFormatRegistry
-}, admit: (bytes: number) => void): Promise<DocumentWriteResult> {
+}, admit: (bytes: number, options?: StorageAdmission) => void): Promise<DocumentWriteResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
@@ -2206,7 +2209,8 @@ async function checkpointRegisteredDocumentWithRoom(options: {
         "Document source changed since it was read"
       )
     }
-    admit(bytes.byteLength)
+    // A saved version is history: it adds nothing to people's files.
+    admit(bytes.byteLength, { files: 0 })
     const documentId =
       current.identity === "durable" ? current.documentId : mintDocumentId()
     if (current.identity === "provisional") {

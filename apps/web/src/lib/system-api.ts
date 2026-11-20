@@ -239,8 +239,9 @@ export interface StorageUsage {
   workspaceEntries: number
   disk: { freeBytes: number; totalBytes: number } | null
   /**
-   * The most it may take, the share of it past which Settings warns, and
-   * what counts toward it (all but transfers). Absent on older servers.
+   * The most people's files may take, the share of it past which Settings
+   * warns, and what counts toward it: people's files (on older servers,
+   * everything but transfers). Absent on the oldest.
    */
   limit?: { bytes: number; warnAt: number; countedBytes?: number }
   /** What pruning at the limit removed, oldest history first; null when nothing. */

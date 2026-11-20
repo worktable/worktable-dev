@@ -574,11 +574,22 @@ at a time, checked against the hash its version recorded.
 
 ### 14. Storage is accounted, bounded and recoverable
 
-Limits count live files, history, deleted items and derived output. Transfers
-in progress (uploads being received, export packages and import staging) are
-temporary and don't count, by decision, so disk use can briefly exceed the
-limit. Writes through Worktable can't pass it; writes on disk are counted. At
-the limit the oldest history is pruned first, visibly. Pruning never removes
+The limit counts people's files: their Docs, files, Records and threads,
+the workspace folder outside history (`filesBytes`), as Settings shows it.
+Version history, deleted items and derived output don't count toward it, by
+decision (Plan 22a item 12): they live under a total limit of 2.5 times the
+limit (`storageTotalLimitBytes`, `STORAGE_CEILING_RATIO`), room for the files,
+the history copy of each file's current version, and an allowance of half
+the limit for older history, deleted items and indexes. Transfers in progress
+(uploads being received, export packages and import staging) are temporary
+and count toward neither, so disk use can briefly exceed both. Writes through
+Worktable can't pass either; each says how many of its bytes are people's
+files. Writes on disk are counted. A write past the limit for files is refused
+at once, since removing history can't make room for files. At the total limit
+the oldest history is pruned first, visibly. With the files past about 83% of
+the limit and most of them replaced, the versions replaces must keep can fill
+the history allowance; a replace is then refused as "close to" the limit,
+where Settings already says so. Pruning never removes
 an item's current version or the version that one replaced, so the last
 change to anything can be undone; a replace that would need the version it
 replaces gone is refused instead. A write is refused (507 `STORAGE_LIMIT`)
@@ -594,11 +605,16 @@ limit, and a file's versions say how many older ones were removed at the
 limit, as Settings and the History panel tell a person. What people delete
 leaves the backed-up folder at once and is removed after the history window.
 
-The default limit is 2 GiB (`PROVEN_WORKTABLE_BYTES` in `worktable-size.ts`).
-An export holds up to that plus 256 MiB (`EXPORT_HEADROOM_BYTES`): room for
-what a person's drawing saves may add past the limit, the offline viewer and
-ZIP headers, so a Worktable within its limit always exports with all its
-history.
+The default limit is 2 GiB of files (`PROVEN_WORKTABLE_BYTES` in
+`worktable-size.ts`). An export holds up to the total limit, 2.5 times
+that (`EXPORT_CONTENT_RATIO`), plus 256 MiB (`EXPORT_HEADROOM_BYTES`): room
+for what a person's drawing saves may add past the limit, the offline viewer
+and ZIP headers, so a Worktable within its limits always exports with all
+its history. Pruning keeps history within the total, so a Worktable of small
+files with large old versions can hold nearly all of it as history; a full
+one of uploaded files packs at about 1.5 times the limit, since the history
+copy of a file's current version is stored once (package version 3). Past
+4 GiB a package is ZIP64.
 `WORKTABLE_STORAGE_LIMIT_BYTES` sets another; outside Cloud it is capped at
 2 GiB. Cloud can pass a plan's limit the same way, but passes none today, so
 every Cloud Worktable has the default.

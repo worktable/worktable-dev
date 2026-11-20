@@ -59,20 +59,23 @@ deletion (30 days when keeping the last 7 versions).
 
 ### Storage
 
-**Settings → Data → Storage** shows how much space the Worktable takes up
-against its limit: Docs and files, version history, deleted items, transfers
-in progress such as uploads and exports, and indexes and caches. Sizes are
-file sizes. Changes made directly in the folder are counted too, and
-everything is recounted every few hours.
+**Settings → Data → Storage** shows how much of its limit the Worktable's
+files take: its Docs, files, Records and threads. Below that it shows what
+Worktable keeps besides them: version history, deleted items, indexes and
+caches, and transfers in progress such as uploads and exports. Sizes are file
+sizes. Changes made directly in the folder are counted too, and everything is
+recounted every few hours.
 
-A Worktable's limit is 2 GiB. An operator can set a lower one with
-`WORKTABLE_STORAGE_LIMIT_BYTES`. Transfers in progress don't count toward it.
-At the limit, Worktable makes room by removing the oldest history first:
-deleted items, then old versions, oldest first. It never removes a current
+A Worktable's limit is 2 GiB of files. An operator can set a lower one with
+`WORKTABLE_STORAGE_LIMIT_BYTES`. Version history, deleted items and indexes
+don't count toward it: Worktable keeps them within an allowance of its own,
+up to 2.5 times the limit in all, and makes room there by removing the
+oldest history first: deleted items, then old versions, oldest first. It never removes a current
 version, the version it replaced, or a saved version, so the last change to
 anything can always be undone. A version's history says when older versions
-were removed. A write that wouldn't fit even with that history gone is
-refused, for people and agents alike, and nothing is removed for it.
+were removed. A write that would take the files past the limit, or that
+wouldn't fit even with that history gone, is refused, for people and agents
+alike, and nothing is removed for it.
 Reading, deleting, moving and exporting keep working, and so do typing in an
 open Doc and drawing, which can take the Worktable slightly over its
 limit. Files written straight into the folder

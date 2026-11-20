@@ -148,8 +148,15 @@ const SCHEMA_VERSION = 1
  */
 const ENTRY_FORMAT = 1
 
-/** Title matches weigh three times body matches, as before. */
-const RANK = "bm25(pieces, 3.0, 1.0)"
+/**
+ * Items whose title holds every word come first. Each is ranked by its
+ * title's relevance among titles, three times over, plus its whole text's,
+ * where title words also weigh three times body words; the rest by their
+ * whole text's. Measured on a real Worktable, a document's whole length
+ * otherwise outweighs a short title that names what was searched for
+ * (research/2026-11-20-search-rework-claude).
+ */
+const RANK = "(t.score IS NULL), 3 * coalesce(t.score, 0) + bm25(pieces, 3.0, 1.0)"
 
 /** How an entry's excerpt text is kept: as its body, its body after the first line, or apart. */
 const DISPLAY_BODY = 0
@@ -186,6 +193,7 @@ class Fts5Store {
       const version = (db.query("PRAGMA user_version").get() as { user_version: number }).user_version
       if (version !== SCHEMA_VERSION) {
         db.run("DROP TABLE IF EXISTS vocabulary")
+        db.run("DROP TABLE IF EXISTS titles")
         db.run("DROP TABLE IF EXISTS pieces")
         db.run("DROP TABLE IF EXISTS items")
         db.run("DROP TABLE IF EXISTS meta")
@@ -207,19 +215,30 @@ class Fts5Store {
           "title, body, content = 'items', content_rowid = 'id', " +
           "tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3')"
       )
+      // Titles again, on their own: a title's relevance measured against
+      // titles, not diluted by its document's length.
+      db.run(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS titles USING fts5(" +
+          "title, content = 'items', content_rowid = 'id', " +
+          "tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3')"
+      )
       db.run(
         "CREATE TRIGGER IF NOT EXISTS items_insert AFTER INSERT ON items BEGIN " +
-          "INSERT INTO pieces (rowid, title, body) VALUES (new.id, new.title, new.body); END"
+          "INSERT INTO pieces (rowid, title, body) VALUES (new.id, new.title, new.body); " +
+          "INSERT INTO titles (rowid, title) VALUES (new.id, new.title); END"
       )
       db.run(
         "CREATE TRIGGER IF NOT EXISTS items_delete AFTER DELETE ON items BEGIN " +
-          "INSERT INTO pieces (pieces, rowid, title, body) VALUES ('delete', old.id, old.title, old.body); END"
+          "INSERT INTO pieces (pieces, rowid, title, body) VALUES ('delete', old.id, old.title, old.body); " +
+          "INSERT INTO titles (titles, rowid, title) VALUES ('delete', old.id, old.title); END"
       )
       db.run(
         "CREATE TRIGGER IF NOT EXISTS items_update AFTER UPDATE OF title, body ON items " +
           "WHEN old.title IS NOT new.title OR old.body IS NOT new.body BEGIN " +
           "INSERT INTO pieces (pieces, rowid, title, body) VALUES ('delete', old.id, old.title, old.body); " +
-          "INSERT INTO pieces (rowid, title, body) VALUES (new.id, new.title, new.body); END"
+          "INSERT INTO pieces (rowid, title, body) VALUES (new.id, new.title, new.body); " +
+          "INSERT INTO titles (titles, rowid, title) VALUES ('delete', old.id, old.title); " +
+          "INSERT INTO titles (rowid, title) VALUES (new.id, new.title); END"
       )
       db.run("CREATE VIRTUAL TABLE IF NOT EXISTS vocabulary USING fts5vocab(pieces, 'row')")
       db.run(`PRAGMA user_version = ${SCHEMA_VERSION}`)
@@ -445,9 +464,9 @@ class Fts5VariantIndex implements VariantIndex {
       return { word, as: "nearest", near }
     })
     if (!changed) return { hits, corrected: [] }
-    const corrected = queryWords.flatMap((word) =>
-      word.as === "nearest" ? word.near.map((near) => near.text) : []
-    )
+    const corrected = [
+      ...new Set(queryWords.flatMap((word) => (word.as === "nearest" ? word.near.map((near) => near.text) : []))),
+    ]
     return { hits: this.#matches(queryWords, [...words, ...corrected], options), corrected }
   }
 
@@ -459,7 +478,9 @@ class Fts5VariantIndex implements VariantIndex {
       .db()
       .prepare(
         "SELECT i.id, i.entry_id, i.space_id, i.meta, i.title, i.archived, " +
-          `-${RANK} AS score FROM pieces JOIN items i ON i.id = pieces.rowid ` +
+          "-(3 * coalesce(t.score, 0) + bm25(pieces, 3.0, 1.0)) AS score " +
+          "FROM pieces JOIN items i ON i.id = pieces.rowid " +
+          "LEFT JOIN (SELECT rowid, bm25(titles) AS score FROM titles WHERE titles MATCH ?1) t ON t.rowid = i.id " +
           "WHERE pieces MATCH ?1 AND i.variant = ?2 AND (?3 IS NULL OR i.space_id = ?3) " +
           "ORDER BY " +
           (archivedSpaces

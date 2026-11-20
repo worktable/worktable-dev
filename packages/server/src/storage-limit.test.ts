@@ -731,7 +731,20 @@ describe("storage limit", () => {
   })
 
   it("prunes nothing for a lower limit, and keeps what the Worktable holds until it fits", async () => {
-    const doc = await docWithVersions("kept", 4, 16 * KB)
+    let written = await createDoc("kept", 16 * KB)
+    const replace = async (text: string) => {
+      written = await replaceRegisteredDocument({
+        spaceId: "notes",
+        path: "kept",
+        bytes: bytes(16 * KB, text),
+        expectedRevision: written.sourceRevision,
+        updatedBy: "test",
+        source: "test",
+        separateVersion: true,
+      })
+    }
+    for (const text of ["one", "two", "three"]) await replace(text)
+    const doc = written.documentId as DocumentId
     const folder = join(workspace, "spaces", "notes", "exports")
     mkdirSync(folder, { recursive: true })
     const dump = join(folder, "dump.bin")
@@ -755,20 +768,30 @@ describe("storage limit", () => {
     expect(refused).toBeInstanceOf(StorageLimitError)
     expect(refused.message).toContain("is over its")
 
-    // What it may keep follows its use down, and not back up.
-    await writeOnDisk(() => rmSync(dump))
-    expect(summary().totalLimitBytes).toBeLessThanOrEqual(held - 32 * KB)
-    const lower = summary().totalLimitBytes
-    await writeOnDisk(() => writeFileSync(dump, new Uint8Array(32 * KB)))
-    expect(summary().totalLimitBytes).toBe(lower)
-
-    // A server started again with the lower limit remembers it.
+    // A server started again with the lower limit remembers what is kept.
     for (const stop of stops) await stop()
     stops = [startStorageLimits(), startStorageAccounting()]
     await writeOnDisk(() => undefined)
-    expect(summary().totalLimitBytes).toBe(lower)
+    expect(summary().totalLimitBytes).toBe(held)
     expect(await generations(doc)).toEqual(before)
     expect(storageSummary()!.pruned).toBeNull()
+
+    // A write that adds only history gets room within what is kept, from
+    // the oldest version, though the count catches up while pruning runs;
+    // and what is kept neither rises with it nor falls with what pruning
+    // freed.
+    setStoragePruningHooksForTests({
+      afterVersions: async () => {
+        await activeStorageAccount()!.settled()
+      },
+    })
+    await replace("four")
+    setStoragePruningHooksForTests({})
+    await settled()
+    expect(summary().totalLimitBytes).toBe(held)
+    expect(summary().totalBytes).toBeLessThanOrEqual(held)
+    expect(storageSummary()!.pruned!.versions).toBeGreaterThan(0)
+    expect((await generations(doc)).length).toBeLessThanOrEqual(before.length)
 
     // Back up: the limit applies as before.
     setStorageLimitForTests(null, { lowered: true })

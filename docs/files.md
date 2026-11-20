@@ -628,12 +628,13 @@ every Cloud Worktable has the default.
 
 A lower limit never removes history (Plan 22a rule 13). When the limit goes
 down, whether from a smaller plan, one that lapsed or a wrong setting, the
-Worktable may keep what it holds: what it may take in all starts at what it
-held and follows its use down as people delete, never up, until it fits the
-lower total limit again. Its files meet the lower limit at once, so writes
-that add files are refused until they fit. A write that adds only history
-still gets room by removing the oldest, but only within what is kept, and
-nothing is pruned on its own meanwhile. The total limit in force is
+Worktable may keep what it holds: what it held in all then stays its total
+limit until it fits the lower one again. Pruning keeps it within that, oldest
+first, as at any limit but with no headroom, so nothing goes for the lower
+limit itself. That figure doesn't follow use down: pruning frees whole
+versions, a little more than a write needs, and following that would shed
+history write by write. Its files meet the lower limit at once, so writes
+that add files are refused until they fit. The total limit in force is
 remembered in app data (`storage-pruned/<workspace>.kept.json`), so a limit
 lowered while the server was stopped is noticed at start, before anything
 is pruned.

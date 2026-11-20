@@ -85,6 +85,8 @@ export interface PruneResult {
 let testHooks: {
   /** Called once a run has emptied the trash, before it prunes versions. */
   beforeVersions?: () => void
+  /** Awaited once a run has pruned versions, before it records them. */
+  afterVersions?: () => Promise<void>
 } = {}
 let plansMade = 0
 
@@ -181,6 +183,7 @@ export async function prunePlanned(
     if (result.bytes < wantBytes && !stopped()) {
       await pruneOldestVersions(plan.versions, wantBytes - result.bytes, stopped, result, items)
     }
+    await testHooks.afterVersions?.()
   } catch (error) {
     // Failed partway: not proof of what is left.
     result.deferred = true

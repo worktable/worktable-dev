@@ -582,8 +582,10 @@ change to anything can be undone; a replace that would need the version it
 replaces gone is refused instead. A write is refused (507 `STORAGE_LIMIT`)
 when it couldn't fit even if all prunable history went, in which case nothing
 is pruned for it, or when pruning can't make room within a few seconds. A
-person typing in a Doc or drawing keeps saving at the limit, counted but never
-refused. At its limit a Worktable
+person typing in a Doc keeps saving at the limit, counted but never refused. A
+person's drawing saves may go past the limit by 5% of it, at most 64 MiB
+(`storageGraceBytes`), so nobody loses a stroke when the Worktable fills; past
+that they are refused like any write. At its limit a Worktable
 still opens, reads, deletes and exports. What people delete leaves the
 backed-up folder at once and is removed after the history window.
 
@@ -619,6 +621,8 @@ export can carry, can't be recovered.
 **Gaps:**
 
 - Nothing is refused until the first count, a few seconds after start.
+- Typing in a Doc has no bound past the limit: a person who keeps typing, or
+  sends large edits through the editor connection, keeps adding bytes.
 - Each file's current version is also kept as a history copy that pruning
   can't remove, so uploaded files take twice their size.
 - The limit check doesn't cover annotations, Space metadata or pre-V2 HTML

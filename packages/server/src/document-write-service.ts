@@ -144,6 +144,7 @@ import { sourceKindClaims } from "./source-kind-records.ts"
 import {
   storageFits,
   withAdmittedRoom,
+  type StorageAdmission,
   withStorageRoom,
 } from "./storage-limit.ts"
 import { withVersionHeld } from "./version-holds.ts"
@@ -1792,11 +1793,11 @@ async function replaceRegisteredDocumentWithRoom(options: {
   /** Given the bytes being replaced, as read under the lock for the write. */
   onPrevious?: (bytes: Uint8Array, formatId: string) => void
   /**
-   * A person saving from the app. A drawing they save is counted toward the
-   * storage limit, never refused.
+   * A person saving from the app. A drawing they save may take the
+   * Worktable a little past its storage limit (storageGraceBytes).
    */
   personSave?: boolean
-}, admit: (bytes: number) => void = () => undefined): Promise<DocumentWriteResult> {
+}, admit: (bytes: number, options?: StorageAdmission) => void = () => undefined): Promise<DocumentWriteResult> {
   assertSpaceAccess(options.spaceId, "edit");
   const workspaceRoot = getWorkspaceRoot()
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
@@ -1922,9 +1923,11 @@ async function replaceRegisteredDocumentWithRoom(options: {
             2 * content.byteLength -
             before.byteLength +
             (creates ? before.byteLength : 0)
-          // A person's drawing keeps saving at the limit, as typing in a
-          // Doc does: counted, never refused.
-          if (options.personSave && isDrawingFormat(current.format.id)) return
+          // A person's drawing keeps saving a little past the limit, so
+          // nobody loses a stroke when the Worktable fills; bounded, so
+          // saves can't fill the disk (storageGraceBytes).
+          if (options.personSave && isDrawingFormat(current.format.id))
+            return admit(adds, { grace: true })
           if (creates || storageFits(adds)) return admit(adds)
           admit(
             adds -

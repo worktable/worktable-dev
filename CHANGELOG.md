@@ -16,7 +16,7 @@ infrastructure and personal context out of release notes.
 ### Changed
 
 - **Share links:** A link made under More links can take visitor comments, with its own Allow comments switch. Each link says when comments are on.
-- **Full Worktable:** Making room at the storage limit never removes the version your last change replaced, so that change can always be undone. A replace that would need it gone is refused instead. Drawings keep saving at the limit, as Docs do.
+- **Full Worktable:** Making room at the storage limit never removes the version your last change replaced, so that change can always be undone. A replace that would need it gone is refused instead. A drawing keeps saving a little past the limit, so you don't lose what you were drawing.
 
 ### Fixed
 

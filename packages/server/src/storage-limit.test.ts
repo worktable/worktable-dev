@@ -30,6 +30,7 @@ import {
   DEFAULT_STORAGE_LIMIT_BYTES,
   setStorageLimitForTests,
   startStorageLimits,
+  storageGraceBytes,
   STORAGE_LIMIT_CEILING_BYTES,
   StorageLimitError,
   storageLimitBytes,
@@ -469,7 +470,8 @@ describe("storage limit", () => {
     expect(await generations(older)).toEqual(olderVersions)
     expect(await settled()).toBeLessThanOrEqual(storageLimitBytes())
 
-    // A person's drawing keeps saving, counted; an agent's save is refused.
+    // A person's drawing keeps saving a little past the limit; an agent's
+    // save is refused, and so is a person's that would go past the allowance.
     const save = async (identity: TokenIdentity, text: string) => {
       const api = new Hono()
         .use("*", async (c, next) => {
@@ -489,8 +491,9 @@ describe("storage limit", () => {
       })
     }
     const agent = { ...ownerIdentity(), agent: "claude-code" }
-    expect((await save(agent, "b".repeat(24 * KB))).status).toBe(507)
-    const drawn = await save(ownerIdentity(), "c".repeat(24 * KB))
+    const stroke = "c".repeat(Math.round(storageGraceBytes() / 3))
+    expect((await save(agent, stroke)).status).toBe(507)
+    const drawn = await save(ownerIdentity(), stroke)
     expect(drawn.status).toBe(200)
     sketch = (await drawn.json()) as typeof sketch
     await settled()
@@ -499,7 +502,13 @@ describe("storage limit", () => {
       new TextDecoder().decode(
         (await readRegisteredDocumentSource({ spaceId: "notes", path: "sketch" })).bytes
       )
-    ).toContain("c".repeat(24 * KB))
+    ).toContain(stroke)
+    const tooMuch = await save(ownerIdentity(), "d".repeat(storageGraceBytes() * 2))
+    expect(tooMuch.status).toBe(507)
+    await settled()
+    expect(storageSummary()!.limit.countedBytes).toBeLessThanOrEqual(
+      storageLimitBytes() + storageGraceBytes()
+    )
   })
 
   it("leaves transfers out, counts a write on disk past the limit, and refuses the next new write", async () => {

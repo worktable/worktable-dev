@@ -55,6 +55,10 @@ const GIB = 1024 * 1024 * 1024
 export const DEFAULT_STORAGE_LIMIT_BYTES = 2 * GIB
 /** The most an operator may set outside Cloud. */
 export const STORAGE_LIMIT_CEILING_BYTES = DEFAULT_STORAGE_LIMIT_BYTES
+/** How far past the limit a person's drawing saves may go: this share of it... */
+const GRACE_RATIO = 0.05
+/** ...and at most this much. */
+const GRACE_MAX_BYTES = 64 * 1024 * 1024
 /** Settings warns once usage passes this share of the limit. */
 export const STORAGE_WARNING_RATIO = 0.8
 /** Pruning frees room down to this share of the limit. */
@@ -191,17 +195,35 @@ function reserve(bytes: number): StorageReservation {
 }
 
 /**
+ * How far past its limit a person's drawing saves may take a Worktable: 5%
+ * of the limit, at most 64 MiB. Enough that nobody loses what they were
+ * drawing when the Worktable fills; bounded, so saves can't fill the disk.
+ */
+export function storageGraceBytes(limit = storageLimitBytes()): number {
+  return Math.min(GRACE_MAX_BYTES, Math.round(limit * GRACE_RATIO))
+}
+
+/** What a write admits beyond its bytes: `grace` lets it pass the limit by storageGraceBytes. */
+export interface StorageAdmission {
+  grace?: boolean
+}
+
+/**
  * Admit a write that adds `bytes`, at the moment it publishes. It never
  * waits, so a caller holding locks may use it. Throws StorageLimitError when
  * there is no room; `retryAfterPruning` then makes room and tries again.
  */
-export function admitStorageWrite(bytes: number): StorageReservation {
+export function admitStorageWrite(
+  bytes: number,
+  options: StorageAdmission = {}
+): StorageReservation {
   if (!(bytes > 0)) return NO_RESERVATION
   const usage = storageUsage()
   if (!usage) return NO_RESERVATION
   const limit = storageLimitBytes()
   const used = usedBytes(usage)
-  if (used + bytes <= limit) return reserve(bytes)
+  if (used + bytes <= limit + (options.grace ? storageGraceBytes(limit) : 0))
+    return reserve(bytes)
   throw new StorageLimitError(limit, used, undefined, bytes)
 }
 
@@ -254,14 +276,14 @@ export async function withStorageRoom<T>(
  * refusal waits for pruning and tries once more, as `retryAfterPruning`.
  */
 export function withAdmittedRoom<T>(
-  write: (admit: (bytes: number) => void) => Promise<T>
+  write: (admit: (bytes: number, options?: StorageAdmission) => void) => Promise<T>
 ): Promise<T> {
   return retryAfterPruning(async () => {
     const room: { reservation: StorageReservation | null } = { reservation: null }
     try {
-      return await write((bytes) => {
+      return await write((bytes, options) => {
         room.reservation?.release()
-        room.reservation = admitStorageWrite(bytes)
+        room.reservation = admitStorageWrite(bytes, options)
       })
     } finally {
       room.reservation?.release()

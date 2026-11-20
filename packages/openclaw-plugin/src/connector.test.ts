@@ -462,10 +462,15 @@ describe("OpenClaw Worktable connector", () => {
       }
       return replyToComments(input)
     }
-    // The agent answered the second comment itself; the batch returns with
-    // the first alone, under a new lease.
+    first.page.id = "doc_deck"
+    // The agent answered the second comment itself and the page was renamed;
+    // the batch returns with the first alone, under a new lease.
+    const renamed = comments("slides", ["Shorten slide one."])
+    renamed.comments[0] = { ...renamed.comments[0]!, annotationId: "ann_deck_0", requestId: "req_deck_0" }
     const again = {
-      ...comments("deck", ["Shorten slide one."]),
+      ...renamed,
+      messageId: "req_deck_0",
+      page: { ...renamed.page, id: "doc_deck" },
       batchId: "bat_deck",
       leaseId: "lease_deck_again",
     }

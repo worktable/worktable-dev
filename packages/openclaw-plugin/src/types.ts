@@ -56,7 +56,8 @@ export interface ClaimedWorktableComments {
   leaseId: string
   leaseExpiresAt: string
   identityId: string
-  page: { spaceId: string; path: string; title: string }
+  /** id: the page's durable id, which a rename doesn't change. */
+  page: { spaceId: string; path: string; title: string; id?: string }
   /** The same on every retry of this batch. */
   batchId?: string
   comments: Array<{

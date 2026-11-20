@@ -274,7 +274,9 @@ function commentsText(delivery: ClaimedWorktableComments): string {
 
 function commentsTurn(delivery: ClaimedWorktableComments): DeliveryTurn {
   const { spaceId, path } = delivery.page
-  const conversationId = `${spaceId}/comments/${path}`
+  // Keyed on the page's id when Worktable gives one, so a renamed page keeps
+  // its conversation and a retried batch its retained answer.
+  const conversationId = `${spaceId}/comments/${delivery.page.id ?? path}`
   // A batch keeps its id across retries, so a turn retried under a new lease
   // meets its retained answer. Without one, the same comments make the
   // same event.

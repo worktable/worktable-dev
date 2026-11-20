@@ -578,9 +578,22 @@ the file still lists and downloads. Proved by `contents-lane.test.ts` "stops
 a reader that hangs, grows too large or writes too much, and says why" and
 "gives a reader the file's bytes and nothing else, and returns what it read".
 
+The PDF reader (`pdf-contents-reader.ts`) runs there, from the file's bytes
+alone. pdf.js opens the file and reads each page's text, with eval off and
+a PDF's scripts, forms and attachments never run or read; pdf-inspector
+(Rust as WebAssembly) reads the same pages as Markdown that keeps headings
+and tables. A page it reads uses its Markdown, any other keeps pdf.js's
+text. An encrypted or damaged PDF is refused with the reason, and a page
+that is only a picture is named, since Worktable reads no text from
+pictures. At most 5,000 pages are read. Proved by `pdf-contents-reader.test.ts`
+"refuses an encrypted or damaged PDF with the reason, never reads it as
+empty" and "names a page that is only a picture, keeps text pages beside it,
+and says nothing of an empty page".
+
 **Gaps:** no test covers the web page's `sandbox=""` frame for an outside
-`.html`. The contents lane has no readers yet; each one added must follow
-this rule. The PDF viewer is tested in Chromium only by the required checks.
+`.html`. The PDF reader runs both engines in one worker, so a PDF large
+enough to need most of the memory limit for one can be stopped for memory.
+The PDF viewer is tested in Chromium only by the required checks.
 
 ## Cost
 
@@ -770,6 +783,8 @@ reason for both), `mcp/file-results.ts`.
   unavailable and fences standalone captures to the source revision".
 - `mcp-documents.test.ts` "reads code the type table doesn't list and a
   Dockerfile as text, and an AVIF as an image".
+- `mcp-documents.test.ts` "reads a PDF's pages as contents, parsed once, and
+  says when one is password protected": on the preview surface only.
 - `file-contents.test.ts` "pages lines exactly as stored, however the bytes
   arrive" and "stops a page at its byte limit, and cuts only a line too long
   for any page".
@@ -790,8 +805,14 @@ On the MCP preview surface, a text, code or table file reads as contents: a
 page of its lines, exactly as stored, with the lines it covers, how many the
 file has, where the next page starts, and what it leaves out, such as a line
 longer than a page, which is cut, or text that isn't UTF-8, which has no
-contents. The file type table's contents surface names each type's reader.
-An agent's exact or regex search there matches those files' lines too, with
+contents. A PDF reads the same way: its pages, each starting with a mark
+such as `<!-- Page 3 -->`, with an outline of the line each starts on and its
+page count. It is parsed once per version in the contents lane and its
+contents kept in the derived store; a read that would wait more than 20
+seconds says the file is still being read, and the parse goes on. A PDF that
+is password protected, damaged, or that stopped its reader says so. The file
+type table's contents surface names each type's reader.
+An agent's exact or regex search there matches text files' lines too, with
 the line numbers a page of contents uses; a file with more than 8 MiB of text
 is listed as skipped rather than read (`doc-markdown-projection.ts`).
 Also there, `worktable_files_render` gives an agent a picture of a plain file: one page of a PDF, with its page count, or an image

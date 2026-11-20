@@ -223,6 +223,7 @@
         "@blocknote/code-block": "0.54.2",
         "@blocknote/core": "0.54.2",
         "@blocknote/server-util": "0.54.2",
+        "@firecrawl/pdf-inspector-wasm": "1.26.1",
         "@fontsource/caveat": "5.3.0",
         "@fontsource/noto-sans": "5.2.10",
         "@fontsource/noto-sans-mono": "5.3.0",
@@ -705,6 +706,8 @@
     "@expressive-code/plugin-shiki": ["@expressive-code/plugin-shiki@0.44.0", "", { "dependencies": { "@expressive-code/core": "^0.44.0", "shiki": "^4.0.2" } }, "sha512-RZsdaqlbGqyAQKuoX4myQXxjmiE2l5KBpJ/gKPh62tCdIdpWyjbzVqSo8+5XsezZxkfi8AJ/J6EUaBTPROFX/Q=="],
 
     "@expressive-code/plugin-text-markers": ["@expressive-code/plugin-text-markers@0.44.0", "", { "dependencies": { "@expressive-code/core": "^0.44.0" } }, "sha512-0/m3A5b+lz2upyNq+wzZ1S69HRoJmyFs5LsR42lVZ9pmGRlBiSBYQpvqlji4DBj1+Riamxc0AvcCr5kuzOQeWA=="],
+
+    "@firecrawl/pdf-inspector-wasm": ["@firecrawl/pdf-inspector-wasm@1.26.1", "", {}, "sha512-xbzre96E0Tf3JjhiYSaJTHegFmYuwAaG/7O8w4c3a4dP7S3NnlDSRMmajv6ZUtbv74hxXo/0+SVIfz2D7vhpVA=="],
 
     "@floating-ui/core": ["@floating-ui/core@1.8.0", "", { "dependencies": { "@floating-ui/utils": "^0.2.12" } }, "sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ=="],
 

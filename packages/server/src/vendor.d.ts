@@ -38,6 +38,10 @@ declare module "*.wasm" {
   export default path
 }
 // pdf.js's files, embedded as files for the preview page (file-pictures.ts).
+// The worker module itself, run on the contents worker's own thread.
+declare module "pdfjs-dist/legacy/build/pdf.worker.mjs" {
+  export const WorkerMessageHandler: unknown
+}
 declare module "pdfjs-dist/build/*.mjs" {
   const path: string
   export default path

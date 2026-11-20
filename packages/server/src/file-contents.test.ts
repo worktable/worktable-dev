@@ -79,11 +79,12 @@ describe("a text file's contents", () => {
     })
   })
 
-  it("is read for text, code and tables, and not yet for anything else", () => {
+  it("is read for text, code and tables as text, a PDF by its reader, and not yet for anything else", () => {
     for (const path of ["notes.txt", "data.csv", "app/main.py", "Dockerfile", "logo.svg"]) {
       expect(contentsReaderFor(path), path).toBe("text")
     }
-    for (const path of ["report.pdf", "photo.png", "budget.xlsx", "unknown.bin"]) {
+    expect(contentsReaderFor("Report.PDF")).toBe("pdf")
+    for (const path of ["photo.png", "budget.xlsx", "unknown.bin"]) {
       expect(contentsReaderFor(path), path).toBeNull()
     }
   })

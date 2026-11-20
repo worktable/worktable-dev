@@ -1825,13 +1825,15 @@ const FileContentsOutputSchema = z.looseObject({
   byteLength: z.number().int().nonnegative(),
   sourceRevision: z.string(),
   contents: z.looseObject({
-    state: z.enum(["ready", "partial", "unsupported"]),
+    state: z.enum(["ready", "partial", "pending", "unsupported", "encrypted", "failed"]),
     text: z.string(),
     startLine: z.number().int().positive(),
     endLine: z.number().int().nonnegative(),
     totalLines: z.number().int().nonnegative(),
     nextOffset: z.number().int().positive().optional(),
     missing: z.array(z.looseObject({ where: z.string().optional(), why: z.string() })),
+    outline: z.array(z.looseObject({ label: z.string(), line: z.number().int().positive() })).optional(),
+    facts: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   }),
 })
 

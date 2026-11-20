@@ -43,6 +43,7 @@ import {
   inspectWorkspaceExportV2,
   cleanupAbandonedWorkspaceExportCaptures,
   writeWorkspaceExportV2,
+  WorkspacePackageLimitError,
   WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES,
   type WorkspaceExportPhase,
   type WorkspaceExportHistoryPolicy,
@@ -78,6 +79,8 @@ export interface TransferJobBase {
   updatedAt: string
   expiresAt: string
   error?: string
+  /** `error` is written for the person: Settings shows it as the outcome. */
+  errorForPeople?: boolean
 }
 
 export interface WorkspaceExportJob extends TransferJobBase {
@@ -199,6 +202,31 @@ function nowIso(): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+const NOT_ENOUGH_DISK_TO_EXPORT =
+  "There isn't enough free disk space to export this Worktable. Free some space, then export again."
+
+/**
+ * How a failed transfer is recorded: in words a person can act on when the
+ * package is too large, the Worktable's limit can't take it, or the disk is
+ * full; otherwise as the error said.
+ */
+function transferFailure(
+  error: unknown,
+  kind: "export" | "import"
+): { error: string; errorForPeople?: true } {
+  if (error instanceof WorkspacePackageLimitError || error instanceof StorageLimitError)
+    return { error: error.message, errorForPeople: true }
+  if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOSPC")
+    return {
+      error:
+        kind === "export"
+          ? NOT_ENOUGH_DISK_TO_EXPORT
+          : "There isn't enough free disk space to import this package. Free some space, then try again.",
+      errorForPeople: true,
+    }
+  return { error: errorMessage(error) }
 }
 
 async function writeJob(job: WorkspaceTransferJob): Promise<void> {
@@ -412,6 +440,7 @@ function runExport(id: string): void {
     job = await updateJob(job, {
       state: "running",
       error: undefined,
+      errorForPeople: undefined,
       failure: undefined,
     })
     try {
@@ -449,7 +478,7 @@ function runExport(id: string): void {
           error instanceof WorkspaceExportPathError
             ? error.diagnostics
             : undefined,
-        error: errorMessage(error),
+        ...transferFailure(error, "export"),
         expiresAt: new Date(
           Date.now() + WORKSPACE_TRANSFER_TTL_MS
         ).toISOString(),
@@ -666,12 +695,13 @@ export async function createWorkspaceImportJob(input: {
   sha256?: string
 }): Promise<WorkspaceImportJob> {
   scheduleWorkspaceTransferCleanup()
-  if (
-    !Number.isSafeInteger(input.bytes) ||
-    input.bytes < 1 ||
-    input.bytes > WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES
-  ) {
+  if (!Number.isSafeInteger(input.bytes) || input.bytes < 1) {
     throw new Error("workspace package size is outside the supported limit")
+  }
+  if (input.bytes > WORKSPACE_EXPORT_V2_MAX_ARCHIVE_BYTES) {
+    throw new WorkspacePackageLimitError(
+      "This package is larger than 2.25 GiB, too large to import."
+    )
   }
   if (input.sha256 !== undefined && !/^[0-9a-f]{64}$/i.test(input.sha256)) {
     throw new Error("workspace package sha256 is invalid")
@@ -733,7 +763,7 @@ async function publishImportFailure(
     await updateJob(job, {
       state: "failed",
       preparation: undefined,
-      error: errorMessage(error),
+      ...transferFailure(error, "import"),
       expiresAt: new Date(Date.now() + WORKSPACE_TRANSFER_TTL_MS).toISOString(),
     })
   })
@@ -757,6 +787,7 @@ async function runWorkspaceImportVerification(id: string): Promise<void> {
         sha256,
         manifest: inspection.manifest,
         error: undefined,
+        errorForPeople: undefined,
         expiresAt: new Date(
           Date.now() + WORKSPACE_TRANSFER_TTL_MS
         ).toISOString(),
@@ -844,6 +875,7 @@ async function runWorkspaceImportPreparation(
         preparation: undefined,
         prepared,
         error: undefined,
+        errorForPeople: undefined,
         expiresAt: new Date(
           Date.now() + WORKSPACE_TRANSFER_TTL_MS
         ).toISOString(),
@@ -1011,6 +1043,7 @@ export async function prepareWorkspaceImportJob(
       state: "preparing",
       preparation,
       error: undefined,
+      errorForPeople: undefined,
     })
     return job
   })
@@ -1039,6 +1072,7 @@ export async function replaceWorkspaceImportJob(
     job = await updateJob(job, {
       state: "replacing",
       error: undefined,
+      errorForPeople: undefined,
     })
     const scheduled = job
     try {
@@ -1071,7 +1105,7 @@ export async function replaceWorkspaceImportJob(
           if (options?.recoveryIncomplete) {
             await updateJob(current, {
               state: "replacing",
-              error: errorMessage(error),
+              ...transferFailure(error, "import"),
             })
             return
           }
@@ -1079,7 +1113,7 @@ export async function replaceWorkspaceImportJob(
           const prepared = current.prepared
           current = await updateJob(current, {
             state: "failed",
-            error: errorMessage(error),
+            ...transferFailure(error, "import"),
             expiresAt: new Date(
               Date.now() + WORKSPACE_TRANSFER_TTL_MS
             ).toISOString(),
@@ -1106,7 +1140,7 @@ export async function replaceWorkspaceImportJob(
     } catch (error) {
       return await updateJob(job, {
         state: job.prepared ? "ready" : "failed",
-        error: errorMessage(error),
+        ...transferFailure(error, "import"),
         ...(!job.prepared
           ? {
               expiresAt: new Date(

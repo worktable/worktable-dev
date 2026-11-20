@@ -49,6 +49,8 @@ interface TransferBase {
   updatedAt: string
   expiresAt: string
   error?: string
+  /** `error` is written for the person, to show as the outcome. */
+  errorForPeople?: boolean
 }
 
 export interface WorkspaceExportJob extends TransferBase {

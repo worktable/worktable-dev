@@ -530,12 +530,18 @@ describe("search excerpts", () => {
     });
     const all = await find("pairing", "&includeArchived=true&archivedLast=true");
     expect(reread).toBe(0);
-    expect(all.map((result) => result.archived)).toEqual([undefined, true, true]);
-    expect(all[0]?.path).toBe("pairing-today");
-    expect(all.slice(1).map((result) => result.path).sort()).toEqual([
-      "pairing-notes",
-      "pairing-old",
-    ]);
+    // The current Doc leads; everything after it is archived work, whether
+    // archived itself or in an archived Space.
+    expect(all[0]).toEqual(expect.objectContaining({ path: "pairing-today" }));
+    expect(all[0]?.archived).toBeUndefined();
+    expect(all.slice(1).every((result) => result.archived === true)).toBe(true);
+    expect(
+      all
+        .slice(1)
+        .filter((result) => result.type === "doc")
+        .map((result) => result.path)
+        .sort(),
+    ).toEqual(["pairing-notes", "pairing-old"]);
 
     // Current work keeps its place when the limit is short.
     expect(

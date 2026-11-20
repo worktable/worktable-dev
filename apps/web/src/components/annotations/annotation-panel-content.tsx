@@ -28,18 +28,27 @@ import { useWorkspace } from "@/lib/queries"
 
 type CommentRequest = NonNullable<Annotation["requests"]>[number];
 
+type RequestState = "sent" | "delivered" | "read" | "working" | "stuck" | "replied";
+
 /** Where each recipient is with the comment, as far as Worktable knows. */
-function requestState(request: CommentRequest): "sent" | "delivered" | "read" | "replied" {
+function requestState(request: CommentRequest): RequestState {
   if (request.status === "replied") return "replied";
+  // An agent's runtime working on it, or no longer answering.
+  if (request.delivery === "working") return "working";
+  if (request.delivery === "failed") return "stuck";
   if (request.readAt) return "read";
   return request.deliveredAt ? "delivered" : "sent";
 }
 
-const STATE_LABEL = {
-  sent: (names: string) => `To ${names}`,
-  delivered: (names: string) => `Delivered to ${names}`,
-  read: (names: string) => `Read by ${names}`,
-  replied: (names: string) => `Replied by ${names}`,
+const plural = (names: string) => names.includes(", ");
+
+const STATE_LABEL: Record<RequestState, (names: string) => string> = {
+  sent: (names) => `To ${names}`,
+  delivered: (names) => `Delivered to ${names}`,
+  read: (names) => `Read by ${names}`,
+  working: (names) => `${names} ${plural(names) ? "are" : "is"} working`,
+  stuck: (names) => `${names} ${plural(names) ? "aren’t" : "isn’t"} answering`,
+  replied: (names) => `Replied by ${names}`,
 };
 
 function openRequests(annotation: Annotation): CommentRequest[] {
@@ -62,7 +71,7 @@ function agentsNotShown(annotation: Annotation): string[] {
 function recipientsLine(annotation: Annotation, selfId?: string): string | null {
   const requests = openRequests(annotation);
   if (requests.length === 0) return null;
-  return (["sent", "delivered", "read", "replied"] as const)
+  return (["sent", "delivered", "read", "working", "stuck", "replied"] as const)
     .map((state) => {
       const names = requests
         .filter((request) => requestState(request) === state)

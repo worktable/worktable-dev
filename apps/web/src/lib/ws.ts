@@ -396,6 +396,15 @@ export function applyThreadEvent(
   const activity = { queryKey: activityQueryKeys.all }
   if (message.type === "thread_activity") {
     const update = message.data as ThreadActivity | undefined
+    // A comment's delivery reports its comment where a thread's names its
+    // thread. Loaded when one moves, so it stays off the startup bundle.
+    if (message.threadId?.startsWith("ann_")) {
+      const annotationId = message.threadId
+      void import("./comment-delivery-events").then(({ refreshCommentDelivery }) =>
+        refreshCommentDelivery(queryClient, annotationId)
+      )
+      return
+    }
     if (message.threadId) {
       applyThreadActivityToQueries(
         queryClient,

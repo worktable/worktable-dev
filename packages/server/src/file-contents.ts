@@ -61,13 +61,20 @@ export function contentsReaderFor(path: string): ContentsReader | null {
 
 const NEWLINE = 0x0a
 
-/** Bytes of a UTF-8 text that end on a whole character, at most `max`. */
+/**
+ * At most `max` bytes of UTF-8 text, ending on a whole character: a last
+ * character the limit splits is left out. Decided from the bytes kept alone.
+ */
 function wholeCharacters(bytes: Uint8Array, max: number): Uint8Array {
-  if (bytes.byteLength <= max) return bytes
-  let end = max
-  // Step back over continuation bytes (10xxxxxx) to a character's start.
-  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1
-  return bytes.subarray(0, end)
+  const end = Math.min(bytes.byteLength, max)
+  if (end === 0) return bytes.subarray(0, 0)
+  // The last character starts at the last byte that isn't a continuation
+  // byte (10xxxxxx), at most three bytes back.
+  let start = end - 1
+  while (start > 0 && end - start < 4 && (bytes[start]! & 0xc0) === 0x80) start -= 1
+  const lead = bytes[start]!
+  const length = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1
+  return bytes.subarray(0, start + length <= end ? end : start)
 }
 
 /**
@@ -177,13 +184,7 @@ export class TextLinePage {
   /** Holds a piece of the current line, never more than the page could take. */
   #hold(piece: Uint8Array): void {
     const room = this.#maxBytes - this.#pendingBytes
-    if (room <= 0) {
-      this.#pendingBytes += piece.byteLength
-      return
-    }
-    // Four bytes past the limit leave room to end on a whole character.
-    const kept = piece.subarray(0, Math.min(piece.byteLength, room + 4))
-    this.#pending.push(kept.slice())
+    if (room > 0) this.#pending.push(piece.subarray(0, room).slice())
     this.#pendingBytes += piece.byteLength
   }
 

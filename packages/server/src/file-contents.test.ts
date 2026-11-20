@@ -55,10 +55,18 @@ describe("a text file's contents", () => {
     })
     // A first line past the limit is kept up to it, ending on a whole
     // character, and the page says where and why.
+    // Read chunks that end exactly at the limit split the last character too.
     const long = encode(`${"é".repeat(8)}\nnext\n`)
-    const cut = pageOf(long, { maxBytes: 7, chunk: 3 })
-    expect(cut).toMatchObject({ state: "partial", text: "ééé", endLine: 1, nextOffset: 2 })
-    expect(cut.missing).toEqual([{ where: "line 1", why: expect.stringContaining("cut") }])
+    for (const chunk of [1, 2, 3, 7, long.byteLength]) {
+      const cut = pageOf(long, { maxBytes: 7, chunk })
+      expect(cut, `chunk ${chunk}`).toMatchObject({
+        state: "partial",
+        text: "ééé",
+        endLine: 1,
+        nextOffset: 2,
+      })
+      expect(cut.missing).toEqual([{ where: "line 1", why: expect.stringContaining("cut") }])
+    }
   })
 
   it("has no contents for text that isn't UTF-8, and says why", () => {

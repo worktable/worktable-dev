@@ -69,6 +69,22 @@ describe("agent access groups", () => {
       expect(accessForStoredScopes(scopesForAccess(chosen))).toEqual(chosen)
   })
 
+  it("gives a token minted with an earlier default today's default", () => {
+    const beforeDocuments = [
+      "docs:*",
+      "widgets:*",
+      "records:*",
+      "annotations:*",
+      "threads:read",
+      "threads:write",
+      "search:read",
+    ]
+    expect(currentScopesForStored(beforeDocuments)).toEqual([
+      ...DEFAULT_AGENT_TOKEN_SCOPES,
+    ])
+    expect(currentScopesForStored(beforeDocuments)).toContain("documents:read")
+  })
+
   it("keeps any other scope list exactly as stored", () => {
     for (const scopes of [
       [...DEFAULT_AGENT_TOKEN_SCOPES],

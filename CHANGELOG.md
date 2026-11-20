@@ -32,6 +32,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Older agent connections:** An agent connected with an earlier default access now reads Docs and gets the Library's skills. Before, it saw no skills, and Settings showed it without read access.
 - **Full Worktable:** A Worktable at its storage limit refuses writes that don't fit from the moment it starts, not only once it has counted its storage a few seconds later.
 - **Export and import:** When a Worktable is too large to export with all its history, a package is too large to import, or the disk is full, Settings says so and what to do next, instead of "Export failed." with a technical reason.
 - **Export:** A Worktable at its 2 GiB limit always exports with all its history: packages can now be up to 2.25 GiB, room for the history, the offline viewer and a drawing saved a little past the limit. Before, a full Worktable of photos or PDFs could fail to export.

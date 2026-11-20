@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./constants": "./src/constants.ts",
+    "./sent-comment": "./src/sent-comment.ts",
     "./views-vnext": "./src/views-vnext.ts",
     "./mcp-clients": "./src/mcp-clients.ts",
     "./recognition": "./src/recognition.ts",

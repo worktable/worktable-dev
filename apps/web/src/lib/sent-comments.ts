@@ -4,7 +4,7 @@ import {
   ANNOTATION_SENT_TO_KEY,
   annotationSentTo,
   type SentCommentRef,
-} from "@worktable/types/constants"
+} from "@worktable/types/sent-comment"
 
 /**
  * A thread's delivery moved on: comments sent in it show the new state at

@@ -8,7 +8,7 @@ import type {
   VisitorComment,
 } from "@worktable/types"
 import { VISITOR_COMMENT_MAX_LENGTH } from "@worktable/types"
-import { annotationSentTo, type SentCommentRef } from "@worktable/types/constants"
+import { annotationSentTo, type SentCommentRef } from "@worktable/types/sent-comment"
 import { Badge } from "@worktable/ui/components/badge"
 import { Callout } from "@worktable/ui/components/callout"
 import { Button } from "@worktable/ui/components/button"

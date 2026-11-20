@@ -1,0 +1,67 @@
+# Routine dependency updates. Runtimes (Bun, Node, Rust, the preview
+# browser) and patched packages move by hand: their PRs also need source
+# archives, license inventories, checksums or regenerated files.
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 2
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+      # Follows the Bun pinned in package.json.
+      - dependency-name: "@types/bun"
+      # Pinned with the preview runtime's browser and checksums.
+      - dependency-name: playwright-core
+      - dependency-name: "@playwright/test"
+      # Carry local patches in patches/.
+      - dependency-name: "@blocknote/*"
+      - dependency-name: "@quickdrawjs/core"
+      # Plugin compatibility target.
+      - dependency-name: openclaw
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      time: "05:00"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /apps/desktop/src-tauri
+    schedule:
+      interval: monthly
+      time: "05:00"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 1
+    groups:
+      desktop:
+        applies-to: version-updates
+        update-types: [minor, patch]
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]

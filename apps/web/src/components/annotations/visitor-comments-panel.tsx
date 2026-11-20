@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useId, useMemo, useState } from "react"
+import { Suspense, lazy, useCallback, useId, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { MoreVertical } from "lucide-react"
@@ -26,6 +26,7 @@ import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { annotationQueryKeys } from "@/lib/annotations-queries"
+import { HttpError } from "@/lib/http"
 import { refreshLive } from "@/lib/live-refresh"
 import { RelativeTime } from "@/lib/time"
 import {
@@ -118,7 +119,7 @@ function sendLabel(name: string | null): string {
   return name ? `Send to ${name}` : "Add to Comments"
 }
 
-function requestId(): string {
+function newRequestId(): string {
   return crypto.randomUUID().replaceAll("-", "")
 }
 
@@ -152,6 +153,9 @@ export function VisitorCommentsPanel({
     true
   )
   const recipient = useRecipient(context, recipients)
+  // A send whose answer was lost is retried under the same id, so the
+  // server asks the recipient once even if the first attempt went through.
+  const unsettled = useRef<{ key: string; id: string } | null>(null)
   const list = useQuery({
     queryKey: visitorCommentsQueryKey(context.spaceId, context.documentId),
     queryFn: () => getVisitorComments(context.spaceId, context.documentId),
@@ -169,13 +173,18 @@ export function VisitorCommentsPanel({
   ): Promise<boolean> => {
     if (sending) return false
     setSending(true)
+    const key = JSON.stringify([comments, to, includeName])
+    const requestId =
+      unsettled.current?.key === key ? unsettled.current.id : newRequestId()
+    unsettled.current = { key, id: requestId }
     try {
       await sendVisitorComments(context.spaceId, {
         comments,
         to: to === NO_RECIPIENT ? null : to,
         includeName,
-        requestId: requestId(),
+        requestId,
       })
+      unsettled.current = null
       setSelected(new Set())
       const linkId = list.data?.comments.find(
         (comment) => comment.id === comments[0]?.id
@@ -207,8 +216,15 @@ export function VisitorCommentsPanel({
         ])
       )
       return true
-    } catch {
-      toast.error("Couldn’t send. Try again.")
+    } catch (error) {
+      // A refusal is settled; only an unanswered send keeps its id.
+      if (error instanceof HttpError && error.status < 500)
+        unsettled.current = null
+      toast.error(
+        error instanceof HttpError && error.status === 409
+          ? error.message
+          : "Couldn’t send. Try again."
+      )
       return false
     } finally {
       setSending(false)
@@ -236,6 +252,16 @@ export function VisitorCommentsPanel({
     (comment) => comment.status === "new" && comment.body
   )
   const earlier = comments.filter((comment) => !fresh.includes(comment))
+  // Earlier comments that never reached anyone, or whose recipient isn't
+  // answering, can still be sent, so the picker stays for them.
+  const canSendEarlier = earlier.some((comment) => {
+    if (!comment.body) return false
+    if (!comment.passed) return true
+    const sent = annotationSentTo(
+      byAnnotation.get(comment.passed.annotationId) ?? {}
+    )
+    return !sent || sent.state === "failed"
+  })
   const chosen = fresh.filter((comment) => selected.has(comment.id))
   const toggle = (id: string, on: boolean) =>
     setSelected((current) => {
@@ -325,7 +351,7 @@ export function VisitorCommentsPanel({
           </div>
         ) : (
           <>
-            {fresh.length > 0 && (
+            {(fresh.length > 0 || canSendEarlier) && (
               <div className="flex items-center gap-2 pt-3">
                 {recipients && (
                   <Suspense fallback={null}>
@@ -656,7 +682,7 @@ function VisitorRow({
                 align="end"
                 container={portalContainer ?? undefined}
               >
-                {sendable && (
+                {sendable && !comment.passed && (
                   <DropdownMenuItem onClick={() => setForm("note")}>
                     Add Note
                   </DropdownMenuItem>
@@ -758,7 +784,7 @@ function VisitorRow({
             }
           />
         )}
-        {form === "note" && sendable && (
+        {form === "note" && sendable && !comment.passed && (
           <NoteForm
             comment={comment}
             recipients={recipients}

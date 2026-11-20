@@ -31,7 +31,7 @@ import { wsManager } from "./ws.ts"
 import { CommentRecipientError, commentRecipients } from "./comment-recipients.ts"
 import { encodeTargetPath } from "./link-rewrite.ts"
 import { withStoreWriteLock } from "./store.ts"
-import { postThreadMessage } from "./thread-service.ts"
+import { listThreadParticipants, postThreadMessage } from "./thread-service.ts"
 
 export class VisitorCommentPassError extends Error {
   readonly status: 403 | 404 | 409 | 503
@@ -212,6 +212,18 @@ export async function sendVisitorComments(
         )
       )[0]!
     : null
+  // The ask is a thread request, so the recipient must be able to answer one
+  // here, which can take more than reading comments does.
+  if (
+    to &&
+    !(
+      await listThreadParticipants(identity, { kind: "space", spaceId }, true)
+    ).some((participant) => participant.id === to.id)
+  )
+    throw new VisitorCommentPassError(
+      `${to.name} can't be asked in a thread here`,
+      409
+    )
   const context = await visitorCommentNamespace()
   // Check the whole selection before passing any of it, so a send that is
   // refused leaves every comment as it was.

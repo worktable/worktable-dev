@@ -6,6 +6,7 @@ import {
   type AgentPlatformId,
 } from "./agent-platforms"
 import type { ParticipantRef } from "./threads"
+import { DEFAULT_AGENT_TOKEN_SCOPES } from "./mcp-clients"
 import type { GrokBotCandidate, GrokBotConnection } from "./grok-bot"
 
 export type AgentConnectionTarget =
@@ -129,6 +130,24 @@ const EARLIER_AGENT_PERMISSION_GROUP_SCOPES: readonly PermissionGroupTable[] = [
   },
 ]
 
+/**
+ * Default agent token scopes as they stood before each change, newest first.
+ * A token minted with one of these grants today's default, so a scope added to
+ * the default reaches agents connected before it.
+ */
+const EARLIER_DEFAULT_TOKEN_SCOPES: readonly (readonly string[])[] = [
+  // Before documents:read and documents:write joined the default.
+  [
+    "docs:*",
+    "widgets:*",
+    "records:*",
+    "annotations:*",
+    "threads:read",
+    "threads:write",
+    "search:read",
+  ],
+]
+
 function scopesForAccessIn(
   table: PermissionGroupTable,
   access: AgentAccess
@@ -201,7 +220,10 @@ export function accessForStoredScopes(
  */
 export function currentScopesForStored(scopes: readonly string[]): string[] {
   const access = accessForStoredScopes(scopes)
-  return access ? scopesForAccess(access) : [...scopes]
+  if (access) return scopesForAccess(access)
+  if (EARLIER_DEFAULT_TOKEN_SCOPES.some((earlier) => sameScopes(scopes, earlier)))
+    return [...DEFAULT_AGENT_TOKEN_SCOPES]
+  return [...scopes]
 }
 
 function grants(scopes: readonly string[], required: string): boolean {

@@ -5,6 +5,7 @@ import {
   listDirectoryThreads,
   pairingCompletionOnce,
   resolveWorktableAccount,
+  resolveWorktableCommentsTarget,
   resolveWorktableThreadTarget,
   worktableAccess,
   worktableThreadHandle,
@@ -140,6 +141,21 @@ describe("Worktable channel account setup", () => {
     expect(
       worktableChannel.config!.isConfigured!(resolveWorktableAccount(cfg), cfg)
     ).toBe(true)
+  })
+
+  it("reads the comments a recovered turn answers from its target", () => {
+    expect(
+      resolveWorktableCommentsTarget(
+        "comments:demo-space/ann_abcdefghijkl,ann_mnopqrstuvwx"
+      )
+    ).toEqual({
+      spaceId: "demo-space",
+      annotationIds: ["ann_abcdefghijkl", "ann_mnopqrstuvwx"],
+    })
+    expect(resolveWorktableCommentsTarget("comments:demo-space/")).toBeNull()
+    expect(
+      resolveWorktableCommentsTarget("thread:demo-space/thr_abcdefghijkl")
+    ).toBeNull()
   })
 
   it("qualifies Space targets and leaves Worktable targets unqualified", () => {

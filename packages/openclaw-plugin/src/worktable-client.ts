@@ -1,5 +1,6 @@
 import { name as packageName, version as packageVersion } from "../package.json"
 import type {
+  ClaimedWorktableComments,
   ClaimedWorktableDelivery,
   WorktableClient,
   WorktableParticipant,
@@ -14,6 +15,14 @@ export function worktableMcpEndpoint(server: string): URL {
   return url
 }
 
+/** Comments a recovered answer already reached, for OpenClaw's retries. */
+const answeredComments = new Set<string>()
+function rememberAnswered(key: string): void {
+  answeredComments.add(key)
+  if (answeredComments.size > 500)
+    answeredComments.delete(answeredComments.values().next().value!)
+}
+
 function textResult(result: unknown): Record<string, unknown> {
   const response = result as {
     isError?: boolean
@@ -22,14 +31,16 @@ function textResult(result: unknown): Record<string, unknown> {
   const text = response.content?.find((item) => item.type === "text")?.text
   if (!text) throw new Error("Worktable MCP returned no text result")
   if (response.isError) {
+    // Worktable answered and refused, as opposed to not answering at all.
+    const refusal = (error: Error) => Object.assign(error, { refused: true })
     try {
       const parsed = JSON.parse(text) as { code?: string; error?: string }
       const error = new Error(parsed.error ?? text)
       Object.assign(error, { code: parsed.code })
-      throw error
+      throw refusal(error)
     } catch (error) {
       if (error instanceof Error && "code" in error) throw error
-      throw new Error(text)
+      throw refusal(new Error(text))
     }
   }
   return JSON.parse(text) as Record<string, unknown>
@@ -41,13 +52,39 @@ type ThreadDeliveryCall = (
 
 export function claimWithThreadLocations(
   call: ThreadDeliveryCall,
-  waitSeconds: number
+  waitSeconds: number,
+  comments = false
 ): Promise<Record<string, unknown>> {
   return call({
     action: "claim",
     waitSeconds,
     threadLocationVersion: 2,
+    ...(comments ? { comments: true } : {}),
   })
+}
+
+/** A Worktable from before comments for runtimes refuses the option itself. */
+function refusedCommentsOption(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error)
+  return /comments/.test(text) && /unrecognized|unknown|invalid/i.test(text)
+}
+
+/**
+ * Claim, asking for comments too while this Worktable takes the option. One
+ * that refuses it is asked once more without, and not asked again.
+ */
+export async function claimAskingForComments(
+  call: ThreadDeliveryCall,
+  waitSeconds: number,
+  asks: { comments: boolean }
+): Promise<Record<string, unknown>> {
+  try {
+    return await claimWithThreadLocations(call, waitSeconds, asks.comments)
+  } catch (error) {
+    if (!asks.comments || !refusedCommentsOption(error)) throw error
+    asks.comments = false
+    return claimWithThreadLocations(call, waitSeconds)
+  }
 }
 
 // Worktable answers MCP POSTs with plain JSON (stateless, no sessions), so the
@@ -323,15 +360,69 @@ export class McpWorktableClient implements WorktableClient {
     return result.threads as WorktableThreadSummary[]
   }
 
+  /** Whether to ask for comments: until this Worktable says it doesn't know them. */
+  readonly #asks = { comments: true }
+
   async claim(
     waitSeconds = 25,
     signal?: AbortSignal
-  ): Promise<ClaimedWorktableDelivery | null> {
-    const result = await claimWithThreadLocations(
+  ): Promise<ClaimedWorktableDelivery | ClaimedWorktableComments | null> {
+    const result = await claimAskingForComments(
       (request) => this.#call("worktable_thread_delivery", request, signal),
-      waitSeconds
+      waitSeconds,
+      this.#asks
     )
-    return (result.delivery as ClaimedWorktableDelivery | null) ?? null
+    return (
+      (result.delivery as
+        | ClaimedWorktableDelivery
+        | ClaimedWorktableComments
+        | null) ?? null
+    )
+  }
+
+  async answerComments(input: {
+    spaceId: string
+    annotationIds: string[]
+    body: string
+    /** OpenClaw's id for this send, the same when it sends it again. */
+    deliveryId?: string
+  }): Promise<string[]> {
+    const answered: string[] = []
+    for (const annotationId of new Set(input.annotationIds)) {
+      // OpenClaw sends again after a failure; comments that already got
+      // this send don't get it twice.
+      const key = input.deliveryId
+        ? `${input.deliveryId}\0${input.spaceId}\0${annotationId}`
+        : undefined
+      if (key && answeredComments.has(key)) {
+        answered.push(annotationId)
+        continue
+      }
+      try {
+        await this.#call("worktable_annotations_write", {
+          action: "reply",
+          spaceId: input.spaceId,
+          annotationId,
+          body: input.body,
+        })
+        if (key) rememberAnswered(key)
+        answered.push(annotationId)
+      } catch (error) {
+        // Worktable refused it: deleted or out of reach since the turn
+        // began. Anything else, such as Worktable being down, fails the send
+        // so OpenClaw tries again.
+        if (!(error as { refused?: boolean }).refused) throw error
+      }
+    }
+    return answered
+  }
+
+  async replyToComments(input: {
+    messageId: string
+    leaseId: string
+    body: string
+  }): Promise<void> {
+    await this.#call("worktable_thread_delivery", { action: "reply", ...input })
   }
 
   async accept(messageId: string, leaseId: string): Promise<void> {

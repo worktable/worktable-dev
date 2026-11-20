@@ -44,7 +44,36 @@ export interface WorktableThread {
   }>
 }
 
+/**
+ * The comments waiting for this agent on one page, handed out together under
+ * one lease. One turn answers them; its answer is posted on each one.
+ */
+export interface ClaimedWorktableComments {
+  kind: "comments"
+  messageId: string
+  threadId: string
+  location: WorktableThreadLocation
+  leaseId: string
+  leaseExpiresAt: string
+  identityId: string
+  /** id: the page's durable id, which a rename doesn't change. */
+  page: { spaceId: string; path: string; title: string; id?: string }
+  /** The same on every retry of this batch. */
+  batchId?: string
+  comments: Array<{
+    annotationId: string
+    requestId: string
+    quote?: string
+    body: string
+    /** For an agent, who connected it, so each author is judged on its own. */
+    from: WorktableParticipant & { connectedBy?: string | null }
+    replies: Array<{ from: string; body: string }>
+  }>
+  connectedBy?: ClaimedWorktableDelivery["connectedBy"]
+}
+
 export interface ClaimedWorktableDelivery {
+  kind?: undefined
   messageId: string
   threadId: string
   location: WorktableThreadLocation
@@ -132,7 +161,25 @@ export interface WorktableClient {
   claim(
     waitSeconds?: number,
     signal?: AbortSignal
-  ): Promise<ClaimedWorktableDelivery | null>
+  ): Promise<ClaimedWorktableDelivery | ClaimedWorktableComments | null>
+  /**
+   * Reply on comments outside a lease, as when OpenClaw finishes a turn it
+   * recovered after a restart: each message it sends goes on the comments
+   * the turn was about, as it would go into a thread. Returns those replied on.
+   */
+  answerComments(input: {
+    spaceId: string
+    annotationIds: string[]
+    body: string
+    /** OpenClaw's id for this send, the same when it sends it again. */
+    deliveryId?: string
+  }): Promise<string[]>
+  /** Answer a page of comments under its lease. */
+  replyToComments(input: {
+    messageId: string
+    leaseId: string
+    body: string
+  }): Promise<void>
   accept(messageId: string, leaseId: string): Promise<void>
   progress(
     messageId: string,

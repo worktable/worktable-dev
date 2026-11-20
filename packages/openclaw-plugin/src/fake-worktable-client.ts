@@ -1,4 +1,5 @@
 import type {
+  ClaimedWorktableComments,
   ClaimedWorktableDelivery,
   WorktableClient,
   WorktableParticipant,
@@ -7,7 +8,7 @@ import type {
 } from "./types.js"
 
 export class FakeWorktableClient implements WorktableClient {
-  readonly deliveries: ClaimedWorktableDelivery[] = []
+  readonly deliveries: Array<ClaimedWorktableDelivery | ClaimedWorktableComments> = []
   readonly replies: Array<{
     location?: import("./types.js").WorktableThreadLocation
     spaceId?: string
@@ -48,7 +49,7 @@ export class FakeWorktableClient implements WorktableClient {
     return Promise.resolve(this.threadList)
   }
 
-  claim(): Promise<ClaimedWorktableDelivery | null> {
+  claim(): Promise<ClaimedWorktableDelivery | ClaimedWorktableComments | null> {
     return Promise.resolve(this.deliveries.shift() ?? null)
   }
 
@@ -76,6 +77,28 @@ export class FakeWorktableClient implements WorktableClient {
   ): Promise<void> {
     this.failed.push({ messageId, retryable, code, message })
     return Promise.resolve()
+  }
+
+  readonly commentReplies: Array<{ messageId: string; leaseId: string; body: string }> = []
+
+  readonly answered: Array<{ annotationId: string; body: string }> = []
+
+  async answerComments(input: {
+    spaceId: string
+    annotationIds: string[]
+    body: string
+  }): Promise<string[]> {
+    for (const annotationId of input.annotationIds)
+      this.answered.push({ annotationId, body: input.body })
+    return input.annotationIds
+  }
+
+  async replyToComments(input: {
+    messageId: string
+    leaseId: string
+    body: string
+  }): Promise<void> {
+    this.commentReplies.push(input)
   }
 
   reply(input: {

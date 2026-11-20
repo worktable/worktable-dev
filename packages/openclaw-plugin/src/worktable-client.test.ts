@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { createServer, type Socket } from "node:net"
 import {
+  claimAskingForComments,
   claimWithThreadLocations,
   McpWorktableClient,
 } from "./worktable-client.js"
@@ -165,6 +166,72 @@ describe("OpenClaw Worktable client", () => {
     }
   })
 
+  it("answers recovered comments once per send, skips gone ones, and fails the send while Worktable is down", async () => {
+    const replies: string[] = []
+    let down = false
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      async fetch(request) {
+        const rpc = (await request.json()) as {
+          id?: number
+          method: string
+          params?: { arguments?: { request?: { annotationId?: string } } }
+        }
+        if (rpc.id === undefined) return new Response(null, { status: 202 })
+        if (rpc.method === "initialize")
+          return Response.json({
+            jsonrpc: "2.0",
+            id: rpc.id,
+            result: {
+              protocolVersion: "2025-03-26",
+              capabilities: { tools: {} },
+              serverInfo: { name: "answers-test", version: "1" },
+            },
+          })
+        const annotationId = rpc.params?.arguments?.request?.annotationId ?? ""
+        if (annotationId === "ann_down" && down)
+          return new Response("Unavailable", { status: 503 })
+        if (annotationId === "ann_gone")
+          return Response.json({
+            jsonrpc: "2.0",
+            id: rpc.id,
+            result: {
+              isError: true,
+              content: [{ type: "text", text: "Annotation not found: ann_gone" }],
+            },
+          })
+        replies.push(annotationId)
+        return Response.json({
+          jsonrpc: "2.0",
+          id: rpc.id,
+          result: { content: [{ type: "text", text: "{}" }] },
+        })
+      },
+    })
+    const client = new McpWorktableClient(server.url.href, "test-token")
+    const send = (deliveryId: string) =>
+      client.answerComments({
+        spaceId: "demo",
+        annotationIds: ["ann_first", "ann_gone", "ann_down"],
+        body: "Done.",
+        deliveryId,
+      })
+    try {
+      down = true
+      await expect(send("out_1")).rejects.toThrow()
+      down = false
+      expect(await send("out_1")).toEqual(["ann_first", "ann_down"])
+      expect(replies).toEqual(["ann_first", "ann_down"])
+      // Another send with the same words is another answer.
+      await send("out_2")
+      expect(replies).toEqual(["ann_first", "ann_down", "ann_first", "ann_down"])
+    } finally {
+      await client.close()
+      server.stop(true)
+    }
+  })
+
   it("advertises location support while claiming deliveries", async () => {
     const requests: Array<Record<string, unknown>> = []
     const result = await claimWithThreadLocations(async (request) => {
@@ -183,6 +250,33 @@ describe("OpenClaw Worktable client", () => {
     const failure = Object.assign(new Error("Unauthorized"), { code: 401 })
     await expect(
       claimWithThreadLocations(() => Promise.reject(failure), 0)
+    ).rejects.toBe(failure)
+  })
+
+  it("asks for comments until a Worktable refuses the option, then claims without it", async () => {
+    const asks = { comments: true }
+    const requests: Array<Record<string, unknown>> = []
+    const older = async (request: Record<string, unknown>) => {
+      requests.push(request)
+      if ("comments" in request)
+        throw new Error('Invalid arguments: Unrecognized key: "comments"')
+      return { delivery: null }
+    }
+    expect(await claimAskingForComments(older, 0, asks)).toEqual({
+      delivery: null,
+    })
+    await claimAskingForComments(older, 0, asks)
+    expect(requests.map((request) => "comments" in request)).toEqual([
+      true,
+      false,
+      false,
+    ])
+    // Any other failure is the claim's, not the option's.
+    const failure = Object.assign(new Error("Unauthorized"), { code: 401 })
+    await expect(
+      claimAskingForComments(() => Promise.reject(failure), 0, {
+        comments: true,
+      })
     ).rejects.toBe(failure)
   })
 })

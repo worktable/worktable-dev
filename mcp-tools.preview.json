@@ -1129,14 +1129,7 @@
           }
         },
         "truncated": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "boolean"
-            }
-          ]
+          "type": "boolean"
         },
         "scope": {
           "type": "object",
@@ -1370,13 +1363,9 @@
                 "type": "string"
               },
               "spaceId": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
+                "type": [
+                  "string",
+                  "null"
                 ]
               },
               "spaceName": {
@@ -1951,45 +1940,10 @@
           ]
         },
         "documentId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            }
-          ]
+          "type": "string"
         },
         "path": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            }
-          ]
+          "type": "string"
         },
         "format": {
           "type": "object",
@@ -2013,14 +1967,7 @@
           "additionalProperties": false
         },
         "source": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            }
-          ]
+          "type": "string"
         },
         "encoding": {
           "description": "With source: contents for a text, code or table file (see contents), image for an image file, download for a binary file over 1 MiB (fetch downloadUrl), else base64.",
@@ -2040,23 +1987,7 @@
           "maximum": 9007199254740991
         },
         "sourceRevision": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            }
-          ]
+          "type": "string"
         },
         "downloadUrl": {
           "type": "string"
@@ -2122,13 +2053,9 @@
               ]
             },
             "sourceRevision": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
+              "type": [
+                "string",
+                "null"
               ]
             },
             "contentHash": {
@@ -3121,13 +3048,9 @@
               ]
             },
             "sourceRevision": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
+              "type": [
+                "string",
+                "null"
               ]
             },
             "contentHash": {
@@ -3488,26 +3411,7 @@
           "type": "string"
         },
         "path": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            }
-          ]
+          "type": "string"
         },
         "format": {
           "type": "object",
@@ -3531,14 +3435,7 @@
           "additionalProperties": false
         },
         "sourceRevision": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            }
-          ]
+          "type": "string"
         },
         "versionId": {
           "type": "string"
@@ -3832,20 +3729,7 @@
           "type": "string"
         },
         "path": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            }
-          ]
+          "type": "string"
         },
         "format": {
           "type": "object",
@@ -5182,13 +5066,9 @@
               ]
             },
             "sourceRevision": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
+              "type": [
+                "string",
+                "null"
               ]
             },
             "contentHash": {
@@ -5649,13 +5529,9 @@
         },
         "description": {
           "description": "Short description shown in Worktable; null clears it.",
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "string",
+            "null"
           ]
         },
         "html": {
@@ -5851,13 +5727,9 @@
               ]
             },
             "sourceRevision": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
+              "type": [
+                "string",
+                "null"
               ]
             },
             "contentHash": {
@@ -6608,13 +6480,9 @@
           "type": "string"
         },
         "sourceRevision": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "string",
+            "null"
           ]
         },
         "title": {
@@ -6816,13 +6684,9 @@
           "type": "number"
         },
         "nextOffset": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "number",
+            "null"
           ]
         },
         "stats": {
@@ -6994,13 +6858,9 @@
               ]
             },
             "sourceRevision": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
+              "type": [
+                "string",
+                "null"
               ]
             },
             "contentHash": {
@@ -8107,13 +7967,9 @@
           "type": "string"
         },
         "sourceRevision": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "string",
+            "null"
           ]
         },
         "title": {
@@ -8315,13 +8171,9 @@
           "type": "number"
         },
         "nextOffset": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "number",
+            "null"
           ]
         },
         "stats": {
@@ -8493,13 +8345,9 @@
               ]
             },
             "sourceRevision": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
+              "type": [
+                "string",
+                "null"
               ]
             },
             "contentHash": {
@@ -10135,13 +9983,9 @@
         },
         "titleField": {
           "description": "The field that names each record in lists, links and generated ids (a text, URL, email, person or select field). null clears it.",
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "string",
+            "null"
           ]
         }
       },
@@ -14247,14 +14091,7 @@
           "type": "string"
         },
         "path": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            }
-          ]
+          "type": "string"
         },
         "format": {
           "type": "object",
@@ -14389,14 +14226,7 @@
           "type": "string"
         },
         "guide": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string"
-            }
-          ]
+          "type": "string"
         },
         "profile": {
           "type": "string",
@@ -14475,13 +14305,9 @@
           "type": "boolean"
         },
         "diagramType": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "string",
+            "null"
           ]
         },
         "error": {
@@ -14491,33 +14317,21 @@
           "type": "string"
         },
         "viewBox": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "string",
+            "null"
           ]
         },
         "width": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "string",
+            "null"
           ]
         },
         "height": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "string",
+            "null"
           ]
         },
         "notices": {

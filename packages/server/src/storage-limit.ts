@@ -4,31 +4,39 @@
 //
 // Every Worktable has a limit, on every surface: 2 GiB by default
 // (DEFAULT_STORAGE_LIMIT_BYTES), the size export and import are proven to
-// carry (worktable-size.ts), so every Worktable stays exportable. `WORKTABLE_STORAGE_LIMIT_BYTES` sets another:
-// on Cloud, the plan's storage, which the control plane passes in the tenant
+// carry (worktable-size.ts). `WORKTABLE_STORAGE_LIMIT_BYTES` sets another: on
+// Cloud, the plan's storage, which the control plane passes in the tenant
 // environment (hosted-contract ENV.STORAGE_LIMIT_BYTES); elsewhere an
-// operator may set any value up to STORAGE_LIMIT_CEILING_BYTES. It counts
-// what storage-usage.ts counts, except transfers in progress (see
-// countedBytes): live files, history, deleted items and derived output.
+// operator may set any value up to STORAGE_LIMIT_CEILING_BYTES.
 //
-// Writes through Worktable can't pass it. Each write that adds bytes asks
-// for room first, from the running total in memory plus the writes admitted
-// and not yet counted, with no I/O unless it is near the limit, where it
-// reads the size of what it replaces. Writes that add nothing always pass:
-// deletes, moves, archives, and replacing something with something smaller.
-// A write the editor saves while someone types is counted, not refused.
+// The limit counts people's files: the workspace folder outside history,
+// their Docs, files, Records and threads (filesBytes), as Settings shows it.
+// Version history, deleted items and indexes don't count toward it; they
+// live under a total limit of STORAGE_CEILING_RATIO times the limit
+// (storageTotalLimitBytes), which holds the files, the history copy of each
+// file's current version, and an allowance for older history that pruning
+// keeps it within. Transfers in progress count toward neither (see
+// countedBytes).
 //
-// At the limit the oldest history goes first (storage-pruning.ts): a write
-// that would pass it waits a few seconds while pruning frees room, down to
-// PRUNE_TARGET_RATIO of the limit so it doesn't prune on every write. A
-// write that couldn't fit even if all removable history went is refused
-// with StorageLimitError and nothing is removed for it; so is one that
-// pruning can't make room for in time.
+// Writes through Worktable can't pass either. Each write that adds bytes
+// asks for room first, saying how many of them are people's files, from the
+// running totals in memory plus the writes admitted and not yet counted, with
+// no I/O unless it is near a limit, where it reads the size of what it
+// replaces. Writes that add nothing always pass: deletes, moves, archives,
+// and replacing something with something smaller. A write the editor saves
+// while someone types is counted, not refused.
+//
+// A write past the limit for files is refused at once: removing history
+// can't make room for files. At the total limit the oldest history goes
+// first (storage-pruning.ts): a write that would pass it waits a few seconds
+// while pruning frees room, down to PRUNE_TARGET_RATIO of the total limit so
+// it doesn't prune on every write. A write that couldn't fit even if all
+// removable history went is refused with StorageLimitError and nothing is
+// removed for it; so is one that pruning can't make room for in time.
 //
 // Writes on disk can't be refused. They are counted as the watcher sees
-// them, and once the total passes the limit the Worktable behaves as at its
-// limit: pruning starts and Worktable writes that add bytes are refused
-// until it is back under.
+// them: past the total limit pruning starts, and past either limit Worktable
+// writes that add to it are refused until it is back under.
 //
 // The first count runs a few seconds after the server starts. A write that
 // needs room before then starts it at once and waits for it, a few seconds
@@ -51,7 +59,10 @@ import {
   type StorageUsage,
 } from "./storage-usage.ts"
 import { prunableHistoryEpoch } from "./prunable-history.ts"
-import { PROVEN_WORKTABLE_BYTES } from "./worktable-size.ts"
+import {
+  PROVEN_WORKTABLE_BYTES,
+  STORAGE_CEILING_RATIO,
+} from "./worktable-size.ts"
 
 
 /** The limit for every Worktable that sets none. */
@@ -73,12 +84,23 @@ const PROMPT_PRUNE_MS = 5_000
 
 let configured: number | null = null
 let override: number | null = null
+let totalOverride: number | null = null
 
-/** This Worktable's storage limit in bytes. */
+/** This Worktable's storage limit in bytes: what people's files may take. */
 export function storageLimitBytes(): number {
   if (override !== null) return override
   configured ??= configuredLimit()
   return configured
+}
+
+/**
+ * The most everything may take: files, the history copy of each file's
+ * current version, and older history, deleted items and indexes within
+ * their allowance (worktable-size.ts STORAGE_CEILING_RATIO). Pruning keeps
+ * a Worktable under it; people never see it.
+ */
+export function storageTotalLimitBytes(limit = storageLimitBytes()): number {
+  return totalOverride ?? Math.round(limit * STORAGE_CEILING_RATIO)
 }
 
 function configuredLimit(): number {
@@ -162,10 +184,10 @@ export interface StorageReservation {
 
 const NO_RESERVATION: StorageReservation = { release() {} }
 
-/** Bytes admitted by writes still running. */
-let inflight = 0
+/** Bytes admitted by writes still running: all of them, and people's files among them. */
+const inflight = { bytes: 0, files: 0 }
 /** Bytes written or freed that the count includes once it reaches `sequence`. */
-let settling: { bytes: number; sequence: number }[] = []
+let settling: { bytes: number; files: number; sequence: number }[] = []
 
 /**
  * What counts toward the limit: everything but transfers in progress.
@@ -178,25 +200,44 @@ export function countedBytes(usage: StorageUsage): number {
   return usage.total.bytes - usage.parts.transfers.bytes
 }
 
-function usedBytes(usage: StorageUsage): number {
-  const { applied } = storageNoteSequences()
-  settling = settling.filter((entry) => entry.sequence > applied)
-  let pending = inflight
-  for (const entry of settling) pending += entry.bytes
-  return Math.max(0, countedBytes(usage) + pending)
+/** People's files: the workspace folder outside history, what the limit counts. */
+export function filesBytes(usage: StorageUsage): number {
+  return usage.parts.live.bytes
 }
 
-function reserve(bytes: number): StorageReservation {
-  inflight += bytes
+/** What is used now, counted and admitted: everything, and people's files. */
+function used(usage: StorageUsage): { bytes: number; files: number } {
+  const { applied } = storageNoteSequences()
+  settling = settling.filter((entry) => entry.sequence > applied)
+  let bytes = inflight.bytes
+  let files = inflight.files
+  for (const entry of settling) {
+    bytes += entry.bytes
+    files += entry.files
+  }
+  return {
+    bytes: Math.max(0, countedBytes(usage) + bytes),
+    files: Math.max(0, filesBytes(usage) + files),
+  }
+}
+
+function usedBytes(usage: StorageUsage): number {
+  return used(usage).bytes
+}
+
+function reserve(bytes: number, files: number): StorageReservation {
+  inflight.bytes += bytes
+  inflight.files += files
   let released = false
   return {
     release() {
       if (released) return
       released = true
-      inflight -= bytes
+      inflight.bytes -= bytes
+      inflight.files -= files
       // A write notes its paths before it returns, so the count includes it
       // once it has applied every note taken by now.
-      settling.push({ bytes, sequence: storageNoteSequences().noted })
+      settling.push({ bytes, files, sequence: storageNoteSequences().noted })
     },
   }
 }
@@ -210,34 +251,54 @@ export function storageGraceBytes(limit = storageLimitBytes()): number {
   return Math.min(GRACE_MAX_BYTES, Math.round(limit * GRACE_RATIO))
 }
 
-/** What a write admits beyond its bytes: `grace` lets it pass the limit by storageGraceBytes. */
+/**
+ * What a write admits beyond its bytes. `files`: how many of them are
+ * people's files, which the limit counts; the rest is history, which only
+ * the ceiling counts. All of them unless given. `grace`: it may pass the
+ * limit and the ceiling by storageGraceBytes.
+ */
 export interface StorageAdmission {
   grace?: boolean
+  files?: number
 }
 
 /**
- * Admit a write that adds `bytes`, at the moment it publishes. It never
- * waits, so a caller holding locks may use it. Throws StorageLimitError when
- * there is no room; `retryAfterPruning` then makes room and tries again.
+ * Admit a write that adds `bytes` in all, at the moment it publishes. It
+ * never waits, so a caller holding locks may use it. Throws
+ * StorageLimitError when there is no room: past the limit for people's
+ * files, which pruning history can't help, or past the ceiling, where
+ * `retryAfterPruning` makes room and tries again.
  */
 export function admitStorageWrite(
   bytes: number,
   options: StorageAdmission = {}
 ): StorageReservation {
-  if (!(bytes > 0)) return NO_RESERVATION
+  const files = options.files ?? bytes
+  if (!(bytes > 0) && !(files > 0)) return NO_RESERVATION
   const usage = storageUsage()
   if (!usage) return NO_RESERVATION
   const limit = storageLimitBytes()
-  const ceiling = limit + (options.grace ? storageGraceBytes(limit) : 0)
-  const used = usedBytes(usage)
-  if (used + bytes <= ceiling) return reserve(bytes)
-  throw new StorageLimitError(limit, used, undefined, bytes, ceiling)
+  const grace = options.grace ? storageGraceBytes(limit) : 0
+  const now = used(usage)
+  if (files > 0 && now.files + files > limit + grace) {
+    throw new StorageLimitError(limit, now.files)
+  }
+  const ceiling = storageTotalLimitBytes(limit) + grace
+  if (bytes > 0 && now.bytes + bytes > ceiling) {
+    throw new StorageLimitError(limit, now.files, undefined, bytes, ceiling)
+  }
+  return reserve(Math.max(0, bytes), Math.max(0, files))
 }
 
-/** Whether `bytes` more fit now. No side effects; nothing is reserved. */
-export function storageFits(bytes: number): boolean {
+/** Whether `bytes` more, `files` of them people's files, fit now. Reserves nothing. */
+export function storageFits(bytes: number, files = bytes): boolean {
   const usage = storageUsage()
-  return !usage || bytes <= 0 || usedBytes(usage) + bytes <= storageLimitBytes()
+  if (!usage) return true
+  const now = used(usage)
+  return (
+    (files <= 0 || now.files + files <= storageLimitBytes()) &&
+    (bytes <= 0 || now.bytes + bytes <= storageTotalLimitBytes())
+  )
 }
 
 /**
@@ -245,28 +306,41 @@ export function storageFits(bytes: number): boolean {
  * reports, which is read only near the limit. Call it before taking locks:
  * it may wait for pruning. Throws StorageLimitError when there is no room.
  */
-export async function reserveStorage(room: {
+export interface StorageRoom {
+  /** Bytes the write adds in all. */
   adds: number
+  /** Of them, people's files; all of them unless given. */
+  files?: number
+  /** Bytes it takes away in all, read only near the limit. */
   replaces?: () => Promise<number>
-}): Promise<StorageReservation> {
-  if (!(room.adds > 0)) return NO_RESERVATION
+  /** Of them, people's files; `replaces` unless `files` is given. */
+  replacesFiles?: () => Promise<number>
+}
+
+export async function reserveStorage(room: StorageRoom): Promise<StorageReservation> {
+  const files = room.files ?? room.adds
+  if (!(room.adds > 0) && !(files > 0)) return NO_RESERVATION
   if (!storageUsage()) await storageCounted()
   const usage = storageUsage()
   if (!usage) return NO_RESERVATION
-  if (usedBytes(usage) + room.adds <= storageLimitBytes()) {
-    return reserve(room.adds)
+  if (storageFits(room.adds, files)) {
+    return reserve(Math.max(0, room.adds), Math.max(0, files))
   }
   let bytes = room.adds
-  if (room.replaces) {
-    bytes -= await room.replaces().catch(() => 0)
-    if (bytes <= 0) return NO_RESERVATION
-  }
-  return retryAfterPruning(async () => admitStorageWrite(bytes))
+  let filesBytes = files
+  if (room.replaces) bytes -= await room.replaces().catch(() => 0)
+  const replacesFiles =
+    room.replacesFiles ?? (room.files === undefined ? room.replaces : undefined)
+  if (replacesFiles) filesBytes -= await replacesFiles().catch(() => 0)
+  if (bytes <= 0 && filesBytes <= 0) return NO_RESERVATION
+  return retryAfterPruning(async () =>
+    admitStorageWrite(bytes, { files: filesBytes })
+  )
 }
 
 /** Run `write` with room reserved for it; see `reserveStorage`. */
 export async function withStorageRoom<T>(
-  room: { adds: number; replaces?: () => Promise<number> },
+  room: StorageRoom,
   write: () => Promise<T>
 ): Promise<T> {
   const reservation = await reserveStorage(room)
@@ -352,7 +426,7 @@ let known: {
 function dueBytes(reclaimable: number): number {
   const usage = storageUsage()
   if (!usage || reclaimable <= 0) return 0
-  const limit = storageLimitBytes()
+  const limit = storageTotalLimitBytes()
   const target = Math.round(limit * PRUNE_TARGET_RATIO)
   const used = usedBytes(usage)
   let due = used >= limit ? Math.min(used - target, reclaimable) : 0
@@ -397,7 +471,7 @@ function runPruning(): Promise<void> {
           freed = result.bytes
           deferred ||= result.deferred
           if (freed > 0) {
-            settling.push({ bytes: -freed, sequence: storageNoteSequences().noted })
+            settling.push({ bytes: -freed, files: 0, sequence: storageNoteSequences().noted })
           }
         }
         known = deferred
@@ -441,13 +515,14 @@ async function waitForRoom(bytes: number, ceiling: number): Promise<void> {
 function pruneWhenOver(): void {
   const usage = storageUsage()
   if (!usage) return
-  if (usedBytes(usage) >= storageLimitBytes()) void runPruning()
+  if (usedBytes(usage) >= storageTotalLimitBytes()) void runPruning()
 }
 
 /** Start enforcing for the served workspace. Returns its stop. */
 export function startStorageLimits(): () => Promise<void> {
   stopped = false
-  inflight = 0
+  inflight.bytes = 0
+  inflight.files = 0
   settling = []
   waiting.clear()
   known = null
@@ -463,8 +538,17 @@ export function startStorageLimits(): () => Promise<void> {
 // ── What Settings shows ─────────────────────────────────────
 
 export interface StorageSummary extends StorageUsage {
-  /** `countedBytes`: what counts toward the limit, without transfers. */
-  limit: { bytes: number; warnAt: number; countedBytes: number }
+  /**
+   * `countedBytes`: what counts toward the limit, people's files. `totalBytes`
+   * and `totalLimitBytes`: everything but transfers, and the most it may take.
+   */
+  limit: {
+    bytes: number
+    warnAt: number
+    countedBytes: number
+    totalBytes: number
+    totalLimitBytes: number
+  }
   pruned: PrunedSummary | null
 }
 
@@ -477,7 +561,9 @@ export function storageSummary(): StorageSummary | null {
     limit: {
       bytes: storageLimitBytes(),
       warnAt: STORAGE_WARNING_RATIO,
-      countedBytes: countedBytes(usage),
+      countedBytes: filesBytes(usage),
+      totalBytes: countedBytes(usage),
+      totalLimitBytes: storageTotalLimitBytes(),
     },
     pruned: prunedSummary(),
   }
@@ -487,9 +573,10 @@ export function storageSummary(): StorageSummary | null {
 
 export function setStorageLimitForTests(
   bytes: number | null,
-  options: { promptPruneMs?: number } = {}
+  options: { promptPruneMs?: number; totalBytes?: number } = {}
 ): void {
   override = bytes
+  totalOverride = options.totalBytes ?? null
   configured = null
   promptPruneMs = options.promptPruneMs ?? PROMPT_PRUNE_MS
   known = null

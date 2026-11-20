@@ -2,6 +2,7 @@ import {
   formatStorageBytes,
   StorageLimitError,
   storageLimitBytes,
+  storageTotalLimitBytes,
 } from "./storage-limit.ts"
 import { resetTeamSpacePoliciesAfterContentReplacement } from "./team-policy.ts"
 import { ensureWorkspaceManifest, workspaceCacheKey } from "./workspace.ts"
@@ -1025,17 +1026,27 @@ export async function prepareWorkspaceImportJob(
     ) {
       throw new Error("workspace import is not ready to prepare")
     }
-    // What it holds replaces this Worktable, so it must fit its limit.
-    const holds = job.manifest.integrity.files.reduce(
-      (total, file) => total + file.size,
-      0
-    )
+    // What it holds replaces this Worktable, so it must fit: its files the
+    // limit, and everything, history included, the total limit.
+    let holds = 0
+    let files = 0
+    for (const file of job.manifest.integrity.files) {
+      holds += file.size
+      if (!file.path.startsWith("versions/")) files += file.size
+    }
     const limit = storageLimitBytes()
-    if (holds > limit) {
+    if (files > limit) {
       throw new StorageLimitError(
         limit,
-        holds,
-        `This export holds ${formatStorageBytes(holds)}, more than this Worktable's ${formatStorageBytes(limit)} limit.`
+        files,
+        `This export holds ${formatStorageBytes(files)} of files, more than this Worktable's ${formatStorageBytes(limit)} limit.`
+      )
+    }
+    if (holds > storageTotalLimitBytes(limit)) {
+      throw new StorageLimitError(
+        limit,
+        files,
+        "This export holds more version history than this Worktable can keep. Export it again with less history."
       )
     }
     const preparation = createWorkspaceReplacementPaths()

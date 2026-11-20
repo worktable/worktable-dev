@@ -33,9 +33,11 @@ import {
   storageGraceBytes,
   STORAGE_LIMIT_CEILING_BYTES,
   StorageLimitError,
+  formatStorageBytes,
   storageLimitBytes,
   storagePruningSettled,
   storageSummary,
+  storageTotalLimitBytes,
 } from "./storage-limit.ts"
 import { prunedHistoryFor, resetPrunedRecordForTests } from "./storage-pruned.ts"
 import {
@@ -129,6 +131,21 @@ const generations = async (documentId: DocumentId) =>
     })
   ).map((manifest) => manifest.id)
 
+/**
+ * Limits `room` above what everything takes now, for the total limit, and,
+ * for people's files, `filesRoom` above what they take (a gibibyte when not
+ * given, so only the total limit is in play).
+ */
+async function limitsAbove(room: number, filesRoom?: number) {
+  const total = await settled()
+  setStorageLimitForTests(
+    filesRoom === undefined
+      ? 1024 ** 3
+      : storageSummary()!.limit.countedBytes + filesRoom,
+    { promptPruneMs: 10_000, totalBytes: total + room }
+  )
+}
+
 /** Once the count, and any pruning a count started, have caught up. */
 async function settled(): Promise<number> {
   await storagePruningSettled()
@@ -193,9 +210,7 @@ describe("storage limit", () => {
     expect(olderBefore).toHaveLength(3)
 
     // Room for a little less than the next Doc and its version.
-    const roomForLess = async () =>
-      setStorageLimitForTests((await settled()) + 6 * KB, { promptPruneMs: 10_000 })
-    await roomForLess()
+    await limitsAbove(6 * KB)
 
     // The deleted item's trash goes first; every version stays.
     await createDoc("first", 4 * KB)
@@ -203,13 +218,13 @@ describe("storage limit", () => {
     expect(storageUsage()!.parts.trash.bytes).toBe(0)
     expect(await generations(older)).toEqual(olderBefore)
     expect(await generations(newer)).toEqual(newerBefore)
-    expect(usage).toBeLessThanOrEqual(storageLimitBytes())
+    expect(usage).toBeLessThanOrEqual(storageTotalLimitBytes())
 
     // Then the oldest versions in the whole Worktable, never a current one
     // or the one it replaced. Two writes ask at once, the second while the
     // first one's pass runs; pruning makes room for both, from the oldest,
     // and stops there.
-    setStorageLimitForTests((await settled()) + 2 * KB, { promptPruneMs: 10_000 })
+    await limitsAbove(2 * KB)
     let second: Promise<unknown> | null = null
     setStoragePruningHooksForTests({
       beforeVersions: () => {
@@ -220,7 +235,7 @@ describe("storage limit", () => {
     await second
     setStoragePruningHooksForTests({})
     usage = await settled()
-    expect(usage).toBeLessThanOrEqual(storageLimitBytes())
+    expect(usage).toBeLessThanOrEqual(storageTotalLimitBytes())
     expect(await generations(older)).toEqual(olderBefore.slice(0, 2))
     expect(await generations(newer)).toEqual(newerBefore)
     expect(
@@ -265,6 +280,11 @@ describe("storage limit", () => {
         await client.close()
       }
     }
+    // The notice is about people's files: with them at 90% of the limit.
+    setStorageLimitForTests(Math.ceil(storageSummary()!.limit.countedBytes / 0.9), {
+      promptPruneMs: 10_000,
+      totalBytes: storageTotalLimitBytes(),
+    })
     const preview = await agentReads("preview")
     expect(preview.versions.pruned).toEqual({ versions: 1, at: expect.any(String) })
     expect(preview.state.storage).toEqual({
@@ -295,7 +315,7 @@ describe("storage limit", () => {
     }
     const kept = first.documentId as DocumentId
     const oldest = (await generations(kept)).at(-1)!
-    setStorageLimitForTests((await settled()) + 4 * KB, { promptPruneMs: 10_000 })
+    await limitsAbove(4 * KB)
     let before = workspaceFiles()
 
     // A restore keeps its checkpoint, and the version before it, for good:
@@ -338,7 +358,7 @@ describe("storage limit", () => {
     expect(refused).toBeInstanceOf(StorageLimitError)
     expect(refused.code).toBe("STORAGE_LIMIT")
     expect(refused.message).toBe(
-      `This Worktable is at its ${Math.round(storageLimitBytes() / KB)} KB limit. Delete something to make room.`
+      `This Worktable is at its ${formatStorageBytes(storageLimitBytes())} limit. Delete something to make room.`
     )
     // Over REST, the server answers it with 507, the limit and what is used.
     const api = new Hono()
@@ -444,7 +464,7 @@ describe("storage limit", () => {
       createdBy: "test",
       source: "test",
     })
-    setStorageLimitForTests((await settled()) + 4 * KB, { promptPruneMs: 10_000 })
+    await limitsAbove(4 * KB, 64 * KB)
     const replaceReport = (fill: string, basedOn: string) =>
       replaceRegisteredDocument({
         spaceId: "notes",
@@ -503,7 +523,7 @@ describe("storage limit", () => {
       await restoreDocVersion("notes", "older", olderVersions[1]!).catch((error) => error)
     ).toBeInstanceOf(StorageLimitError)
     expect(await generations(older)).toEqual(olderVersions)
-    expect(await settled()).toBeLessThanOrEqual(storageLimitBytes())
+    expect(await settled()).toBeLessThanOrEqual(storageTotalLimitBytes())
 
     // A person's drawing keeps saving a little past the limit; an agent's
     // save is refused, and so is a person's that would go past the allowance.
@@ -532,7 +552,7 @@ describe("storage limit", () => {
     expect(drawn.status).toBe(200)
     sketch = (await drawn.json()) as typeof sketch
     await settled()
-    expect(storageSummary()!.limit.countedBytes).toBeGreaterThan(storageLimitBytes())
+    expect(storageSummary()!.limit.totalBytes).toBeGreaterThan(storageTotalLimitBytes())
     expect(
       new TextDecoder().decode(
         (await readRegisteredDocumentSource({ spaceId: "notes", path: "sketch" })).bytes
@@ -547,8 +567,8 @@ describe("storage limit", () => {
     const tooMuch = await save(ownerIdentity(), "d".repeat(storageGraceBytes() * 2))
     expect(tooMuch.status).toBe(507)
     await settled()
-    expect(storageSummary()!.limit.countedBytes).toBeLessThanOrEqual(
-      storageLimitBytes() + storageGraceBytes()
+    expect(storageSummary()!.limit.totalBytes).toBeLessThanOrEqual(
+      storageTotalLimitBytes() + storageGraceBytes()
     )
   })
 
@@ -583,7 +603,7 @@ describe("storage limit", () => {
       createdBy: "test",
       source: "test",
     })
-    setStorageLimitForTests((await settled()) + 1 * KB, { promptPruneMs: 10_000 })
+    await limitsAbove(1 * KB, 64 * KB)
     const before = await generations(spare)
     // The save needs more than the room plus the oldest version elsewhere,
     // so it fits only within its allowance, and only once that version goes.
@@ -606,7 +626,7 @@ describe("storage limit", () => {
     })
     expect(saved.status).toBe(200)
     expect(await generations(spare)).toEqual(before.slice(0, 2))
-    expect(await settled()).toBeLessThanOrEqual(storageLimitBytes() + storageGraceBytes())
+    expect(await settled()).toBeLessThanOrEqual(storageTotalLimitBytes() + storageGraceBytes())
   })
 
   it("leaves transfers out, counts a write on disk past the limit, and refuses the next new write", async () => {
@@ -687,12 +707,33 @@ describe("storage limit", () => {
     ).toBeInstanceOf(StorageLimitError)
   })
 
+  it("counts people's files toward the limit, not their history", async () => {
+    const kept = await docWithVersions("kept", 3, 16 * KB)
+    await settled()
+    const files = storageSummary()!.limit.countedBytes
+    // A limit just above the files: with their history, everything is well
+    // over it, and writes that fit the files still go.
+    setStorageLimitForTests(files + 20 * KB, { promptPruneMs: 10_000, totalBytes: 1024 ** 3 })
+    expect(storageSummary()!.limit.totalBytes).toBeGreaterThan(storageLimitBytes())
+    await createDoc("fits", 8 * KB)
+    expect(storageSummary()!.limit.countedBytes).toBeLessThanOrEqual(storageLimitBytes())
+    // Past the limit for files: refused at once, and nothing is pruned for
+    // it, though old history could go: removing history can't make room for
+    // files.
+    const before = await generations(kept)
+    const refused = await createDoc("too-much", 16 * KB).catch((error) => error)
+    expect(refused).toBeInstanceOf(StorageLimitError)
+    expect(refused.details.limitBytes).toBe(storageLimitBytes())
+    expect(await generations(kept)).toEqual(before)
+    expect(storageSummary()!.pruned).toBeNull()
+  })
+
   it("refuses a write that doesn't fit from the first moment after start", async () => {
     await createDoc("big", 32 * KB)
     // A server just started: nothing counted yet, the first count still a
     // minute away.
     for (const stop of stops) await stop()
-    setStorageLimitForTests(80 * KB, { promptPruneMs: 1_000 })
+    setStorageLimitForTests(40 * KB, { promptPruneMs: 1_000 })
     stops = [startStorageLimits(), startStorageAccounting({ firstCountDelayMs: 60_000 })]
     expect(storageUsage()).toBeNull()
     const started = Date.now()

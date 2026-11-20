@@ -88,7 +88,7 @@ import {
 import { logDocument, logError } from "./debug-log.ts";
 import { noteDeletedItems } from "./deleted-item-events.ts";
 import { noteStorageChange } from "./storage-usage.ts";
-import { withAdmittedRoom, withStorageRoom } from "./storage-limit.ts";
+import { withAdmittedRoom, withStorageRoom, type StorageAdmission } from "./storage-limit.ts";
 import { withVersionHeld } from "./version-holds.ts";
 
 // ============================================================
@@ -2779,9 +2779,11 @@ export async function createManualDocCheckpoint(
     const snapshot = await readDocSourceSnapshot(spaceId, docPath);
     const current = snapshot.result;
     if (current.error || current.data === null) return undefined;
+    // A saved version is history: it adds nothing to people's files.
     admit(
       snapshot.bytes?.byteLength ??
-        Buffer.byteLength(JSON.stringify(current.data))
+        Buffer.byteLength(JSON.stringify(current.data)),
+      { files: 0 }
     );
     const category = sourceCategory("manual-checkpoint", updatedBy);
     return recordDocVersion(spaceId, docPath, current, current, {
@@ -3166,14 +3168,20 @@ export async function writeDoc(
   }
   // The Doc and its version: twice its bytes, less what goes because of
   // it: the source it replaces, and history pruning can remove once it is
-  // written (see reclaimableAfterReplacementV2).
+  // written (see reclaimableAfterReplacementV2). People's files change by the
+  // source alone.
+  const sourceBytes = Buffer.byteLength(
+    typeof content === "string" ? content : JSON.stringify(content)
+  );
+  const replacedSource = async () => {
+    const file = await resolveDocFile(spaceId, sanitizeDocPath(docPath));
+    return file ? (await stat(file.path)).size : 0;
+  };
   return withStorageRoom(
     {
-      adds:
-        2 *
-        Buffer.byteLength(
-          typeof content === "string" ? content : JSON.stringify(content)
-        ),
+      adds: 2 * sourceBytes,
+      files: sourceBytes,
+      replacesFiles: replacedSource,
       replaces: async () => {
         const file = await resolveDocFile(spaceId, sanitizeDocPath(docPath));
         if (!file) return 0;
@@ -3573,7 +3581,7 @@ async function restoreDocVersionWithRoom(
   docPath: string,
   versionId: string,
   options: RestoreDocVersionOptions,
-  admit: (bytes: number) => void
+  admit: (bytes: number, options?: StorageAdmission) => void
 ): Promise<DocVersionRestoreResult> {
   const pathError = generationMutationPathError(docPath);
   if (pathError) {
@@ -3694,16 +3702,14 @@ async function restoreDocVersionWithRoom(
             }
 
             const content = version.after.content;
-            admit(
-              2 *
-                Buffer.byteLength(
-                  Array.isArray(content)
-                    ? JSON.stringify(content)
-                    : String(content ?? "")
-                ) -
-                (activeSource.bytes?.byteLength ??
-                  Buffer.byteLength(JSON.stringify(activeSource.result.data)))
+            const restored = Buffer.byteLength(
+              Array.isArray(content) ? JSON.stringify(content) : String(content ?? "")
             );
+            const replaced =
+              activeSource.bytes?.byteLength ??
+              Buffer.byteLength(JSON.stringify(activeSource.result.data));
+            // People's files change by the source alone; its version is history.
+            admit(2 * restored - replaced, { files: restored - replaced });
             if (activeSource.result.storedAs === "json" || Array.isArray(content)) {
               // Fence the old browser cache before committing any restored
               // content. A failed metadata write must leave the source intact.

@@ -939,7 +939,8 @@ async function handleCreateCheckpoint(c: Context, spaceId: string, widgetId: str
   const result = await withAdmittedRoom((admit) => withWidgetWriteLock(spaceId, widgetId, async () => {
     const current = await captureWidgetVersionContent(spaceId, widgetId);
     if (!current) return { ok: false as const };
-    admit(current.authoredSource?.htmlBytes.byteLength ?? Buffer.byteLength(current.html));
+    // A saved version is history: it adds nothing to people's files.
+    admit(current.authoredSource?.htmlBytes.byteLength ?? Buffer.byteLength(current.html), { files: 0 });
     const provenance = await recordWidgetVersion(spaceId, widgetId, current, {
       source: "rest-api",
       updatedBy: restWriteActor(c),

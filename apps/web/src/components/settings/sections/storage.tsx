@@ -7,19 +7,22 @@ import { useServerSettings } from "@/hooks/use-server-settings"
 import { OperationStatus } from "../operation-status"
 import { useSettingsSectionActive } from "../settings-dialog"
 
-/** What counts toward the limit; transfers in progress are shown apart. */
-const PARTS: { key: keyof StorageUsage["parts"]; label: string }[] = [
-  { key: "live", label: "Docs & Files" },
+/**
+ * What Worktable keeps besides people's files. None of it counts toward the
+ * limit: the server keeps it within its own allowance, oldest first.
+ */
+const KEPT: { key: keyof StorageUsage["parts"]; label: string }[] = [
   { key: "history", label: "Version History" },
   { key: "trash", label: "Deleted Items" },
   { key: "derived", label: "Indexes & Caches" },
+  { key: "transfers", label: "Transfers" },
 ]
 
 /** Settings read this recently are current enough when Data opens. */
 const FRESH_MS = 2_000
 
-// Storage, under Data: what this Worktable takes on disk against its limit,
-// read-only. It comes with the settings the Data page already loads, read
+// Storage, under Data: how much of its limit this Worktable's files take,
+// and, apart, what Worktable keeps besides them, read-only. It comes with the settings the Data page already loads, read
 // again each time Data opens (the server answers from memory); no polling.
 // At the limit the server removes the oldest history first; what it removed
 // shows here.
@@ -33,7 +36,8 @@ export function StorageSection() {
   }, [active, dataUpdatedAt, refetch])
   const storage = settings.data?.storage ?? null
   const limit = storage?.limit
-  const counted = limit ? (limit.countedBytes ?? storage.total.bytes) : 0
+  // People's files: what the limit counts.
+  const counted = limit ? (limit.countedBytes ?? storage.parts.live.bytes) : 0
   const share = storage && limit ? counted / limit.bytes : 0
   return (
     <div className="flex flex-col gap-3 rounded-xl card-surface p-4">
@@ -45,28 +49,24 @@ export function StorageSection() {
         <OperationStatus state="attention">Close to the limit.</OperationStatus>
       ) : null}
       <StorageRow
-        label="Total"
+        label="Used"
         value={
           storage
             ? limit
               ? `${humanBytes(counted)} of ${humanBytes(limit.bytes)}`
-              : humanBytes(storage.total.bytes)
+              : humanBytes(storage.parts.live.bytes)
             : null
         }
         strong
       />
-      {PARTS.map(({ key, label }) => (
-        <StorageRow
-          key={key}
-          label={label}
-          value={storage ? humanBytes(storage.parts[key].bytes) : null}
-        />
-      ))}
       <div className="flex flex-col gap-3 border-t border-border pt-3">
-        <StorageRow
-          label="Transfers"
-          value={storage ? humanBytes(storage.parts.transfers.bytes) : null}
-        />
+        {KEPT.map(({ key, label }) => (
+          <StorageRow
+            key={key}
+            label={label}
+            value={storage ? humanBytes(storage.parts[key].bytes) : null}
+          />
+        ))}
         <StorageRow
           label="Files"
           value={storage ? storage.total.files.toLocaleString() : null}

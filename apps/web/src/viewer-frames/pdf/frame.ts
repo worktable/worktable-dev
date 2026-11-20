@@ -12,6 +12,7 @@ import {
 import type { ViewerHostMessage } from "../../lib/viewer-frame-protocol"
 import { VIEWER_PIECE_BYTES } from "../../lib/viewer-frame-protocol"
 import { asset, assetArrived, hear, say, startWorker } from "../frame-host"
+import { createRail, type Rail } from "./rail"
 
 const container = document.getElementById("viewer-container") as HTMLDivElement
 const pages = document.getElementById("viewer-pages") as HTMLDivElement
@@ -100,6 +101,10 @@ let transport: HostTransport | null = null
 let viewer: PDFViewer | null = null
 let eventBus: EventBus | null = null
 let query = ""
+// The page browser, made once the pages are laid out, and whether the page
+// that holds this frame wants it open.
+let rail: Rail | null = null
+let railOpen = false
 let givePassword: ((password: string | null) => void) | null = null
 
 function state() {
@@ -189,13 +194,20 @@ async function open(
     // The width of the pane, up to a size that still reads as a page.
     viewer.currentScaleValue = "auto"
     if (message.page) viewer.currentPageNumber = message.page
+    void createRail({ pdf, viewer, linkService }).then((made) => {
+      rail = made
+      rail.setOpen(railOpen)
+    })
   })
   eventBus.on("pagerendered", () => {
     if (shown) return
     shown = true
     say({ type: "viewer.shown", ...state() })
   })
-  eventBus.on("pagechanging", () => say({ type: "viewer.state", ...state() }))
+  eventBus.on("pagechanging", () => {
+    rail?.setPage(viewer?.currentPageNumber ?? 1)
+    say({ type: "viewer.state", ...state() })
+  })
   eventBus.on("scalechanging", () => say({ type: "viewer.state", ...state() }))
   eventBus.on(
     "updatefindmatchescount",
@@ -216,7 +228,10 @@ function command(
 ) {
   if (!viewer || !eventBus) return
   const asked = message.command
-  if (asked.name === "page") {
+  if (asked.name === "rail") {
+    railOpen = asked.open
+    rail?.setOpen(railOpen)
+  } else if (asked.name === "page") {
     viewer.currentPageNumber = Math.min(
       Math.max(1, asked.page),
       viewer.pagesCount

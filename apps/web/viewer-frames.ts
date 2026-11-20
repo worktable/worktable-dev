@@ -74,13 +74,47 @@ export function viewerFrameCsp(hashes: {
 
 function frameStyles(): string {
   const { light, dark } = HTML_DOC_THEME
+  const roles = (theme: typeof dark) =>
+    [
+      `--viewer-background: ${theme === dark ? dark.card : light.background}`,
+      `--viewer-rail: ${theme === dark ? dark.background : light.card}`,
+      `--viewer-line: ${theme.border}`,
+      `--viewer-focus: ${theme.ring}`,
+      `--viewer-text: ${theme.foreground}`,
+      `--viewer-muted: ${theme["muted-foreground"]}`,
+      `--viewer-hover: ${theme["surface-hover"]}`,
+      `--viewer-selected: ${theme["surface-selected"]}`,
+    ].join("; ")
   return `
-:root { color-scheme: dark; --viewer-background: ${dark.card}; --viewer-line: ${dark.border}; --viewer-focus: ${dark.ring}; }
-:root[data-theme="light"] { color-scheme: light; --viewer-background: ${light.background}; --viewer-line: ${light.border}; --viewer-focus: ${light.ring}; }
+:root { color-scheme: dark; ${roles(dark)}; }
+:root[data-theme="light"] { color-scheme: light; ${roles(light)}; }
 html, body { height: 100%; margin: 0; }
-body { background: var(--viewer-background); }
+body { background: var(--viewer-background); font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
 #viewer-container { position: absolute; inset: 0; overflow: auto; outline: none; }
 .pdfViewer { --page-margin: 16px auto; --page-border: 1px solid var(--viewer-line); padding-bottom: 16px; }
+#viewer-rail { position: absolute; top: 0; bottom: 0; left: 0; z-index: 2; width: 168px; display: flex; flex-direction: column; background: var(--viewer-rail); border-right: 1px solid var(--viewer-line); }
+#viewer-rail[hidden], .rail-tabs[hidden], .rail-pages[hidden], .rail-outline[hidden] { display: none; }
+body[data-rail="open"] #viewer-container { left: 169px; }
+@media (max-width: 639px) {
+  #viewer-rail { width: min(72vw, 220px); box-shadow: 8px 0 24px -12px rgb(0 0 0 / 45%); }
+  body[data-rail="open"] #viewer-container { left: 0; }
+}
+.rail-tabs { display: flex; gap: 2px; padding: 8px 8px 0; }
+.rail-tabs button { flex: 1; padding: 5px 6px; border: 0; border-radius: 6px; background: none; color: var(--viewer-muted); font: inherit; font-weight: 500; cursor: pointer; }
+.rail-tabs button:hover { background: var(--viewer-hover); }
+.rail-tabs button[aria-selected="true"] { background: var(--viewer-selected); color: var(--viewer-text); }
+.rail-pages, .rail-outline { flex: 1; min-height: 0; overflow: auto; padding: 10px 8px; }
+.rail-page { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 100%; padding: 6px 0 10px; border: 0; background: none; color: var(--viewer-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.rail-picture { display: block; width: 120px; overflow: hidden; border-radius: 2px; background: #fff; outline: 1px solid var(--viewer-line); }
+.rail-picture img { display: block; width: 100%; height: 100%; }
+.rail-page:hover .rail-picture { outline-color: var(--viewer-muted); }
+.rail-page[aria-current="page"] { color: var(--viewer-text); }
+.rail-page[aria-current="page"] .rail-picture { outline: 2px solid var(--viewer-focus); }
+.rail-page:focus-visible, .rail-outline button:focus-visible, .rail-tabs button:focus-visible { outline: 2px solid var(--viewer-focus); outline-offset: -2px; }
+.rail-outline ul { margin: 0; padding: 0 0 0 12px; list-style: none; }
+.rail-outline > ul { padding-left: 0; }
+.rail-outline button { display: block; width: 100%; padding: 5px 6px; border: 0; border-radius: 6px; background: none; color: var(--viewer-text); font: inherit; text-align: left; cursor: pointer; }
+.rail-outline button:hover { background: var(--viewer-hover); }
 `
 }
 
@@ -140,6 +174,7 @@ export async function buildPdfViewerFrame(): Promise<ViewerFrameBuild> {
     '<html><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>PDF</title><style>${style}</style></head><body>`,
+    '<nav id="viewer-rail" aria-label="Pages" hidden></nav>',
     '<div id="viewer-container" tabindex="0"><div id="viewer-pages" class="pdfViewer"></div></div>',
     `<script type="text/plain" id="viewer-worker">${inScript(worker)}</script>`,
     `<script type="module">${main}</script></body></html>`,

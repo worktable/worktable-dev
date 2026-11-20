@@ -104,6 +104,15 @@ test("a PDF opens and reads on its page, inside a frame that can reach nothing",
   await page.getByRole("button", { name: "Zoom in" }).click()
   await expect(scale).not.toHaveText(before ?? "")
 
+  // The page browser beside it: a picture of each page, and a way there.
+  const pages = page.getByRole("button", { name: "Pages", exact: true })
+  await expect(pages).toHaveAttribute("aria-pressed", "true")
+  await expect(frame.locator(".rail-picture img")).toHaveCount(3)
+  await frame.getByRole("button", { name: "Page 2", exact: true }).click()
+  await expect(pageNumber).toHaveValue("2")
+  await pages.click()
+  await expect(frame.locator("#viewer-rail")).toBeHidden()
+
   // The file's content is data: the frame that parses it has no origin, no
   // session, no API and no network, and the frame can't be framed elsewhere.
   const inside = page
@@ -163,10 +172,11 @@ test("a reader finds text, opens at a linked page, and unlocks a file", async ({
   // Find counts every match and moves through them.
   await page.getByRole("button", { name: "Find", exact: true }).click()
   const findField = page.getByRole("textbox", { name: "Find in PDF" })
+  // It starts from the page in view: the second of three.
   await findField.fill("page")
-  await expect(page.getByText("1 of 3")).toBeVisible()
-  await findField.press("Enter")
   await expect(page.getByText("2 of 3")).toBeVisible()
+  await findField.press("Enter")
+  await expect(page.getByText("3 of 3")).toBeVisible()
   await findField.fill("nowhere in this file")
   await expect(page.getByText("No matches")).toBeVisible()
   await findField.press("Escape")

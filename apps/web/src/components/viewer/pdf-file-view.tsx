@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   MoveHorizontal,
+  PanelLeft,
   Search,
   X,
   ZoomIn,
@@ -30,6 +31,31 @@ import {
   type ViewerRefusal,
   type ViewerState,
 } from "@/lib/viewer-frame-protocol"
+
+/** Where the reader's choice to show the page browser is kept. */
+const RAIL_KEY = "worktable.pdf-pages"
+
+/**
+ * Whether the page browser starts open: as the reader last left it, else
+ * open beside a file of more than one page when the pane has room.
+ */
+function railStartsOpen(pages: number): boolean {
+  try {
+    const kept = window.localStorage.getItem(RAIL_KEY)
+    if (kept === "open" || kept === "closed") return kept === "open"
+  } catch {
+    // Storage can be off; fall through to the default.
+  }
+  return pages > 1 && window.innerWidth >= 1100
+}
+
+function keepRail(open: boolean): void {
+  try {
+    window.localStorage.setItem(RAIL_KEY, open ? "open" : "closed")
+  } catch {
+    // Not kept: the default applies next time.
+  }
+}
 
 const REFUSALS: Record<ViewerRefusal, string> = {
   password: "Password protected",
@@ -73,6 +99,12 @@ export default function PdfFileView({
   // The file asked for a password: whether the last one was wrong.
   const [asking, setAsking] = useState<{ retry: boolean } | null>(null)
   const [password, setPassword] = useState("")
+  // The page browser beside the file; null until the file is shown.
+  const [rail, setRail] = useState<boolean | null>(null)
+  const showRail = (open: boolean) => {
+    setRail(open)
+    frame.current?.command({ name: "rail", open })
+  }
 
   const goToTyped = useCallback(() => {
     const page = Number(typed)
@@ -144,6 +176,26 @@ export default function PdfFileView({
         </div>
         {shown ? (
           <div className="flex shrink-0 items-center gap-0.5">
+            {shown.pages > 1 ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-pressed={rail === true}
+                  className="aria-pressed:bg-surface-selected"
+                  onClick={() => {
+                    const open = !rail
+                    showRail(open)
+                    keepRail(open)
+                  }}
+                  title="Pages"
+                  aria-label="Pages"
+                >
+                  <PanelLeft />
+                </Button>
+                <div className="mx-1 h-5 w-px bg-border" />
+              </>
+            ) : null}
             {find !== null ? (
               <div className="mr-1 flex items-center gap-0.5">
                 <Input
@@ -169,7 +221,7 @@ export default function PdfFileView({
                   }}
                 />
                 <span
-                  className="min-w-14 text-center text-xs text-muted-foreground tabular-nums"
+                  className="min-w-20 px-1 text-center text-xs whitespace-nowrap text-muted-foreground tabular-nums"
                   aria-live="polite"
                 >
                   {find && found
@@ -334,7 +386,10 @@ export default function PdfFileView({
             byteLength={byteLength}
             {...(startPage ? { startPage } : {})}
             className="block h-full w-full border-0 bg-background"
-            onShown={setShown}
+            onShown={(state) => {
+              setShown(state)
+              if (state.pages > 1) showRail(railStartsOpen(state.pages))
+            }}
             onState={(state) => {
               setShown(state)
               setTyped(null)
@@ -343,6 +398,7 @@ export default function PdfFileView({
             onChanged={reload}
             onFind={setFound}
             onPassword={(retry) => setAsking({ retry })}
+            onRail={setRail}
             onKey={(key) => {
               if (key === "find") openFind()
               else if (key === "Escape" && find !== null) closeFind()

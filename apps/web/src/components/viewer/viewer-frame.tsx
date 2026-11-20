@@ -58,6 +58,7 @@ export function ViewerFrame({
   onChanged,
   onFind,
   onPassword,
+  onRail,
   onKey,
 }: {
   ref?: Ref<ViewerFrameHandle>
@@ -78,6 +79,8 @@ export function ViewerFrame({
   onFind?: (found: { current: number; total: number }) => void
   /** The file needs a password; `retry` when the last one was wrong. */
   onPassword?: (retry: boolean) => void
+  /** The page browser opened or closed itself. */
+  onRail?: (open: boolean) => void
   onKey?: (key: string) => void
 }) {
   const { resolvedTheme } = useTheme()
@@ -93,6 +96,7 @@ export function ViewerFrame({
     onChanged,
     onFind,
     onPassword,
+    onRail,
     onKey,
   })
   useEffect(() => {
@@ -103,6 +107,7 @@ export function ViewerFrame({
       onChanged,
       onFind,
       onPassword,
+      onRail,
       onKey,
     }
   })
@@ -249,6 +254,9 @@ export function ViewerFrame({
         case "viewer.password":
           window.clearTimeout(deadline)
           handlers.current.onPassword?.(message.retry === true)
+          return
+        case "viewer.rail":
+          handlers.current.onRail?.(message.open === true)
           return
         case "viewer.link":
           openLink(message.url)

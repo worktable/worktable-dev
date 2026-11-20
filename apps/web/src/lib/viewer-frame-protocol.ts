@@ -56,6 +56,8 @@ export type ViewerHostMessage =
 export type ViewerCommand =
   | { name: "page"; page: number }
   | { name: "zoom"; to: "in" | "out" | "fit" }
+  /** Show or hide the page browser beside the file. */
+  | { name: "rail"; open: boolean }
   /** Find text; an empty query ends finding and clears what was found. */
   | { name: "find"; query: string; direction?: "next" | "previous" }
 
@@ -72,6 +74,8 @@ export type ViewerFrameMessage = { token: string } & (
   | { type: "viewer.refused"; reason: ViewerRefusal }
   /** A link the reader followed; the page decides whether to open it. */
   | { type: "viewer.link"; url: string }
+  /** The page browser closed itself, as it does after a choice on a phone. */
+  | { type: "viewer.rail"; open: boolean }
   /** A key the reader pressed that the app owns, such as Escape. */
   | { type: "viewer.key"; key: string }
 )
@@ -97,6 +101,7 @@ const MESSAGE_TYPES = new Set([
   "viewer.state",
   "viewer.find",
   "viewer.password",
+  "viewer.rail",
   "viewer.refused",
   "viewer.link",
   "viewer.key",

@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { useRouterState } from "@tanstack/react-router"
 import {
   ChevronDown,
   ChevronUp,
@@ -86,6 +87,15 @@ export default function PdfFileView({
   const queryClient = useQueryClient()
   const frame = useRef<ViewerFrameHandle>(null)
   const [startPage] = useState(() => pdfPageFromHash(window.location.hash))
+  // A link to another page of the open file moves the viewer there.
+  const hash = useRouterState({ select: (state) => state.location.hash })
+  const lastHash = useRef(hash)
+  useEffect(() => {
+    if (hash === lastHash.current) return
+    lastHash.current = hash
+    const page = pdfPageFromHash(`#${hash}`)
+    if (page) frame.current?.command({ name: "page", page })
+  }, [hash])
   const [shown, setShown] = useState<ViewerState | null>(null)
   const [refused, setRefused] = useState<ViewerRefusal | null>(null)
   // The page number as typed, until it is entered or the reader moves on.

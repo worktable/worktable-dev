@@ -259,9 +259,10 @@ function command(
 hear((message) => {
   if (message.type === "viewer.open") void open(message)
   else if (message.type === "viewer.bytes") {
-    if (message.data) {
-      transport?.arrived(message.begin, new Uint8Array(message.data))
-    }
+    transport?.arrived(message.begin, new Uint8Array(message.data))
+  } else if (message.type === "viewer.theme") {
+    document.documentElement.dataset.theme =
+      message.theme === "light" ? "light" : "dark"
   } else if (message.type === "viewer.asset")
     assetArrived(message.id, message.data)
   else if (message.type === "viewer.password") givePassword?.(message.password)

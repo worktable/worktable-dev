@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { startWebHarness, type WebHarness } from "./harness"
+import { THEME_STORAGE_KEY } from "../src/lib/theme"
 
 /**
  * A valid PDF with one line of text on each page. `padding` adds that many
@@ -113,6 +114,30 @@ test("a PDF opens and reads on its page, inside a frame that can reach nothing",
   await pages.click()
   await expect(frame.locator("#viewer-rail")).toBeHidden()
 
+  // A change of theme reaches the open viewer without starting it again.
+  const frames: string[] = []
+  page.on("request", (request) => {
+    if (request.url().includes("/api/viewers/pdf")) frames.push(request.url())
+  })
+  const theme = () =>
+    frame.locator("html").getAttribute("data-theme", { timeout: 5_000 })
+  await page.evaluate((key) => {
+    localStorage.setItem(key, "system")
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key,
+        newValue: "system",
+        storageArea: localStorage,
+      })
+    )
+  }, THEME_STORAGE_KEY)
+  await page.emulateMedia({ colorScheme: "light" })
+  await expect.poll(theme).toBe("light")
+  await page.emulateMedia({ colorScheme: "dark" })
+  await expect.poll(theme).toBe("dark")
+  await expect(frame.getByText("Third and last page")).toBeAttached()
+  expect(frames).toEqual([])
+
   // The file's content is data: the frame that parses it has no origin, no
   // session, no API and no network, and the frame can't be framed elsewhere.
   const inside = page
@@ -223,6 +248,24 @@ test("a large PDF is read in pieces, not whole", async ({ page }) => {
     return total + Number(end) - Number(begin) + 1
   }, 0)
   expect(fetched).toBeLessThan(1024 * 1024)
+})
+
+test("a PDF whose bytes stop arriving says so instead of waiting", async ({
+  page,
+}) => {
+  // The first piece arrives; every later read fails.
+  await page.route("**/documents/file?*", (route) => {
+    const range = route.request().headers()["range"]
+    return range && !range.startsWith("bytes=0-")
+      ? route.abort()
+      : route.continue()
+  })
+  await page.goto(`${harness.webUrl}/spaces/papers/documents/long.pdf`)
+  // Well inside the 30 seconds the viewer gives a file to show.
+  await expect(page.getByText("Couldn’t load preview")).toBeVisible({
+    timeout: 15_000,
+  })
+  await page.unroute("**/documents/file?*")
 })
 
 test("a file that can't be shown still says so and downloads", async ({

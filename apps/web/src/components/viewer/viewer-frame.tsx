@@ -112,7 +112,13 @@ export function ViewerFrame({
     }
   })
   const answerPassword = useRef<(password: string | null) => void>(() => {})
-  const src = viewerUrl(viewer, "", [`theme=${resolvedTheme}`])
+  // The frame starts in the theme of the moment and follows it from there,
+  // so a change of theme never restarts it and loses the reader's place.
+  const [startTheme] = useState(resolvedTheme)
+  const src = viewerUrl(viewer, "", [`theme=${startTheme}`])
+  useEffect(() => {
+    post.current({ type: "viewer.theme", theme: resolvedTheme })
+  }, [resolvedTheme])
 
   useImperativeHandle(ref, () => ({
     command: (command) => post.current({ type: "viewer.command", command }),
@@ -207,13 +213,17 @@ export function ViewerFrame({
           const range = clampViewerRead(message.begin, message.end, byteLength)
           // The whole of what it asked for, or nothing: pdf.js can't use
           // part of a piece.
-          const data = range
-            ? await read(range.begin, range.end).catch(() => null)
-            : null
-          send(
-            { type: "viewer.bytes", begin: message.begin, data },
-            data ? [data] : []
-          )
+          // A read that fails is tried twice more, a moment apart; one that
+          // still fails ends the open, and the page shows why.
+          let data: ArrayBuffer | null = null
+          for (let attempt = 0; range && attempt < 3 && !over; attempt++) {
+            if (attempt > 0)
+              await new Promise((r) => setTimeout(r, 500 * attempt))
+            data = await read(range.begin, range.end).catch(() => null)
+            if (data) break
+          }
+          if (!data) return refuse("failed")
+          send({ type: "viewer.bytes", begin: message.begin, data }, [data])
           return
         }
         case "viewer.asset": {

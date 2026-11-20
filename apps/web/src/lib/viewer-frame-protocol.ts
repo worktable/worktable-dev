@@ -46,9 +46,11 @@ export type ViewerHostMessage =
       /** The page to start at, from 1. */
       page?: number
     }
-  | { type: "viewer.bytes"; begin: number; data: ArrayBuffer | null }
+  | { type: "viewer.bytes"; begin: number; data: ArrayBuffer }
   | { type: "viewer.asset"; id: string; data: ArrayBuffer | null }
   | { type: "viewer.command"; command: ViewerCommand }
+  /** The app's theme changed; the frame follows without starting again. */
+  | { type: "viewer.theme"; theme: "light" | "dark" }
   /** The password a reader typed, or null when they gave up. */
   | { type: "viewer.password"; password: string | null }
 

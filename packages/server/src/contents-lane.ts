@@ -51,6 +51,7 @@ const BACKGROUND_QUEUE_MAX = 256
 export type ParsingFailure =
   | "off"
   | "busy"
+  | "source"
   | "time"
   | "memory"
   | "output"
@@ -82,6 +83,7 @@ export interface ParsingJob {
 const FAILURE_MESSAGES: Record<ParsingFailure, string> = {
   off: "Reading this kind of file is turned off on this Worktable.",
   busy: "Worktable is busy reading other files. Ask again in a moment.",
+  source: "Worktable couldn't read this file to parse it. Ask again in a moment.",
   time: "Reading this file took too long, so Worktable stopped.",
   memory: "Reading this file needed too much memory, so Worktable stopped.",
   output: "This file gave more text than Worktable keeps, so it stopped.",
@@ -178,6 +180,9 @@ async function runWorker(job: ParsingJob): Promise<ParsingResult> {
     })().catch(() => {
       // A worker that exits or is stopped early closes its input; what it
       // wrote back, or why it was stopped, still says how the job ended.
+      // Bytes that couldn't be read stop the worker at once: ending its
+      // input instead would have it parse part of a file as all of it.
+      if (!ended.signal.aborted) stop("source")
     })
     // Bytes that stop coming can't hold the lane: a worker stopped at its
     // deadline ends the job.

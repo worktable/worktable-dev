@@ -62,6 +62,14 @@ describe("the parsing lane", () => {
       why: "time",
     })
     expect(told).toBe(true)
+    // Bytes that can't be read end the job at once, never as a timeout.
+    const unreadable: ParsingJob["bytes"] = async (write) => {
+      await write(new TextEncoder().encode("a"))
+      throw new Error("the file changed while it was read")
+    }
+    const started = performance.now()
+    expect(await parse("echo", { bytes: unreadable })).toMatchObject({ kind: "failed", why: "source" })
+    expect(performance.now() - started).toBeLessThan(10_000)
     // The lane is still there for the next file.
     expect(await parse("echo")).toMatchObject({ kind: "ok" })
   }, 30_000)

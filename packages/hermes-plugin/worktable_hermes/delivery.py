@@ -20,8 +20,10 @@ def is_comments(delivery: dict) -> bool:
 def conversation_id(delivery: dict) -> str:
     """One Hermes chat per Worktable thread and conversation identity, or per commented page."""
     if is_comments(delivery):
+        # Keyed on the page's id when Worktable gives one, so a renamed page
+        # keeps its chat and a retried batch its saved answer.
         page = delivery["page"]
-        return f"{page['spaceId']}/comments/{page['path']}"
+        return f"{page['spaceId']}/comments/{page.get('id') or page['path']}"
     where = location(delivery)
     thread = delivery.get("thread") or {}
     thread_id = delivery["threadId"]

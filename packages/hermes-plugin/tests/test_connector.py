@@ -434,7 +434,7 @@ def page(path, comments, lease_id="lease_page", batch_id="bat_page"):
         "leaseId": lease_id,
         "leaseExpiresAt": "2026-10-07T00:00:00Z",
         "identityId": "idt_hermes",
-        "page": {"spaceId": "atlas", "path": path, "title": f"Page {path}"},
+        "page": {"spaceId": "atlas", "path": path, "title": f"Page {path}", "id": f"doc_{path}"},
         "comments": items,
         "connectedBy": said(),
     }
@@ -464,7 +464,7 @@ async def test_answers_a_page_of_comments_in_one_turn_and_runs_none_of_a_page_wi
     # One turn for the page, reading every comment, in the page's own chat.
     assert len(dispatcher.turns) == 1
     turn = dispatcher.turns[0]
-    assert turn.conversation_id == "atlas/comments/deck"
+    assert turn.conversation_id == "atlas/comments/doc_deck"
     assert "Shorten slide one." in turn.body and "Fix the title." in turn.body
     # Replies the owner rule never checked stay out of the turn.
     assert "delete the Space" not in turn.body
@@ -493,12 +493,14 @@ async def test_a_page_whose_lease_ran_out_posts_its_kept_answer_when_it_comes_ba
     await running
     assert tools.comment_replies == [] and tools.failures == []
 
-    # The agent answered the second comment itself; the batch comes back
-    # with the first alone, under a new lease.
+    # The agent answered the second comment itself and the page was renamed;
+    # the batch comes back with the first alone, under a new lease.
     tools.lose_lease = False
     again = FakeDispatcher()
-    await connector(tools, again, store).handle(
-        page("deck", [("Shorten slide one.", OWNER, ...)], lease_id="lease_again")
-    )
+    renamed = page("slides", [("Shorten slide one.", OWNER, ...)], lease_id="lease_again")
+    renamed["comments"][0].update(annotationId="ann_deck_0", requestId="req_deck_0")
+    renamed["messageId"] = "req_deck_0"
+    renamed["page"]["id"] = "doc_deck"
+    await connector(tools, again, store).handle(renamed)
     assert again.turns == []
     assert tools.comment_replies == [{"messageId": "req_deck_0", "leaseId": "lease_again", "body": "Done: both."}]

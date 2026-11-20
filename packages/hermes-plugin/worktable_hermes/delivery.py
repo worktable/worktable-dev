@@ -80,9 +80,9 @@ def comments_text(delivery: dict) -> str:
         lines += ["", f"Comment {comment['annotationId']}, from {(comment.get('from') or {}).get('name', 'someone')}:"]
         if comment.get("quote"):
             lines.append(f"On the text: “{comment['quote']}”")
+        # Only the words that asked: earlier replies may come from people the
+        # owner rule never checked. Hermes can read them with its tools.
         lines.append(comment.get("body") or "")
-        for reply in comment.get("replies") or []:
-            lines.append(f"Reply from {reply.get('from')}: {reply.get('body')}")
     lines += [
         "",
         "Do what they ask with your Worktable tools. You can answer a comment in it yourself; "

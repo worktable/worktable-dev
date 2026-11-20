@@ -17,11 +17,11 @@
   "dependencies": {
     "@worktable/hosted-contract": "workspace:*",
     "@worktable/types": "workspace:*",
-    "posthog-js": "^1.438.13",
-    "react": "^19.2.4"
+    "posthog-js": "^1.449.0",
+    "react": "^19.3.1"
   },
   "devDependencies": {
-    "@types/react": "^19.2.10"
+    "@types/react": "^19.3.0"
   },
   "license": "MIT"
 }

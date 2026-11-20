@@ -448,6 +448,26 @@ describe("storage limit", () => {
     expect(
       (await readRegisteredDocumentSource({ spaceId: "notes", path: "single" })).bytes
     ).toEqual(bytes(16 * KB, "single"))
+    // So is restoring the version before the current one: a restore can mark
+    // the version it replaces as a checkpoint, which keeps that older one
+    // too, so it can't count on making room. Both restore paths.
+    const olderVersions = await generations(older)
+    const olderNow = await readRegisteredDocumentSource({ spaceId: "notes", path: "older" })
+    expect(
+      await restoreRegisteredDocumentVersion({
+        spaceId: "notes",
+        path: "older",
+        versionId: olderVersions[1]!,
+        expectedRevision: olderNow.sourceRevision,
+        restoredBy: "test",
+        source: "test",
+      }).catch((error) => error)
+    ).toBeInstanceOf(StorageLimitError)
+    expect(
+      await restoreDocVersion("notes", "older", olderVersions[1]!).catch((error) => error)
+    ).toBeInstanceOf(StorageLimitError)
+    expect(await generations(older)).toEqual(olderVersions)
+    expect(await settled()).toBeLessThanOrEqual(storageLimitBytes())
 
     // A person's drawing keeps saving, counted; an agent's save is refused.
     const save = async (identity: TokenIdentity, text: string) => {

@@ -1321,7 +1321,10 @@ export async function reclaimableAfterReplacementV2(input: {
       ? { checkpoint: { meaningful: true, kind: "manual" } as const }
       : {}),
   } as Pick<DocumentGenerationManifestV2, "id" | "checkpoint">
-  const freed = (after: typeof newestFirst, removed?: string) => {
+  const freed = (
+    after: readonly Pick<DocumentGenerationManifestV2, "id" | "checkpoint">[],
+    removed?: string
+  ) => {
     const kept = protectedDocumentGenerations([added, ...after])
     let bytes = 0
     for (const manifest of newestFirst) {
@@ -1330,7 +1333,19 @@ export async function reclaimableAfterReplacementV2(input: {
     }
     return bytes
   }
-  const asNew = freed(newestFirst)
+  // A write from another kind of author also marks the version it replaces
+  // as a checkpoint (a source transition), which can keep an older version
+  // protected as the newest that is not one. Count only what goes either way.
+  const asNew = Math.min(
+    freed(newestFirst),
+    freed([
+      {
+        id: current.id,
+        checkpoint: { meaningful: true, kind: "source-transition" },
+      },
+      ...newestFirst.slice(1),
+    ])
+  )
   if (
     input.mayContinue === false ||
     input.writesCheckpoint ||

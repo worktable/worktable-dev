@@ -337,16 +337,40 @@ function ThreadConversation({
   )
 
   // A thread a search opened at one of its messages shows that message, as
-  // a reply's quote does when it is followed.
+  // a reply's quote does when it is followed. Messages away from the screen
+  // take an estimated height until they are drawn, so the first scroll lands
+  // near it; it is centred again until it stays.
   const openedAt = useRef<string | null>(null)
+  const centreOn = useStableCallback((messageId: string) => {
+    const attempt = (tries: number) => {
+      jumpToMessage(messageId, { align: "center" })
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const viewport = viewportRef.current
+          const target = viewport?.querySelector(
+            `[data-message-id="${CSS.escape(messageId)}"]`
+          )
+          if (!viewport || tries <= 1) return
+          if (target) {
+            const shown = viewport.getBoundingClientRect()
+            const at = target.getBoundingClientRect()
+            const off = at.top + at.height / 2 - (shown.top + shown.height / 2)
+            if (Math.abs(off) <= 8) return
+          }
+          attempt(tries - 1)
+        })
+      )
+    }
+    attempt(10)
+  })
   useEffect(() => {
     if (!openAt || openedAt.current === openAt) return
     openedAt.current = openAt
     const loaded = messages.some((message) => message.id === openAt)
     void (loaded ? Promise.resolve() : loadReplyTarget(openAt)).then(() =>
-      requestAnimationFrame(() => jumpToMessage(openAt, { align: "center" }))
+      requestAnimationFrame(() => centreOn(openAt))
     )
-  }, [openAt, messages, loadReplyTarget, jumpToMessage])
+  }, [openAt, messages, loadReplyTarget, centreOn])
 
   const items = useMemo(() => {
     const rows: ReactNode[] = []

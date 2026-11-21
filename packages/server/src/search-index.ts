@@ -1027,7 +1027,16 @@ async function syncSegmentThreads(
       if (error.code === "ENOENT") gone.add(threadId);
       return null;
     });
-    if (!stats) continue;
+    if (!stats) {
+      if (!gone.has(threadId)) {
+        // There but not readable now: its entries stay, and it is tried
+        // again after a pause.
+        current.add(threadId);
+        segment.threadsForced.add(threadId);
+        segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
+      }
+      continue;
+    }
     current.add(threadId);
     const revision = `${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}:${stats.ino}`;
     const previous = segment.threads.get(threadId);

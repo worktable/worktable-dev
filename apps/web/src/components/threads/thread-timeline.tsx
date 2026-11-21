@@ -366,7 +366,13 @@ function ThreadConversation({
     attempt(10)
   })
   useEffect(() => {
-    if (!openAt || openedAt.current === openAt) return
+    if (!openAt) {
+      // The thread was opened again without a message: nothing pending
+      // jumps, and the same message can be opened once more.
+      openedAt.current = null
+      return
+    }
+    if (openedAt.current === openAt) return
     openedAt.current = openAt
     const loaded = messages.some((message) => message.id === openAt)
     void (loaded ? Promise.resolve() : loadReplyTarget(openAt)).then(() =>

@@ -367,7 +367,7 @@ function PaletteBody({
   }, [typed])
 
   const {
-    data: results,
+    data: found,
     isPlaceholderData,
     isError,
   } = useQuery({
@@ -379,8 +379,10 @@ function PaletteBody({
       ...(kind ? { kind } : {}),
       ...(spaceId ? { spaceId } : {}),
     }),
+    select: (answer) => answer,
     placeholderData: keepPreviousData,
   })
+  const results = found?.results
   // The rows on screen answer what is typed now, not an earlier query.
   const settled = searched === typed && !isPlaceholderData
 
@@ -451,9 +453,10 @@ function PaletteBody({
     [skillLibraries, spaces]
   )
 
+  // The words typed, and the words a misspelled one was searched as.
   const tokens = useMemo(
-    () => searched.split(/\s+/).filter(Boolean),
-    [searched]
+    () => [...searched.split(/\s+/).filter(Boolean), ...(found?.corrected ?? [])],
+    [searched, found?.corrected]
   )
 
   const rows = useMemo<Row[]>(() => {

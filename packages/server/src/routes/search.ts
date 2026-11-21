@@ -7,7 +7,7 @@ import {
 } from "@worktable/types";
 import { requireScope } from "../auth.ts";
 import { withContentRevisions } from "../document-content-revision.ts";
-import { searchWithStatus } from "../search-index.ts";
+import { searchWithStatus, shownCorrections } from "../search-index.ts";
 import { withSkills } from "../skill-libraries.ts";
 import { hasScope } from "../token-store.ts";
 
@@ -46,7 +46,7 @@ searchRouter.get("/", async (c) => {
   const maxResultsRaw = c.req.query("maxResults");
   const maxResults = maxResultsRaw ? Math.max(1, Math.min(100, Number(maxResultsRaw) || 20)) : 20;
 
-  const { results, complete } = await searchWithStatus(query, {
+  const { results, complete, corrected } = await searchWithStatus(query, {
     spaceId,
     searchBlocks,
     includeArchived,
@@ -79,5 +79,12 @@ searchRouter.get("/", async (c) => {
 
   // While the index is still building, more matches may exist; the client
   // asks again shortly.
-  return c.json({ results: rows, ...(complete ? {} : { indexing: true }) });
+  // Words searched for in place of misspelled ones, to mark in the results
+  // returned: skills can take a result's place.
+  const shown = shownCorrections(corrected, rows);
+  return c.json({
+    results: rows,
+    ...(complete ? {} : { indexing: true }),
+    ...(shown.length > 0 ? { corrected: shown } : {}),
+  });
 });

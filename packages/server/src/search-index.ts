@@ -1,12 +1,12 @@
 // ============================================================
-// MiniSearch-based full-text search index for Worktable
+// Full-text search index for Worktable
 // Indexes documents and records, archived ones included: a search leaves
 // them out or takes them in when it runs. The common mode projects every
 // authorized document format inertly; the legacy mode preserves the
 // historical Doc-only result set for callers without documents:read.
+// Entries are kept by search-store.ts.
 // ============================================================
 
-import MiniSearch from "minisearch";
 import { assertSpaceAccess, canAccessSpace, readableSpaceIds, runWithoutTeamIdentity } from "./team-policy.ts";
 import {
   docStat,
@@ -37,55 +37,45 @@ import {
   markdownPlainText,
   recordTitleFieldKey,
   type DocumentFormatClaim,
-  type DocumentHealth,
-  searchResultKind,
   type RecordFile,
   type SearchKind,
   type SearchResult,
 } from "@worktable/types";
 import { logError } from "./debug-log.ts";
+import {
+  closeSearchStore,
+  openVariantIndex,
+  type DocEntry,
+  type IndexEntry,
+  type IndexHit,
+  type VariantIndex,
+} from "./search-store.ts";
+import { foldWord, type NearWord } from "./search-words.ts";
+
+/**
+ * The words searched for in place of misspelled ones that these results
+ * show: a whole word where a result holds that word, a word start where
+ * one holds a word beginning with it. The index's word list spans Spaces
+ * a reader may not see, so a word is named only where a result shows it.
+ */
+export function shownCorrections(
+  corrected: readonly NearWord[],
+  results: readonly { title: string; excerpt?: string }[],
+): string[] {
+  if (corrected.length === 0) return [];
+  const words = new Set<string>();
+  for (const result of results) {
+    for (const word of foldWord(`${result.title} ${result.excerpt ?? ""}`).split(/[^\p{L}\p{N}]+/u)) {
+      if (word) words.add(word);
+    }
+  }
+  const shown = corrected.filter((near) =>
+    near.prefix ? [...words].some((word) => word.startsWith(near.text)) : words.has(near.text),
+  );
+  return [...new Set(shown.map((near) => near.text))];
+}
 
 export type DocumentSearchAccess = "legacy" | "common";
-
-interface DocEntry {
-  id: string;
-  spaceId: string;
-  path: string;
-  type: "doc";
-  title: string;
-  body: string;
-  documentKind?: "document" | "conflict";
-  documentView?: "doc" | "html";
-  formatId?: string;
-  sourceVersion?: number;
-  health?: DocumentHealth;
-  archiveOn?: string;
-  /** The searches that see this entry, when not every one does. */
-  view?: "live" | "archived";
-  /** The document itself is archived. */
-  archived?: true;
-}
-
-interface RecordEntry {
-  id: string;
-  spaceId: string;
-  path: string;
-  type: "record";
-  collectionId: string;
-  recordId: string;
-  title: string;
-  body: string;
-}
-
-type IndexEntry = DocEntry | RecordEntry;
-
-function entryKind(entry: IndexEntry): SearchKind {
-  return searchResultKind(
-    entry.type === "doc" && entry.formatId
-      ? { type: "doc", format: { id: entry.formatId } }
-      : { type: entry.type },
-  );
-}
 
 /** `titleKey` is the collection's title field (recordTitleFieldKey). */
 export function recordTitle(record: RecordFile, collectionName: string, titleKey: string | null = null): string {
@@ -204,6 +194,28 @@ function recordDisplayText(collectionName: string, data: unknown): string {
 const EXCERPT_LENGTH = 160;
 const EXCERPT_LEAD = 40;
 
+/** Where any term first occurs in `text`, compared as the index folds words; -1 if none. */
+function foldedMatch(text: string, terms: string[]): number {
+  let folded = "";
+  // The position in `text` of each code unit of `folded`.
+  const from: number[] = [];
+  for (let at = 0; at < text.length; ) {
+    const letter = String.fromCodePoint(text.codePointAt(at)!);
+    const own = foldWord(letter);
+    for (let unit = 0; unit < own.length; unit += 1) from.push(at);
+    folded += own;
+    at += letter.length;
+  }
+  let found = -1;
+  for (const term of terms) {
+    const needle = foldWord(term.trim());
+    if (!needle) continue;
+    const at = folded.indexOf(needle);
+    if (at !== -1 && (found === -1 || from[at]! < found)) found = from[at]!;
+  }
+  return found;
+}
+
 /**
  * Plain-text window around the first occurrence of any matched term.
  * Title-only matches (no term in the body) fall back to the body's start.
@@ -220,6 +232,9 @@ export function makeExcerpt(body: string, terms: string[]): string | undefined {
     const at = lower.indexOf(needle);
     if (at !== -1 && (matchAt === -1 || at < matchAt)) matchAt = at;
   }
+  // The index matches words with accents removed ("cafe" finds "café"):
+  // look again that way, in text that has any.
+  if (matchAt === -1 && /[^ -~\s]/.test(text)) matchAt = foldedMatch(text, terms);
 
   let start = matchAt <= EXCERPT_LEAD ? 0 : matchAt - EXCERPT_LEAD;
   if (start > 0) {
@@ -243,14 +258,16 @@ export function makeExcerpt(body: string, terms: string[]): string | undefined {
 
 // ── Incremental index ────────────────────────────────────────
 //
-// One MiniSearch per variant: document access mode and whether records live
-// in MiniSearch. Archived documents and Spaces are in it too, marked, so a
+// One index per variant: document access mode and whether records live in
+// it. Archived documents and Spaces are in it too, marked, so a
 // search with them and one without share one copy. Each variant is divided
 // into Space segments. Change events mark a segment dirty, and document events also name
 // the document. The next search that covers the Space re-checks its catalog
 // and re-reads only documents whose revision changed or that an event named,
 // replacing their entries in place. Space-scoped searches use the same index,
-// filtered to the Space, and sync only that Space.
+// filtered to the Space, and sync only that Space. An index kept on disk
+// starts from the entries and revisions it stored, so after a restart a
+// sync re-reads only what changed.
 
 /** How long one sync holds a Space's lock while projecting. */
 const PROJECTION_SLICE_MS = 250;
@@ -270,6 +287,8 @@ interface SpaceSegment {
   built: boolean;
   /** The Space is archived, as of the latest listing. */
   archivedSpace: boolean;
+  /** A listing has said whether it is archived: false for a Space restored from disk until one has. */
+  listed: boolean;
   dirty: boolean;
   recordsDirty: boolean;
   /** Document keys to re-read even when their revision looks unchanged. */
@@ -282,11 +301,7 @@ interface SpaceSegment {
 interface IndexVariant {
   documentAccess: DocumentSearchAccess;
   includesRecords: boolean;
-  idx: MiniSearch<IndexEntry>;
-  // Display bodies for excerpt extraction, keyed by index entry id.
-  // MiniSearch does not store raw field text, and records index JSON while
-  // excerpts want readable "key: value" text, hence the separate map.
-  displayBodies: Map<string, string>;
+  index: VariantIndex;
   segments: Map<string, SpaceSegment>;
   spacesListed: boolean;
   listing: Promise<void> | null;
@@ -324,32 +339,6 @@ function recordSearchMode(): RecordSearchMode {
   return recordBuildWatch.settled ? "files" : "building";
 }
 
-function createIndex(): MiniSearch<IndexEntry> {
-  return new MiniSearch<IndexEntry>({
-    fields: ["title", "body"],
-    storeFields: [
-      "spaceId",
-      "path",
-      "type",
-      "title",
-      "collectionId",
-      "recordId",
-      "documentKind",
-      "documentView",
-      "formatId",
-      "sourceVersion",
-      "health",
-      "view",
-      "archived",
-    ],
-    searchOptions: {
-      boost: { title: 3 },
-      fuzzy: 0.2,
-      prefix: true,
-    },
-  });
-}
-
 function variantKey(
   documentAccess: DocumentSearchAccess,
   includesRecords: boolean,
@@ -363,22 +352,60 @@ function variantFor(
 ): IndexVariant {
   const key = variantKey(documentAccess, includesRecords);
   let variant = variants.get(key);
+  // A store closed or replaced (a start, a stop) leaves its variants behind.
+  if (variant && !variant.index.current()) {
+    retireVariant(key, variant);
+    variant = undefined;
+  }
   if (!variant) {
     // Records move to the record index once it is ready (or back, through its
     // kill switch). Keep one copy of the documents, not one per record mode.
-    variants.delete(variantKey(documentAccess, !includesRecords));
+    const other = variantKey(documentAccess, !includesRecords);
+    const replaced = variants.get(other);
+    if (replaced) retireVariant(other, replaced);
+    const index = openVariantIndex(documentAccess, includesRecords);
     variant = {
       documentAccess,
       includesRecords,
-      idx: createIndex(),
-      displayBodies: new Map(),
+      index,
       segments: new Map(),
       spacesListed: false,
       listing: null,
     };
+    for (const stored of index.stored()) {
+      let segment = variant.segments.get(stored.spaceId);
+      if (!segment) {
+        segment = newSegment(includesRecords);
+        variant.segments.set(stored.spaceId, segment);
+      }
+      if (stored.key === null) segment.recordIds.push(stored.id);
+      else segment.documents.set(stored.key, stored);
+    }
     variants.set(key, variant);
   }
   return variant;
+}
+
+function newSegment(includesRecords: boolean): SpaceSegment {
+  return {
+    documents: new Map(),
+    recordIds: [],
+    built: false,
+    archivedSpace: false,
+    listed: false,
+    dirty: true,
+    recordsDirty: includesRecords,
+    forced: new Set(),
+    retryAt: null,
+    syncing: null,
+  };
+}
+
+/** Stops a variant: its syncs stop at their next step, and write nothing. */
+function retireVariant(key: string, variant: IndexVariant): void {
+  if (variants.get(key) === variant) variants.delete(key);
+  variant.index.retire();
+  variant.segments.clear();
 }
 
 function documentKey(variant: IndexVariant, path: string): string {
@@ -473,7 +500,10 @@ onWorkspaceChange((event) => {
       break;
     case "workspaceReset":
       resetEpoch += 1;
-      variants.clear();
+      for (const [key, variant] of [...variants]) retireVariant(key, variant);
+      // Another workspace's entries never answer: its file goes with its
+      // derived output, and an index in memory goes here.
+      closeSearchStore();
       recordBuildWatch = null;
       break;
   }
@@ -487,21 +517,17 @@ export function setSearchIndexRebuildHookForTests(hook: SyncHook | null): void {
   rebuildHookForTests = hook;
 }
 
-function putEntry(variant: IndexVariant, entry: IndexEntry, displayBody: string): void {
-  if (variant.idx.has(entry.id)) variant.idx.replace(entry);
-  else variant.idx.add(entry);
-  variant.displayBodies.set(entry.id, displayBody);
-}
-
 function dropEntry(variant: IndexVariant, id: string): void {
-  if (variant.idx.has(id)) variant.idx.discard(id);
-  variant.displayBodies.delete(id);
+  variant.index.drop(id);
 }
 
 function retireSegment(variant: IndexVariant, spaceId: string, segment: SpaceSegment): void {
+  // Kept until its entries are gone, so a failed removal is tried again.
+  variant.index.batch(() => {
+    for (const document of segment.documents.values()) dropEntry(variant, document.id);
+    for (const id of segment.recordIds) dropEntry(variant, id);
+  });
   variant.segments.delete(spaceId);
-  for (const document of segment.documents.values()) dropEntry(variant, document.id);
-  for (const id of segment.recordIds) dropEntry(variant, id);
 }
 
 function yieldToEventLoop(): Promise<void> {
@@ -707,29 +733,43 @@ async function syncCommonDocuments(
           )),
     });
     if (variant.segments.get(spaceId) !== segment) return projected.size;
-    for (const candidate of pass.candidates) {
-      if (candidate.read === undefined) continue;
-      projected.set(candidate.key, candidate.revision);
-      const previous = segment.documents.get(candidate.key);
-      if (candidate.read === null) {
-        if (previous) dropEntry(variant, previous.id);
-        segment.documents.delete(candidate.key);
-        continue;
+    // What the index holds changes once its writes commit: a failed write
+    // leaves the documents to be read again.
+    const changes: Array<[string, IndexedDocument | null]> = [];
+    let unreadable = false;
+    variant.index.batch(() => {
+      for (const candidate of pass.candidates) {
+        if (candidate.read === undefined) continue;
+        const previous = segment.documents.get(candidate.key);
+        if (candidate.read === null) {
+          if (previous) dropEntry(variant, previous.id);
+          changes.push([candidate.key, null]);
+          continue;
+        }
+        const { entry, displayBody, transient } = commonEntry(
+          spaceId,
+          candidate.read,
+          candidate.view,
+        );
+        if (previous && previous.id !== entry.id) dropEntry(variant, previous.id);
+        const indexed = {
+          id: entry.id,
+          revision: transient ? "" : candidate.revision,
+          readAt,
+        };
+        variant.index.put(entry, displayBody, { key: candidate.key, ...indexed });
+        changes.push([candidate.key, indexed]);
+        unreadable ||= transient;
       }
-      const { entry, displayBody, transient } = commonEntry(
-        spaceId,
-        candidate.read,
-        candidate.view,
-      );
-      if (previous && previous.id !== entry.id) dropEntry(variant, previous.id);
-      putEntry(variant, entry, displayBody);
-      segment.documents.set(candidate.key, {
-        id: entry.id,
-        revision: transient ? "" : candidate.revision,
-        readAt,
-      });
-      if (transient) segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
+    });
+    for (const candidate of pass.candidates) {
+      if (candidate.read !== undefined) projected.set(candidate.key, candidate.revision);
     }
+    for (const [key, document] of changes) {
+      if (document) segment.documents.set(key, document);
+      else segment.documents.delete(key);
+    }
+    if (unreadable) segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
     if (!pass.complete) {
       await betweenSlices(performance.now() - sliceStarted);
       continue;
@@ -745,13 +785,23 @@ async function syncCommonDocuments(
         segment.dirty = true;
       }
     }
-    for (const [key, document] of segment.documents) {
-      if (current.has(key)) continue;
-      dropEntry(variant, document.id);
-      segment.documents.delete(key);
-    }
+    pruneDocuments(variant, segment, current);
     return projected.size;
   }
+}
+
+/** Drops the documents a Space no longer lists, once their removal commits. */
+function pruneDocuments(
+  variant: IndexVariant,
+  segment: SpaceSegment,
+  current: ReadonlySet<string>,
+): void {
+  const gone = [...segment.documents].filter(([key]) => !current.has(key));
+  if (gone.length === 0) return;
+  variant.index.batch(() => {
+    for (const [, document] of gone) dropEntry(variant, document.id);
+  });
+  for (const [key] of gone) segment.documents.delete(key);
 }
 
 async function syncLegacyDocuments(
@@ -765,7 +815,9 @@ async function syncLegacyDocuments(
   for (const docPath of paths) {
     const readAt = Date.now();
     const stat = await docStat(spaceId, docPath);
-    const revision = stat ? `${stat.format}:${stat.updatedAt}` : "";
+    // The fingerprint holds ctime, which a restored file can't set back:
+    // entries outlive a restart, and a file replaced meanwhile is read again.
+    const revision = stat ? `${stat.format}:${stat.fingerprint}` : "";
     const previous = segment.documents.get(docPath);
     if (!forced.has(docPath) && canReuseDerived(previous, revision, stat?.updatedAt)) {
       continue;
@@ -783,16 +835,11 @@ async function syncLegacyDocuments(
       }
       continue;
     }
-    putEntry(variant, indexed.entry, indexed.displayBody);
+    variant.index.put(indexed.entry, indexed.displayBody, { key: docPath, revision, readAt });
     segment.documents.set(docPath, { id: indexed.entry.id, revision, readAt });
   }
   if (variant.segments.get(spaceId) !== segment) return reread;
-  const current = new Set(paths);
-  for (const [key, document] of segment.documents) {
-    if (current.has(key)) continue;
-    dropEntry(variant, document.id);
-    segment.documents.delete(key);
-  }
+  pruneDocuments(variant, segment, new Set(paths));
   return reread;
 }
 
@@ -805,11 +852,18 @@ async function syncSegmentRecords(
   const displayBodies = new Map<string, string>();
   await addRecordsToIndex(spaceId, entries, displayBodies);
   if (variant.segments.get(spaceId) !== segment) return;
-  for (const id of segment.recordIds) dropEntry(variant, id);
-  for (const entry of entries) {
-    putEntry(variant, entry, displayBodies.get(entry.id) ?? "");
-  }
-  segment.recordIds = entries.map((entry) => entry.id);
+  const kept = new Set(entries.map((entry) => entry.id));
+  variant.index.batch(() => {
+    for (const id of segment.recordIds) if (!kept.has(id)) dropEntry(variant, id);
+    for (const entry of entries) {
+      variant.index.put(entry, displayBodies.get(entry.id) ?? "", {
+        key: null,
+        revision: "",
+        readAt: 0,
+      });
+    }
+  });
+  segment.recordIds = [...kept];
 }
 
 async function runSegmentSync(
@@ -885,18 +939,13 @@ function listVariantSpaces(variant: IndexVariant): Promise<void> {
           const existing = variant.segments.get(spaceId);
           if (existing) {
             existing.archivedSpace = archivedSpace;
+            existing.listed = true;
             continue;
           }
           variant.segments.set(spaceId, {
-            documents: new Map(),
-            recordIds: [],
-            built: false,
+            ...newSegment(variant.includesRecords),
             archivedSpace,
-            dirty: true,
-            recordsDirty: variant.includesRecords,
-            forced: new Set(),
-            retryAt: null,
-            syncing: null,
+            listed: true,
           });
         }
       } catch (error) {
@@ -1117,7 +1166,12 @@ export async function searchWithStatus(
     /** Select only after caller authorization; common projection needs documents:read. */
     documentAccess?: DocumentSearchAccess;
   }
-): Promise<{ results: SearchResult[]; complete: boolean }> {
+): Promise<{
+  results: SearchResult[];
+  complete: boolean;
+  /** Words searched for in place of misspelled ones; see shownCorrections. */
+  corrected: NearWord[];
+}> {
   if (opts?.spaceId) assertSpaceAccess(opts.spaceId);
   const allowedSpaces = readableSpaceIds() ?? undefined;
   // Snapshot the record-search mode once per call: MiniSearch is built for
@@ -1131,7 +1185,7 @@ export async function searchWithStatus(
   const documentAccess = opts?.documentAccess ?? "legacy";
   const kinds = opts?.kinds && opts.kinds.length > 0 ? new Set(opts.kinds) : null;
   const {
-    variant: { idx, displayBodies, segments },
+    variant: { index, segments },
     complete: indexComplete,
   } = await runWithoutTeamIdentity(() => indexForSearch(
     documentAccess,
@@ -1140,29 +1194,6 @@ export async function searchWithStatus(
   ));
   const inArchivedSpace = (spaceId: string) =>
     segments.get(spaceId)?.archivedSpace === true;
-
-  // Take each hit's display body now: later syncs update the index in place
-  // while the archive checks below await.
-  const hits = idx
-    .search(query, {
-      filter: (result) => {
-        const entry = result as unknown as IndexEntry;
-        if (!canAccessSpace(entry.spaceId)) return false;
-        if (opts?.spaceId && entry.spaceId !== opts.spaceId) return false;
-        if (kinds && !kinds.has(entryKind(entry))) return false;
-        if (entry.type === "doc" && documentAccess === "common") {
-          // Each kind of search has its own view of a path that archived and
-          // current documents both claim.
-          if (entry.view === (includeArchived ? "live" : "archived")) return false;
-          if (!includeArchived && inArchivedSpace(entry.spaceId)) return false;
-        }
-        return true;
-      },
-    })
-    .map((result) => ({
-      result,
-      displayBody: displayBodies.get(String(result.id)) ?? "",
-    }));
 
   // Many hits share a Space: each Space is read once per search.
   const spaces = new Map<string, ReturnType<typeof readSpace>>();
@@ -1196,69 +1227,123 @@ export async function searchWithStatus(
     return paths.then((known) => known.has(entry.path));
   };
 
-  const filtered: typeof hits = [];
-  for (const hit of hits) {
-    const entry = hit.result as unknown as IndexEntry;
-    if (
-      !indexComplete &&
-      entry.type === "doc" &&
-      documentAccess === "common" &&
-      !(await stillListed(entry))
-    ) {
-      continue;
-    }
-    if (includeArchived) {
-      filtered.push(hit);
-      continue;
-    }
+  const ask = (limit: number) => index.search(query, {
+    ...(opts?.spaceId ? { spaceId: opts.spaceId } : {}),
+    accept: (facts) => {
+      if (!canAccessSpace(facts.spaceId)) return false;
+      if (kinds && !kinds.has(facts.kind)) return false;
+      if (facts.type === "doc" && documentAccess === "common") {
+        // Each kind of search has its own view of a path that archived and
+        // current documents both claim.
+        if (facts.view === (includeArchived ? "live" : "archived")) return false;
+      }
+      if (!includeArchived && inArchivedSpace(facts.spaceId)) return false;
+      return true;
+    },
+    ...(opts?.archivedLast
+      ? {
+          archivedLast: {
+            spaces: new Set(
+              [...segments].filter(([, segment]) => segment.archivedSpace).map(([id]) => id),
+            ),
+          },
+        }
+      : {}),
+    limit,
+  });
 
-    if (entry.type === "doc" && documentAccess === "common") {
-      // Archived documents and Spaces were left out before ranking.
-      filtered.push(hit);
-      continue;
-    }
-    const { data: space } = await spaceOf(entry.spaceId);
-    if (!space || getSpaceArchiveInfo(space)) continue;
+  const eligible = async (hits: IndexHit[]): Promise<IndexHit[]> => {
+    const filtered: IndexHit[] = [];
+    for (const hit of hits) {
+      const entry = hit.entry;
+      if (
+        !indexComplete &&
+        entry.type === "doc" &&
+        documentAccess === "common" &&
+        !(await stillListed(entry))
+      ) {
+        continue;
+      }
+      if (includeArchived) {
+        filtered.push(hit);
+        continue;
+      }
 
-    if (entry.type === "record") {
-      // Re-check live state at query time — the index can be stale — so records
-      // archived or deleted since the last rebuild don't linger in results. This
-      // mirrors the doc archive re-check below.
-      const { data: record } = await readRecord(entry.spaceId, entry.collectionId, entry.recordId);
-      if (record && !record.archive) filtered.push(hit);
-      continue;
-    }
+      if (entry.type === "doc" && documentAccess === "common") {
+        // Archived documents and Spaces were left out before ranking, once
+        // the Spaces are listed; before that, the Space is read.
+        const segment = segments.get(entry.spaceId);
+        if (segment?.listed !== true) {
+          const { data: space } = await spaceOf(entry.spaceId);
+          if (!space || getSpaceArchiveInfo(space)) continue;
+        } else if (segment.archivedSpace) {
+          // Listed as archived since the index was asked.
+          continue;
+        }
+        filtered.push(hit);
+        continue;
+      }
+      const { data: space } = await spaceOf(entry.spaceId);
+      if (!space || getSpaceArchiveInfo(space)) continue;
 
-    const archived = await getDocArchiveInfo(entry.spaceId, entry.path);
-    if (!archived) filtered.push(hit);
-  }
+      if (entry.type === "record") {
+        // Re-check live state at query time — the index can be stale — so records
+        // archived or deleted since the last rebuild don't linger in results. This
+        // mirrors the doc archive re-check below.
+        const { data: record } = await readRecord(entry.spaceId, entry.collectionId, entry.recordId);
+        if (record && !record.archive) filtered.push(hit);
+        continue;
+      }
+
+      const archived = await getDocArchiveInfo(entry.spaceId, entry.path);
+      if (!archived) filtered.push(hit);
+    }
+    return filtered;
+  };
 
   const isArchived = (entry: IndexEntry) =>
     (entry.type === "doc" && entry.archived === true) || inArchivedSpace(entry.spaceId);
+  // The checks above rarely leave a hit out (a document deleted while the
+  // index catches up, an archived legacy Doc), so the index is asked for a
+  // few more than the limit, and for more again when they left too few.
+  // Archived hits only fill what current ones leave.
+  let limit = maxResults + 25;
+  let asked = ask(limit);
+  let filtered = await eligible(asked.hits);
+  for (;;) {
+    const current = opts?.archivedLast
+      ? filtered.filter((hit) => !isArchived(hit.entry)).length
+      : filtered.length;
+    if (current >= maxResults) break;
+    const archived = filtered.length - current;
+    const short = asked.more.current || (asked.more.archived && archived < maxResults - current);
+    if (!short) break;
+    limit *= 4;
+    asked = ask(limit);
+    filtered = await eligible(asked.hits);
+  }
+  const { corrected } = asked;
   // In the app's order, current and archived work are each ranked up to the
   // limit, and the limit is applied once records have joined them, so
   // archived matches never crowd current Docs or Records out.
   const docHits = opts?.archivedLast
     ? [
         ...filtered
-          .filter((hit) => !isArchived(hit.result as unknown as IndexEntry))
+          .filter((hit) => !isArchived(hit.entry))
           .slice(0, maxResults),
         ...filtered
-          .filter((hit) => isArchived(hit.result as unknown as IndexEntry))
+          .filter((hit) => isArchived(hit.entry))
           .slice(0, maxResults),
       ]
     : filtered.slice(0, maxResults);
-  const results: SearchResult[] = docHits.map(({ result: r, displayBody }) => {
-    const entry = r as unknown as IndexEntry;
-    // r.terms holds the document-side matched terms (prefix/fuzzy already
-    // expanded, e.g. query "pair" → term "pairing"), so they locate in the body.
-    const excerpt = makeExcerpt(displayBody, r.terms);
+  const results: SearchResult[] = docHits.map(({ entry, score, terms, displayBody }) => {
+    const excerpt = makeExcerpt(displayBody, terms);
     return {
       spaceId: entry.spaceId,
       type: entry.type,
       path: entry.path,
-      title: r.title as string,
-      score: r.score,
+      title: entry.title,
+      score,
       ...(entry.type === "doc" && entry.documentKind
         ? {
             documentKind: entry.documentKind,
@@ -1342,13 +1427,16 @@ export async function searchWithStatus(
   }
 
 
+  const found = opts?.archivedLast
+    ? [
+        ...results.filter((result) => !result.archived),
+        ...results.filter((result) => result.archived),
+      ].slice(0, maxResults)
+    : results;
+  const shown = new Set(shownCorrections(corrected, found));
   return {
-    results: opts?.archivedLast
-      ? [
-          ...results.filter((result) => !result.archived),
-          ...results.filter((result) => result.archived),
-        ].slice(0, maxResults)
-      : results,
+    results: found,
     complete: indexComplete && recordMode !== "building",
+    corrected: corrected.filter((near) => shown.has(near.text)),
   };
 }

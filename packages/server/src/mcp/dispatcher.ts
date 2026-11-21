@@ -240,6 +240,7 @@ import {
 } from "./operations.ts"
 import {
   searchWithStatus,
+  shownCorrections,
   invalidateSearchIndex,
   noteRecordMutated,
 } from "../search-index.ts"
@@ -2884,7 +2885,7 @@ async function _dispatchOperationInner(
       // folder's best matches are not crowded out before filtering.
       const candidateLimit = pathPrefix ? 500 : limit
       // Ask for one more than needed so `truncated` means more matches exist.
-      const { results: ranked, complete } = await searchWithStatus(query, {
+      const { results: ranked, complete, corrected } = await searchWithStatus(query, {
         spaceId,
         searchBlocks: false,
         includeArchived: includeArchived ?? false,
@@ -2901,6 +2902,7 @@ async function _dispatchOperationInner(
           )
         : candidates
       const results = matching.slice(0, limit)
+      const shown = shownCorrections(corrected, results)
 
       return {
         results,
@@ -2914,6 +2916,9 @@ async function _dispatchOperationInner(
           ...(pathPrefix ? { pathPrefix } : {}),
           includeArchived: includeArchived ?? false,
         },
+        // Words searched for in place of misspelled ones, as the results
+        // returned show them, on the preview surface.
+        ...(context.surface === "preview" && shown.length > 0 ? { corrected: shown } : {}),
       }
     }
     case "annotations.list": {

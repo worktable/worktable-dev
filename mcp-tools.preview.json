@@ -1238,6 +1238,13 @@
             "additionalProperties": {}
           }
         },
+        "corrected": {
+          "description": "Words searched for in place of ones in query that matched nothing, as the results show them. One that replaces the last word of query can be the start of a word.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "notices": {
           "description": "What waits on you in Worktable, when anything new does. Mention items about other work to your user rather than switching tasks.",
           "type": "string"

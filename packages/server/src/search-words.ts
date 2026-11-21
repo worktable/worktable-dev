@@ -44,12 +44,19 @@ export function correctable(folded: string): boolean {
   return /^\p{L}+$/u.test(folded) && editBudget(folded) > 0
 }
 
+/** A word's letters: code points, so a letter outside the BMP is one. */
+type Letters = string | readonly string[]
+
+function letters(word: string): Letters {
+  return /[\uD800-\uDFFF]/.test(word) ? [...word] : word
+}
+
 /**
- * Optimal string alignment distance: edits, with a swap of neighbours as
- * one. Stops early, returning max + 1, once the distance must exceed max.
+ * The last row of the optimal string alignment table of `a` against `b`:
+ * the edits from `a` to each start of `b`, with a swap of neighbours as
+ * one. Null once every value must exceed max.
  */
-export function editDistance(a: string, b: string, max: number): number {
-  if (Math.abs(a.length - b.length) > max) return max + 1
+function alignment(a: Letters, b: Letters, max: number): number[] | null {
   let before: number[] = []
   let previous: number[] = Array.from({ length: b.length + 1 }, (_, j) => j)
   for (let i = 1; i <= a.length; i += 1) {
@@ -64,11 +71,45 @@ export function editDistance(a: string, b: string, max: number): number {
       row.push(value)
       if (value < best) best = value
     }
-    if (best > max) return max + 1
+    if (best > max) return null
     before = previous
     previous = row
   }
-  return previous[b.length]!
+  return previous
+}
+
+/**
+ * Optimal string alignment distance: edits, with a swap of neighbours as
+ * one, counted in letters. Stops early, returning max + 1, once the
+ * distance must exceed max.
+ */
+export function editDistance(a: string, b: string, max: number): number {
+  const left = letters(a)
+  const right = letters(b)
+  if (Math.abs(left.length - right.length) > max) return max + 1
+  return alignment(left, right, max)?.[right.length] ?? max + 1
+}
+
+/**
+ * The start of `b` nearest to `a`, of any length within max edits of
+ * `a`'s: the fewest edits, then the length nearest `a`'s.
+ */
+function nearestStart(a: Letters, b: Letters, max: number): { distance: number; length: number } | null {
+  const row = alignment(a, b.slice(0, a.length + max), max)
+  if (!row) return null
+  let found: { distance: number; length: number } | null = null
+  for (let length = Math.max(1, a.length - max); length < row.length; length += 1) {
+    const distance = row[length]!
+    if (distance > max) continue
+    if (
+      !found ||
+      distance < found.distance ||
+      (distance === found.distance && Math.abs(length - a.length) < Math.abs(found.length - a.length))
+    ) {
+      found = { distance, length }
+    }
+  }
+  return found
 }
 
 /** A word of the index's list, and how many items hold it. */
@@ -104,13 +145,17 @@ export function nearestWords(
     }
     found.set(key, { text, prefix: isPrefix, distance, docs })
   }
+  const typed = letters(word)
   for (const { term, docs } of vocabulary) {
     const whole = editDistance(word, term, max)
     if (whole <= max) consider(term, false, whole, docs)
-    if (prefix && term.length > word.length) {
-      const start = term.slice(0, word.length)
-      const distance = editDistance(word, start, max)
-      if (distance <= max && distance < whole) consider(start, true, distance, docs)
+    const own = letters(term)
+    if (prefix && own.length > typed.length) {
+      const start = nearestStart(typed, own, max)
+      if (start && start.distance < whole && start.length < own.length) {
+        const text = typeof own === "string" ? own.slice(0, start.length) : own.slice(0, start.length).join("")
+        consider(text, true, start.distance, docs)
+      }
     }
   }
   return [...found.values()]

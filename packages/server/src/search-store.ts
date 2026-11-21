@@ -38,6 +38,7 @@ import {
   nearestWords,
   searchWords,
   type IndexedWord,
+  type NearWord,
   type QueryWord,
 } from "./search-words.ts"
 
@@ -133,7 +134,9 @@ export interface IndexSearchOptions {
 export interface IndexSearch {
   hits: IndexHit[]
   /** Words searched for in place of ones that matched nothing. */
-  corrected: string[]
+  corrected: NearWord[]
+  /** The limit left hits out: asking for more finds more. */
+  more: boolean
 }
 
 /** One document access mode's entries. */
@@ -312,9 +315,9 @@ class Fts5Store {
       this.#vocabularyRefresh = setTimeout(() => {
         this.#vocabularyRefresh = null
         if (!this.#db) return
-        this.#vocabularyStale = false
         try {
           this.#vocabulary = this.#readVocabulary()
+          this.#vocabularyStale = false
         } catch (error) {
           console.warn("[search] word list refresh failed:", logError(error))
         }
@@ -466,14 +469,14 @@ class Fts5VariantIndex implements VariantIndex {
   }
 
   search(query: string, options: IndexSearchOptions): IndexSearch {
-    if (!this.#store.open) return { hits: [], corrected: [] }
+    if (!this.#store.open) return { hits: [], corrected: [], more: false }
     const words = searchWords(query)
-    if (words.length === 0) return { hits: [], corrected: [] }
+    if (words.length === 0) return { hits: [], corrected: [], more: false }
     const typed: QueryWord[] = words.map((word) => ({ word, as: "typed" }))
-    const hits = this.#matches(typed, words, options)
+    const asTyped = this.#matches(typed, words, options)
     // Only a word that matches nothing is corrected, and only a search that
     // found nothing has one.
-    if (hits.length > 0) return { hits, corrected: [] }
+    if (asTyped.hits.length > 0) return { ...asTyped, corrected: [] }
     let changed = false
     const queryWords = words.map((word, at): QueryWord => {
       const folded = foldWord(word)
@@ -486,14 +489,19 @@ class Fts5VariantIndex implements VariantIndex {
       changed = true
       return { word, as: "nearest", near }
     })
-    if (!changed) return { hits, corrected: [] }
-    const corrected = [
-      ...new Set(queryWords.flatMap((word) => (word.as === "nearest" ? word.near.map((near) => near.text) : []))),
-    ]
-    return { hits: this.#matches(queryWords, [...words, ...corrected], options), corrected }
+    if (!changed) return { ...asTyped, corrected: [] }
+    const corrected = queryWords.flatMap((word) => (word.as === "nearest" ? word.near : []))
+    return {
+      ...this.#matches(queryWords, [...words, ...new Set(corrected.map((near) => near.text))], options),
+      corrected,
+    }
   }
 
-  #matches(queryWords: QueryWord[], terms: string[], options: IndexSearchOptions): IndexHit[] {
+  #matches(
+    queryWords: QueryWord[],
+    terms: string[],
+    options: IndexSearchOptions
+  ): { hits: IndexHit[]; more: boolean } {
     const archivedSpaces = options.archivedLast?.spaces
     // Prepared for this search alone: a statement left part-read keeps its
     // read open, which holds back every checkpoint of the file.
@@ -517,6 +525,7 @@ class Fts5VariantIndex implements VariantIndex {
     const kept: Array<{ id: number; score: number }> = []
     let current = 0
     let archived = 0
+    let more = false
     try {
       const rows = statement.iterate(
         indexQuery(queryWords),
@@ -533,11 +542,15 @@ class Fts5VariantIndex implements VariantIndex {
         }
         if (!options.accept(facts)) continue
         if (archivedSpaces && (row.archived === 1 || archivedSpaces.has(row.space_id))) {
-          if (archived >= options.limit) break
+          if (archived >= options.limit) {
+            more = true
+            break
+          }
           archived += 1
         } else {
           // Current hits come first: past the limit, skip to archived ones.
           if (current >= options.limit) {
+            more = true
             if (!archivedSpaces) break
             continue
           }
@@ -586,7 +599,7 @@ class Fts5VariantIndex implements VariantIndex {
             : row.body
       hits.push({ entry, score, terms, displayBody })
     }
-    return hits
+    return { hits, more }
   }
 
   retire(): void {
@@ -661,13 +674,17 @@ class MiniSearchVariantIndex implements VariantIndex {
         })
       )
     const spaces = options.archivedLast?.spaces
-    const hits = spaces
+    const parts = spaces
       ? [
-          ...found.filter((hit) => !isArchivedIn(hit.entry, spaces)).slice(0, options.limit),
-          ...found.filter((hit) => isArchivedIn(hit.entry, spaces)).slice(0, options.limit),
+          found.filter((hit) => !isArchivedIn(hit.entry, spaces)),
+          found.filter((hit) => isArchivedIn(hit.entry, spaces)),
         ]
-      : found.slice(0, options.limit)
-    return { hits, corrected: [] }
+      : [found]
+    return {
+      hits: parts.flatMap((part) => part.slice(0, options.limit)),
+      corrected: [],
+      more: parts.some((part) => part.length > options.limit),
+    }
   }
 
   retire(): void {}
@@ -731,7 +748,7 @@ export function openVariantIndex(variant: string, includesRecords: boolean): Var
       }
       return new Fts5VariantIndex(shared.store, variant, includesRecords)
     } catch (error) {
-      shared = null
+      closeSearchStore()
       if (error instanceof FtsUnavailableError) ftsBroken = true
       else unopenable = path
       console.warn("[search] SQLite search index unavailable; searching in memory:", logError(error))

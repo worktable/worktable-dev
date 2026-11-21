@@ -240,6 +240,7 @@ import {
 } from "./operations.ts"
 import {
   searchWithStatus,
+  shownCorrections,
   invalidateSearchIndex,
   noteRecordMutated,
 } from "../search-index.ts"
@@ -2901,6 +2902,7 @@ async function _dispatchOperationInner(
           )
         : candidates
       const results = matching.slice(0, limit)
+      const shown = shownCorrections(corrected, results)
 
       return {
         results,
@@ -2914,8 +2916,9 @@ async function _dispatchOperationInner(
           ...(pathPrefix ? { pathPrefix } : {}),
           includeArchived: includeArchived ?? false,
         },
-        // Words searched for in place of misspelled ones, on the preview surface.
-        ...(context.surface === "preview" && corrected.length > 0 ? { corrected } : {}),
+        // Words searched for in place of misspelled ones, as the results
+        // returned show them, on the preview surface.
+        ...(context.surface === "preview" && shown.length > 0 ? { corrected: shown } : {}),
       }
     }
     case "annotations.list": {

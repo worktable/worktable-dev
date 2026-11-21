@@ -689,7 +689,24 @@ describe("search excerpts", () => {
     expect(Object.fromEntries(reread)).toEqual({ meta: 1 });
   });
 
-  it("searches a misspelled word as the nearest words the index holds, and nothing else", async () => {
+  it("finds a current Doc behind more archived matches than the index is first asked for", async () => {
+    setSearchWaitForTests(60_000);
+    const docsDir = join(workspaceDir, "spaces", "meta", "docs");
+    for (let index = 0; index < 30; index += 1) {
+      writeFileSync(join(docsDir, `kumquat-${index}.md`), `# Kumquat ${index}\n\nKumquat kumquat kumquat.`);
+    }
+    writeFileSync(join(docsDir, "orchard.md"), "# Orchard\n\nOne kumquat tree, and many other trees besides.");
+    for (let index = 0; index < 30; index += 1) {
+      expect((await req(app, "POST", `/api/spaces/meta/docs/kumquat-${index}/archive`, {})).status).toBe(200);
+    }
+    // A search without documents:read leaves archived Docs out after ranking.
+    expect((await searchResults(app, "kumquat", { maxResults: 1 })).map((result) => result.path)).toEqual([
+      "orchard",
+    ]);
+  });
+
+  it.skipIf(process.env["WORKTABLE_SEARCH_INDEX"] === "minisearch")(
+    "searches a misspelled word as the nearest words the index holds, and nothing else", async () => {
     const common = { scopes: ["search:read", "documents:read"], documentMode: "common" as const };
     const answer = async (query: string, kinds?: string) => {
       const params = new URLSearchParams({ query, documentMode: "common" });
@@ -720,7 +737,8 @@ describe("search excerpts", () => {
     expect(await answer("observatroy", "record")).toEqual({ results: [] });
   });
 
-  it("keeps its index on disk, so a restart re-reads only what changed", async () => {
+  it.skipIf(process.env["WORKTABLE_SEARCH_INDEX"] === "minisearch")(
+    "keeps its index on disk, so a restart re-reads only what changed", async () => {
     keepSearchIndexOnDisk(true);
     try {
       const docsDir = join(workspaceDir, "spaces", "meta", "docs");
@@ -730,7 +748,8 @@ describe("search excerpts", () => {
       expect(await searchResults(app, "zeppelin", common)).toEqual([
         expect.objectContaining({ path: "zeppelin" }),
       ]);
-      expect(existsSync(join(appDir, "derived"))).toBe(true);
+      const derived = join(appDir, "derived");
+      expect(readdirSync(derived).some((key) => existsSync(join(derived, key, "search.sqlite")))).toBe(true);
 
       // While the server is down, one document changes and one is deleted.
       keepSearchIndexOnDisk(false);

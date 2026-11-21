@@ -77,7 +77,8 @@ import {
 } from "../document-annotation-service.ts"
 import { wsManager } from "../ws.ts"
 import { filesEnabled } from "../files-enabled.ts"
-import { serveFile, servedCurrentFile } from "../file-response.ts"
+import { serveFile, serveRendition, servedCurrentFile } from "../file-response.ts"
+import { wordRendition, WordRenditionError } from "../word-renditions.ts"
 import { FileRevisionError } from "../file-revision.ts"
 import { isSameOriginAppRequest } from "./widgets.ts"
 import {
@@ -637,6 +638,54 @@ documentsRouter.get("/picture", requireScope("documents:read"), async (c) => {
       ? c.json({ error: "No picture.", code: "NOT_FOUND" }, 404)
       : c.json({ error: "Not yet.", code: "PREVIEW_BUSY" }, 503)
   }
+})
+
+/** How long a reader waits for a Word file's PDF being drawn. */
+const RENDITION_WAIT_MS = 4_000
+
+// A Word file drawn as a PDF, for reading in the PDF viewer: drawn once per
+// version on the server, then kept. `v` names the version the reader's page
+// loaded, so the browser keeps the answer for good. Where Word files aren't
+// drawn here, or this one can't be, the app reads the Word file itself.
+documentsRouter.get("/rendition", requireScope("documents:read"), async (c) => {
+  if (!filesEnabled()) {
+    return c.json({ error: "Not found", code: "NOT_FOUND" }, 404)
+  }
+  const spaceId = c.req.param("spaceId") ?? ""
+  const path = exactDocumentPath(c.req.query("path"))
+  const version = c.req.query("v")
+  if (!path || !version || version.length > 256) {
+    return c.json(
+      { error: "Enter a valid path and version.", code: "VALIDATION_ERROR" },
+      400
+    )
+  }
+  assertSpaceAccess(spaceId, "read", c.get("identity"))
+  let pdf
+  try {
+    // A version not drawn yet is drawn now, but the reader waits only a
+    // moment for it: past that the app reads the Word file itself, and the
+    // PDF is there for the next open.
+    const drawing = wordRendition({ spaceId, path, revision: version })
+    drawing.catch(() => undefined)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    pdf = await Promise.race([
+      drawing,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new WordRenditionError("busy", "This Word file is still being drawn.")),
+          RENDITION_WAIT_MS
+        )
+      }),
+    ]).finally(() => clearTimeout(timer))
+  } catch (error) {
+    if (!(error instanceof WordRenditionError)) throw error
+    c.header("Cache-Control", "no-store")
+    return error.reason === "busy"
+      ? c.json({ error: error.message, code: "PREVIEW_BUSY" }, 503)
+      : c.json({ error: error.message, code: "NO_RENDITION", reason: error.reason }, 404)
+  }
+  return serveRendition(c, pdf)
 })
 
 // The body is the file's bytes. Without If-Match it creates the file; a name

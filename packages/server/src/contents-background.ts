@@ -31,6 +31,13 @@ import { listSpaces } from "./store.ts"
 import { runWithoutTeamIdentity } from "./team-policy.ts"
 import { onWorkspaceChange } from "./workspace-events.ts"
 import { workspaceCacheKey } from "./workspace.ts"
+import {
+  isWordFile,
+  WORD_RENDITION_MAX_BYTES,
+  wordRendition,
+  WordRenditionError,
+  wordRenditionsAvailable,
+} from "./word-renditions.ts"
 
 /** How long a Space's changes settle before its files are looked over. */
 const SETTLE_MS = 5_000
@@ -114,6 +121,13 @@ export async function parseChangedFiles(
       if (stopped()) break
       if (entry.kind !== "document") continue
       if (entry.descriptor.format.id !== BUILTIN_DOCUMENT_FORMATS.file) continue
+      // A Word file is drawn as the PDF people read it as (word-renditions.ts).
+      if (isWordFile(entry.descriptor.path)) {
+        const drawn = await drawChangedWordFile(spaceId, entry, budgetMs, options)
+        if (drawn === "deferred") break
+        if (drawn) parsed += 1
+        continue
+      }
       const reader = contentsReaderFor(entry.descriptor.path)
       if (reader === null || reader === "text") continue
       const stamp = entry.handle.sourceStamp ?? ""
@@ -161,6 +175,54 @@ export async function parseChangedFiles(
     }
     return parsed
   })
+}
+
+/**
+ * Draws a Word file whose bytes changed since it was last looked at as a
+ * PDF, under the same budgets as parsing: whether it drew one, or
+ * "deferred" when the Space's budget has run out.
+ */
+async function drawChangedWordFile(
+  spaceId: string,
+  entry: Extract<
+    Awaited<ReturnType<typeof readDocumentCatalogSnapshot>>["entries"][number],
+    { kind: "document" }
+  >,
+  budgetMs: number,
+  options: { signal?: AbortSignal; deferred?: (resumesAt: number) => void }
+): Promise<boolean | "deferred"> {
+  if (!wordRenditionsAvailable()) return false
+  const stamp = entry.handle.sourceStamp ?? ""
+  const seen = `${spaceKey(spaceId)}\0${entry.handle.documentId}\0word`
+  if (lookedAt.get(seen) === stamp) return false
+  if ((sourceStampSize(stamp) ?? 0) > WORD_RENDITION_MAX_BYTES) {
+    lookedAt.set(seen, stamp)
+    return false
+  }
+  const resumesAt = budgetResumesAt(spaceId, budgetMs)
+  if (resumesAt > Date.now()) {
+    options.deferred?.(resumesAt)
+    return "deferred"
+  }
+  const started = performance.now()
+  try {
+    // Drawn once and kept; a version already kept answers at once.
+    await wordRendition({
+      spaceId,
+      path: entry.descriptor.path,
+      background: true,
+      ...(options.signal ? { signal: options.signal } : {}),
+    })
+  } catch (error) {
+    // A busy browser, a file mid-change or a stop is looked at again next
+    // time; a file that can't be drawn keeps that answer.
+    if (!(error instanceof WordRenditionError) || error.reason === "busy" || error.reason === "none")
+      return false
+  } finally {
+    spend(spaceId, performance.now() - started)
+  }
+  lookedAt.set(seen, stamp)
+  return true
 }
 
 /**

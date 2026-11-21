@@ -157,6 +157,8 @@ export interface DeploymentInfo {
     pdfViewer?: boolean
     /** Word files open in the viewer: off where WORKTABLE_VIEWER_WORD=off. */
     wordViewer?: boolean
+    /** Word files are drawn as PDFs on the server, read in the PDF viewer. */
+    wordPdf?: boolean
     /** Comments can be sent to people and agents. */
     commentRecipients?: boolean
     /** People manage the skill libraries agents read (Preview agent tools). */

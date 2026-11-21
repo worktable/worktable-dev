@@ -26,6 +26,7 @@ import {
 import { mcpPreviewEnvOverride } from "../mcp/surface.ts";
 import { filesEnabled } from "../files-enabled.ts";
 import { viewerEnabled } from "../viewer-frames.ts";
+import { wordRenditionsAvailable } from "../word-renditions.ts";
 import { noteAllSpacesChanged } from "../workspace-read-model.ts";
 import { invalidateLinkGraph } from "../link-graph.ts";
 import { notifyWorkspaceChange } from "../workspace-events.ts";
@@ -181,6 +182,8 @@ export interface DeploymentInfo {
     pdfViewer: boolean;
     /** Word files open in the viewer; off where WORKTABLE_VIEWER_WORD=off. */
     wordViewer: boolean;
+    /** Word files are drawn as PDFs on the server, for reading in the PDF viewer. */
+    wordPdf: boolean;
     /** Comments can be sent to people and agents (Preview agent tools). */
     commentRecipients: boolean;
     /** People manage the skill libraries agents read (Preview agent tools). */
@@ -215,6 +218,7 @@ export function getDeploymentInfo(): DeploymentInfo {
       files: filesEnabled(),
       pdfViewer: filesEnabled() && viewerEnabled("pdf"),
       wordViewer: filesEnabled() && viewerEnabled("word"),
+      wordPdf: filesEnabled() && wordRenditionsAvailable(),
       commentRecipients: true,
       skillLibraries: true,
       help: true,

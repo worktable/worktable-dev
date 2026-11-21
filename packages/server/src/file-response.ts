@@ -158,3 +158,48 @@ export async function servedCurrentFile(current: CurrentFile): Promise<ServedFil
     version: current.pinned.revision,
   }
 }
+
+/**
+ * A file drawn as another, such as a Word file as a PDF, from the bytes kept
+ * for one version of it. The request names that version, so the browser
+ * keeps it for good; a range of it is served too, as the PDF viewer reads
+ * a large one in pieces.
+ */
+export function serveRendition(
+  c: Context,
+  rendition: { bytes: Uint8Array; sha256: string },
+  mediaType = "application/pdf"
+): Response {
+  const size = rendition.bytes.byteLength
+  const etag = etagOf(rendition.sha256)
+  const headers: Record<string, string> = {
+    "Cache-Control": "private, max-age=31536000, immutable",
+    // Kept answers are for this signed-in reader only.
+    Vary: "Cookie, Authorization",
+    ETag: etag,
+    "Accept-Ranges": "bytes",
+    ...SECURITY_HEADERS,
+    "Content-Type": mediaType,
+  }
+  if (matchesNoneOf(c, etag)) return new Response(null, { status: 304, headers })
+  if (c.req.method === "HEAD")
+    return new Response(null, { headers: { ...headers, "Content-Length": String(size) } })
+  const range = requestedRange(c, size, etag)
+  if (range === "unsatisfiable")
+    return new Response(null, {
+      status: 416,
+      headers: { ...headers, "Content-Range": `bytes */${size}` },
+    })
+  if (range)
+    return new Response(Buffer.from(rendition.bytes.subarray(range.start, range.end + 1)), {
+      status: 206,
+      headers: {
+        ...headers,
+        "Content-Range": `bytes ${range.start}-${range.end}/${size}`,
+        "Content-Length": String(range.end - range.start + 1),
+      },
+    })
+  return new Response(Buffer.from(rendition.bytes), {
+    headers: { ...headers, "Content-Length": String(size) },
+  })
+}

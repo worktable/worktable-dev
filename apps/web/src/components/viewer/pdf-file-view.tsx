@@ -81,6 +81,7 @@ export default function PdfFileView({
   onDismiss,
   onFileChanged,
   refusal,
+  onFallback,
 }: {
   /** The viewer that shows the file. */
   viewer?: ViewerKey
@@ -104,6 +105,12 @@ export default function PdfFileView({
    * default the reason alone, centred.
    */
   refusal?: (status: string) => ReactNode
+  /**
+   * The file can't be shown this way and the page has another, such as a
+   * Word file read in its own viewer when its PDF can't be had: called in
+   * place of showing why.
+   */
+  onFallback?: () => void
 }) {
   const queryClient = useQueryClient()
   const frame = useRef<ViewerFrameHandle>(null)
@@ -239,7 +246,11 @@ export default function PdfFileView({
               <div className="mr-1 flex items-center gap-0.5">
                 <Input
                   ref={findInput}
-                  aria-label="Find in PDF"
+                  aria-label={
+                    name.toLowerCase().endsWith(".pdf")
+                      ? "Find in PDF"
+                      : "Find in file"
+                  }
                   placeholder="Find"
                   className="h-7 w-36 text-xs sm:w-44"
                   value={find}
@@ -439,7 +450,10 @@ export default function PdfFileView({
               setShown(state)
               setTyped(null)
             }}
-            onRefused={setRefused}
+            onRefused={(reason) => {
+              if (onFallback) onFallback()
+              else setRefused(reason)
+            }}
             onChanged={onFileChanged ?? reload}
             onFind={setFound}
             onPassword={(retry) => setAsking({ retry })}

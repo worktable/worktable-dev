@@ -203,6 +203,8 @@ export async function startWebHarness(
       shareOrigin: string
       htmlShareOrigin: string
     }
+    /** More of the server's environment, such as a feature switched off. */
+    env?: Record<string, string>
   } = {}
 ): Promise<WebHarness> {
   const tempRoot = await mkdtemp(join(tmpdir(), `worktable-${name}-`))
@@ -259,6 +261,7 @@ export async function startWebHarness(
             PORT: String(port),
             WORKTABLE_WORKSPACE: workspace,
             WORKTABLE_APP_DIR: appDir,
+            ...options.env,
           },
           children,
           processOutput

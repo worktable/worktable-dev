@@ -574,6 +574,22 @@ is never parsed. Its limits: a file up to 32 MiB and 30 seconds to show it.
 With Data Saver on, a Word file waits for Open before the viewer downloads.
 `WORKTABLE_VIEWER_WORD=off` turns the viewer off.
 
+Where the server's preview browser runs, a Word file is read as a PDF
+instead, which opens far faster on a phone (`word-renditions.ts`). A moment
+after a Word file is written, the background pass that parses PDFs draws it
+once with the same Word viewer, in the sandboxed preview browser, prints it
+to a PDF and keeps that in the derived store for its version, under the
+same hourly budgets. The viewer document is served to the preview browser
+under its own policy less the sandbox, reading the file and its own files
+from the page's routes; nothing else answers. The file's page reads the
+kept PDF in the PDF viewer, with Find and its pages beside it, from
+`/documents/rendition`, which names the version and is kept by the browser
+for good. A version not drawn yet is drawn when it is opened, and the reader
+waits for it at most 4 seconds; past that, or where the PDF can't be had,
+the page draws the Word file in the reader's browser as above, and the PDF
+is there for the next open. An encrypted, damaged or too large file keeps
+that answer for its version. `WORKTABLE_WORD_PDF=off` turns the drawing off.
+
 - `apps/web/e2e/pdf-viewer.browser.ts` "a PDF opens and reads on its page,
   inside a frame that can reach nothing": the frame has no origin, cookies,
   storage, API or network, and can't read its parent.
@@ -588,6 +604,9 @@ With Data Saver on, a Word file waits for Open before the viewer downloads.
   them", "sends a viewer's engine compressed to a browser that takes it" and
   "turns a viewer off without a release".
 - `apps/web/src/lib/viewer-frame-protocol.test.ts`: what a frame may ask for.
+- `word-renditions.test.ts` "draws each page of a Word file as a page of a
+  PDF, and refuses what it can't read" and "is drawn once after the file is
+  written, then served for its version, a range of it too".
 
 Files parsed for their contents (PDF, Office) are parsed in the contents
 lane (`contents-lane.ts`): one job at a time, in a worker process started

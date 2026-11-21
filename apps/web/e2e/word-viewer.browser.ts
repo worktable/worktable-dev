@@ -12,7 +12,12 @@ const PLAN_DOCX = Buffer.from(
 
 let harness: WebHarness
 test.beforeAll(async () => {
-  harness = await startWebHarness("word-viewer", { storageVersion: 2 })
+  // The Word viewer in the reader's browser, as where the server can't draw
+  // Word files as PDFs (word-renditions.test.ts covers those).
+  harness = await startWebHarness("word-viewer", {
+    storageVersion: 2,
+    env: { WORKTABLE_WORD_PDF: "off" },
+  })
   const created = await fetch(`${harness.apiUrl}/api/spaces`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

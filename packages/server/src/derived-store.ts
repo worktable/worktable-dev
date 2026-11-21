@@ -37,7 +37,8 @@ export function derivedStoreDir(appDir = getAppDir(), key = workspaceCacheKey())
   return join(appDir, "derived", key)
 }
 
-export type DerivedKind = "contents" | "picture"
+/** Contents, a picture, or a rendition: a file drawn as another, a Word file as a PDF. */
+export type DerivedKind = "contents" | "picture" | "rendition"
 
 /** Everything that shaped one output. */
 export interface DerivedKey {
@@ -377,7 +378,26 @@ export class DerivedStore {
 
   /** Keeps a picture of one version of an item, or why it has none. */
   putPicture(key: DerivedKey, result: DerivedState & { mimeType?: string; bytes?: Uint8Array }): void {
-    this.#put({ ...key, kind: "picture" }, result, (db, id) => {
+    this.#putBlob({ ...key, kind: "picture" }, result)
+  }
+
+  /** A picture as kept, or why there is none; null when nothing is kept. */
+  getPicture(key: DerivedKey): StoredPicture | null {
+    return this.#getBlob({ ...key, kind: "picture" })
+  }
+
+  /** Keeps a file drawn as another for one version of it, or why it has none. */
+  putRendition(key: DerivedKey, result: DerivedState & { mimeType?: string; bytes?: Uint8Array }): void {
+    this.#putBlob({ ...key, kind: "rendition" }, result)
+  }
+
+  /** A rendition as kept, or why there is none; null when nothing is kept. */
+  getRendition(key: DerivedKey): StoredPicture | null {
+    return this.#getBlob({ ...key, kind: "rendition" })
+  }
+
+  #putBlob(key: DerivedKey, result: DerivedState & { mimeType?: string; bytes?: Uint8Array }): void {
+    this.#put(key, result, (db, id) => {
       if (result.state === "ready" && result.bytes && result.mimeType) {
         db.query("INSERT INTO blobs (output_id, mime_type, bytes, sha256) VALUES (?, ?, ?, ?)").run(
           id,
@@ -390,15 +410,14 @@ export class DerivedStore {
     })
   }
 
-  /** A picture as kept, or why there is none; null when nothing is kept. */
-  getPicture(key: DerivedKey): StoredPicture | null {
+  #getBlob(key: DerivedKey): StoredPicture | null {
     const row = this.#open()
       .query(
         "SELECT o.state, o.reason, o.message, b.mime_type, b.bytes, b.sha256 FROM outputs o " +
           "LEFT JOIN blobs b ON b.output_id = o.id WHERE o.document_id = ? AND o.version = ? " +
-          "AND o.kind = 'picture' AND o.variant = ? AND o.maker = ? AND o.maker_version = ?"
+          "AND o.kind = ? AND o.variant = ? AND o.maker = ? AND o.maker_version = ?"
       )
-      .get(key.documentId, key.version, key.variant, key.maker, key.makerVersion) as {
+      .get(key.documentId, key.version, key.kind, key.variant, key.maker, key.makerVersion) as {
       state: string
       reason: ContentsRefusal | null
       message: string | null

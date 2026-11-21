@@ -117,6 +117,33 @@ function respond(
   })
 }
 
+/**
+ * A viewer's frame document, its policy and the folder of its own files,
+ * for the server's own use: the preview browser opens the Word viewer to
+ * draw a Word file as a PDF. Null where this build has no such viewer.
+ */
+export async function viewerFrameFiles(
+  key: ViewerKey
+): Promise<{ html: string; csp: string; files: string } | null> {
+  const found = await viewersFolder()
+  if (!found) return null
+  try {
+    const csp = (
+      JSON.parse(readFileSync(join(found.dir, key, "policy.json"), "utf8")) as {
+        csp?: unknown
+      }
+    ).csp
+    if (typeof csp !== "string") return null
+    return {
+      html: readFileSync(join(found.dir, key, "frame.html"), "utf8"),
+      csp,
+      files: join(found.dir, key, "files"),
+    }
+  } catch {
+    return null
+  }
+}
+
 /** A viewer's frame document, under the policy its build wrote for it. */
 export async function viewerFrameResponse(
   key: string,

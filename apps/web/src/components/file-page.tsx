@@ -33,7 +33,7 @@ import { DocumentByline } from "@/components/document/document-byline"
 import { TipCard } from "@/components/help/help"
 import { documentQueryKeys } from "@/lib/documents-queries"
 import { documentRoute } from "@/lib/document-views"
-import { fetchJSON, refusalReason } from "@/lib/http"
+import { BASE_URL, fetchJSON, refusalReason } from "@/lib/http"
 import { filePreviewTextKey, readPreviewText } from "@/lib/file-preview-text"
 import { FileChangedError, fileSourceUrl, replaceFile } from "@/lib/file-embeds"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
@@ -135,10 +135,21 @@ export function FilePage({
     (view === "pdf"
       ? deployment?.capabilities.pdfViewer
       : deployment?.capabilities.wordViewer) === true
-  // A Word file's viewer downloads several MB the first time, so with Data
-  // Saver on it waits until the person asks for it.
+  // A Word file reads as the PDF the server draws of it, where the server
+  // draws them: quick to open on any device. Where it can't, or this file's
+  // PDF can't be had, the Word viewer draws it here.
+  const [noWordPdf, setNoWordPdf] = useState(false)
+  const wordPdf =
+    framedOn &&
+    view === "word" &&
+    deployment?.capabilities.wordPdf === true &&
+    !noWordPdf &&
+    version !== null
+  // The Word viewer downloads several MB the first time, so with Data Saver
+  // on it waits until the person asks for it.
   const [openAnyway, setOpenAnyway] = useState(false)
-  const waiting = framedOn && view === "word" && !openAnyway && savingData()
+  const waiting =
+    framedOn && view === "word" && !wordPdf && !openAnyway && savingData()
 
   const uploadVersion = useCallback(
     async (file: File, over: string | undefined) => {
@@ -307,13 +318,14 @@ export function FilePage({
         {dialogs}
         <Suspense fallback={null}>
           <PdfFileView
-            key={url}
-            viewer={view === "word" ? "word" : "pdf"}
+            key={wordPdf ? `${url}#pdf` : url}
+            viewer={view === "word" && !wordPdf ? "word" : "pdf"}
             spaceId={spaceId}
             path={path}
             name={name}
-            fileUrl={url}
-            byteLength={page.byteLength!}
+            fileUrl={wordPdf ? wordPdfUrl(spaceId, path, version!) : url}
+            byteLength={wordPdf ? undefined : page.byteLength!}
+            {...(wordPdf ? { onFallback: () => setNoWordPdf(true) } : {})}
             refusal={(status) => <FileCard name={name} status={status} />}
             leading={
               <DocumentByline
@@ -500,6 +512,11 @@ function FileContent({
     )
   }
   return null
+}
+
+/** The PDF the server draws of a Word file at one version. */
+function wordPdfUrl(spaceId: string, path: string, version: string): string {
+  return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/rendition?path=${encodeURIComponent(path)}&v=${encodeURIComponent(version)}`
 }
 
 /** Whether the browser asks pages to save data, as Data Saver does. */

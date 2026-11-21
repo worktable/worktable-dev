@@ -227,6 +227,13 @@ function wordStyles(): string {
 /* Extend's review cards offer Resolve, Accept and Reject even when only
    reading. This viewer never saves, so they would only change the screen. */
 #viewer-document button { display: none; }
+/* Printed by the server for a PDF: every page one after another, each on
+   its own sheet, with nothing around it. */
+html.printing, html.printing body { height: auto; background: #fff; }
+html.printing #viewer-container { position: static; overflow: visible; }
+html.printing [data-docx-editor-root] { display: block !important; gap: 0 !important; padding: 0 !important; width: auto !important; }
+html.printing [data-docx-page-wrapper] { break-after: page; break-inside: avoid; overflow: hidden; margin: 0 !important; box-shadow: none !important; }
+html.printing [data-docx-page-wrapper]:last-child { break-after: auto; }
 `
 }
 

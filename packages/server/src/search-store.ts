@@ -135,8 +135,11 @@ export interface IndexSearch {
   hits: IndexHit[]
   /** Words searched for in place of ones that matched nothing. */
   corrected: NearWord[]
-  /** The limit left hits out: asking for more finds more. */
-  more: boolean
+  /**
+   * Whether the limit left hits out of each part, current and archived:
+   * asking for more finds more there.
+   */
+  more: { current: boolean; archived: boolean }
 }
 
 /** One document access mode's entries. */
@@ -469,9 +472,9 @@ class Fts5VariantIndex implements VariantIndex {
   }
 
   search(query: string, options: IndexSearchOptions): IndexSearch {
-    if (!this.#store.open) return { hits: [], corrected: [], more: false }
+    if (!this.#store.open) return { hits: [], corrected: [], more: { current: false, archived: false } }
     const words = searchWords(query)
-    if (words.length === 0) return { hits: [], corrected: [], more: false }
+    if (words.length === 0) return { hits: [], corrected: [], more: { current: false, archived: false } }
     const typed: QueryWord[] = words.map((word) => ({ word, as: "typed" }))
     const asTyped = this.#matches(typed, words, options)
     // Only a word that matches nothing is corrected, and only a search that
@@ -501,7 +504,7 @@ class Fts5VariantIndex implements VariantIndex {
     queryWords: QueryWord[],
     terms: string[],
     options: IndexSearchOptions
-  ): { hits: IndexHit[]; more: boolean } {
+  ): { hits: IndexHit[]; more: IndexSearch["more"] } {
     const archivedSpaces = options.archivedLast?.spaces
     // Prepared for this search alone: a statement left part-read keeps its
     // read open, which holds back every checkpoint of the file.
@@ -525,7 +528,7 @@ class Fts5VariantIndex implements VariantIndex {
     const kept: Array<{ id: number; score: number }> = []
     let current = 0
     let archived = 0
-    let more = false
+    const more = { current: false, archived: false }
     try {
       const rows = statement.iterate(
         indexQuery(queryWords),
@@ -543,14 +546,14 @@ class Fts5VariantIndex implements VariantIndex {
         if (!options.accept(facts)) continue
         if (archivedSpaces && (row.archived === 1 || archivedSpaces.has(row.space_id))) {
           if (archived >= options.limit) {
-            more = true
+            more.archived = true
             break
           }
           archived += 1
         } else {
           // Current hits come first: past the limit, skip to archived ones.
           if (current >= options.limit) {
-            more = true
+            more.current = true
             if (!archivedSpaces) break
             continue
           }
@@ -683,7 +686,10 @@ class MiniSearchVariantIndex implements VariantIndex {
     return {
       hits: parts.flatMap((part) => part.slice(0, options.limit)),
       corrected: [],
-      more: parts.some((part) => part.length > options.limit),
+      more: {
+        current: (parts[0]?.length ?? 0) > options.limit,
+        archived: (parts[1]?.length ?? 0) > options.limit,
+      },
     }
   }
 

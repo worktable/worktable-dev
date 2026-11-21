@@ -1265,15 +1265,18 @@ export async function searchWithStatus(
   // The checks above rarely leave a hit out (a document deleted while the
   // index catches up, an archived legacy Doc), so the index is asked for a
   // few more than the limit, and for more again when they left too few.
+  // Archived hits only fill what current ones leave.
   let limit = maxResults + 25;
   let asked = ask(limit);
   let filtered = await eligible(asked.hits);
-  while (asked.more) {
-    const current = filtered.filter((hit) => !isArchived(hit.entry)).length;
+  for (;;) {
+    const current = opts?.archivedLast
+      ? filtered.filter((hit) => !isArchived(hit.entry)).length
+      : filtered.length;
+    if (current >= maxResults) break;
     const archived = filtered.length - current;
-    if (opts?.archivedLast ? current >= maxResults && archived >= maxResults : filtered.length >= maxResults) {
-      break;
-    }
+    const short = asked.more.current || (asked.more.archived && archived < maxResults - current);
+    if (!short) break;
     limit *= 4;
     asked = ask(limit);
     filtered = await eligible(asked.hits);

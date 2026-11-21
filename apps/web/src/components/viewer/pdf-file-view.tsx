@@ -28,6 +28,7 @@ import {
 import { documentQueryKeys } from "@/lib/documents-queries"
 import {
   pdfPageFromHash,
+  type ViewerKey,
   type ViewerRefusal,
   type ViewerState,
 } from "@/lib/viewer-frame-protocol"
@@ -65,10 +66,12 @@ const REFUSALS: Record<ViewerRefusal, string> = {
 }
 
 /**
- * A PDF on its own page: the file fills the pane, with its place, zoom and
- * Find above it. The file is parsed in a viewer frame, never in this page.
+ * A PDF or Word file on its own page: the file fills the pane, with its
+ * place and zoom above it, and for a PDF its pages and Find. The file is
+ * parsed in a viewer frame, never in this page.
  */
 export default function PdfFileView({
+  viewer = "pdf",
   spaceId,
   path,
   name,
@@ -79,6 +82,8 @@ export default function PdfFileView({
   onFileChanged,
   refusal,
 }: {
+  /** The viewer that shows the file. */
+  viewer?: ViewerKey
   spaceId: string
   path: string
   name: string
@@ -102,6 +107,8 @@ export default function PdfFileView({
 }) {
   const queryClient = useQueryClient()
   const frame = useRef<ViewerFrameHandle>(null)
+  // Only the PDF viewer finds text and browses pages.
+  const pdf = viewer === "pdf"
   const [startPage] = useState(() => pdfPageFromHash(window.location.hash))
   // A link to another page of the open file moves the viewer there.
   const hash = useRouterState({ select: (state) => state.location.hash })
@@ -161,7 +168,7 @@ export default function PdfFileView({
 
   // Cmd or Ctrl+F finds in the PDF, not in the page around it.
   useEffect(() => {
-    if (!shown) return
+    if (!shown || !pdf) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -174,7 +181,7 @@ export default function PdfFileView({
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [openFind, shown])
+  }, [openFind, pdf, shown])
 
   // A file replaced while it was being read loads again from its page.
   const reload = useCallback(
@@ -208,7 +215,7 @@ export default function PdfFileView({
         )}
         {shown ? (
           <div className="flex max-w-full shrink-0 items-center gap-0.5 overflow-x-auto">
-            {shown.pages > 1 ? (
+            {pdf && shown.pages > 1 ? (
               <>
                 <Button
                   variant="ghost"
@@ -343,7 +350,7 @@ export default function PdfFileView({
             >
               <MoveHorizontal />
             </Button>
-            {find === null ? (
+            {pdf && find === null ? (
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -418,7 +425,7 @@ export default function PdfFileView({
           )}
           <ViewerFrame
             ref={frame}
-            viewer="pdf"
+            viewer={viewer}
             title={name}
             fileUrl={fileUrl}
             byteLength={byteLength}
@@ -426,7 +433,7 @@ export default function PdfFileView({
             className="block h-full w-full border-0 bg-background"
             onShown={(state) => {
               setShown(state)
-              if (state.pages > 1) showRail(railStartsOpen(state.pages))
+              if (pdf && state.pages > 1) showRail(railStartsOpen(state.pages))
             }}
             onState={(state) => {
               setShown(state)

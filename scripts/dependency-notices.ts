@@ -6,6 +6,48 @@ import inventory from "./licenses/compiled-js-inventory.json" with { type: "json
 const sha256 = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex")
 type PackageLocation = { key: string; root: string; license: string }
+type Notice = {
+  component?: string
+  file?: string
+  sourceFile?: string
+  sourceSha256?: string
+  sha256: string
+  text?: string
+  separate?: boolean
+}
+
+/** The file a separate notice ships as, beside the notices that name it. */
+export function separateNoticeName(notice: { file?: string }): string {
+  return notice.file!.split("/").pop()!
+}
+
+const separateNoticeLine = (notice: Notice) =>
+  `See ${separateNoticeName(notice)} in this folder (SHA256 ${notice.sha256}).`
+
+/**
+ * The notices of these packages that ship as their own files, by file name,
+ * each read from the installed package and checked against its review.
+ */
+export function separateNotices(
+  locations: PackageLocation[]
+): Map<string, Uint8Array> {
+  const files = new Map<string, Uint8Array>()
+  for (const location of locations) {
+    const reviewed = inventory.packages.find(
+      (entry) => `${entry.name}@${entry.version}` === location.key
+    )
+    for (const notice of (reviewed?.notices ?? []) as Notice[]) {
+      if (!notice.separate) continue
+      const bytes = readFileSync(join(location.root, notice.file!))
+      if (sha256(bytes) !== notice.sha256)
+        throw new Error(
+          `The installed bundled dependency notice changed for ${location.key}`
+        )
+      files.set(separateNoticeName(notice), bytes)
+    }
+  }
+  return files
+}
 
 export function contributingPackages(inputs: Iterable<string>, cwd: string) {
   const packages = new Map<string, PackageLocation>()
@@ -77,9 +119,13 @@ export function renderDependencyNotices(
     if (location && location.license !== reviewed.license)
       throw new Error(`The bundled dependency license changed for ${key}`)
     text += `## ${reviewed.name} ${reviewed.version}\n\n`
-    for (const notice of reviewed.notices) {
-      const bytes = Buffer.from(notice.text)
-      if (sha256(bytes) !== notice.sha256)
+    for (const notice of reviewed.notices as Notice[]) {
+      // A notice too long to keep here ships as its own file beside these;
+      // its installed copy is checked against the reviewed hash below.
+      const bytes = Buffer.from(
+        notice.separate ? separateNoticeLine(notice) : notice.text!
+      )
+      if (!notice.separate && sha256(bytes) !== notice.sha256)
         throw new Error(
           `The reviewed bundled dependency notice changed for ${key}`
         )

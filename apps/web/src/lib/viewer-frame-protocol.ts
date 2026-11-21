@@ -8,7 +8,7 @@
 // file it was opened for, and plain names of its own public files.
 
 /** The viewers Worktable builds; each is one frame document. */
-export type ViewerKey = "pdf"
+export type ViewerKey = "pdf" | "word"
 
 /** How opening a file ended, when it didn't end in the file being shown. */
 export type ViewerRefusal =

@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
@@ -15,6 +16,7 @@ import {
   File as FileIcon,
   Upload,
 } from "lucide-react"
+import { Button } from "@worktable/ui/components/button"
 import { ConfirmDialog } from "@worktable/ui/components/confirm-dialog"
 import { toast } from "@worktable/ui/components/sonner"
 import {
@@ -33,11 +35,7 @@ import { documentQueryKeys } from "@/lib/documents-queries"
 import { documentRoute } from "@/lib/document-views"
 import { fetchJSON, refusalReason } from "@/lib/http"
 import { filePreviewTextKey, readPreviewText } from "@/lib/file-preview-text"
-import {
-  FileChangedError,
-  fileSourceUrl,
-  replaceFile,
-} from "@/lib/file-embeds"
+import { FileChangedError, fileSourceUrl, replaceFile } from "@/lib/file-embeds"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import "@/styles/document-controls.css"
 
@@ -50,7 +48,7 @@ const ImportRecordsDialog = lazy(() =>
 
 // The grid loads only when a table file opens.
 const TableFileView = lazy(() => import("@/components/viewer/table-file-view"))
-// pdf.js and the viewer's tools load only when a PDF opens.
+// The viewer's tools load only when a PDF or Word file opens.
 const PdfFileView = lazy(() => import("@/components/viewer/pdf-file-view"))
 
 /** How a file shows on its page: the file type table's page policy. */
@@ -124,11 +122,23 @@ export function FilePage({
     staleTime: Infinity,
   })
   const tableOn = tableView && !tableText.isError && tableText.data !== null
-  // A PDF fills the pane, in the viewer. Where the viewer is off, or the
-  // file is past what a preview reads, it is a card like any other file.
+  // A PDF or Word file fills the pane, in its viewer. Where the viewer is
+  // off, or the file is past what a preview reads, it is a card like any
+  // other file.
   const deployment = useDeploymentInfo().data
-  const pdf = view === "pdf" && !page.noHistory && page.byteLength !== undefined
-  const pdfOn = pdf && deployment?.capabilities.pdfViewer === true
+  const framed =
+    (view === "pdf" || view === "word") &&
+    !page.noHistory &&
+    page.byteLength !== undefined
+  const framedOn =
+    framed &&
+    (view === "pdf"
+      ? deployment?.capabilities.pdfViewer
+      : deployment?.capabilities.wordViewer) === true
+  // A Word file's viewer downloads several MB the first time, so with Data
+  // Saver on it waits until the person asks for it.
+  const [openAnyway, setOpenAnyway] = useState(false)
+  const waiting = framedOn && view === "word" && !openAnyway && savingData()
 
   const uploadVersion = useCallback(
     async (file: File, over: string | undefined) => {
@@ -291,13 +301,14 @@ export function FilePage({
     </>
   )
 
-  if (pdfOn) {
+  if (framedOn && !waiting) {
     return (
       <div className="flex h-full flex-col">
         {dialogs}
         <Suspense fallback={null}>
           <PdfFileView
             key={url}
+            viewer={view === "word" ? "word" : "pdf"}
             spaceId={spaceId}
             path={path}
             name={name}
@@ -370,20 +381,32 @@ export function FilePage({
             {...(page.referrers ? { referrers: page.referrers } : {})}
             tip={<TipCard tip="fileMeet" className="mt-3" />}
           />
-          <FileContent
-            key={url}
-            // While the page learns whether the viewer is on, nothing shows.
-            view={pdf ? (deployment ? "card" : "pending") : view}
-            url={url}
-            name={name}
-            // A table's text is read above, once; this only says why it
-            // shows as a card, so the card never starts the read again.
-            tooLarge={
-              page.noHistory !== undefined ||
-              (tableView && tableText.data === null)
-            }
-            readFailed={tableView && tableText.isError}
-          />
+          {waiting ? (
+            <FileCard
+              name={name}
+              status="Data Saver is on"
+              action={
+                <Button size="sm" onClick={() => setOpenAnyway(true)}>
+                  Open
+                </Button>
+              }
+            />
+          ) : (
+            <FileContent
+              key={url}
+              // While the page learns whether the viewer is on, nothing shows.
+              view={framed ? (deployment ? "card" : "pending") : view}
+              url={url}
+              name={name}
+              // A table's text is read above, once; this only says why it
+              // shows as a card, so the card never starts the read again.
+              tooLarge={
+                page.noHistory !== undefined ||
+                (tableView && tableText.data === null)
+              }
+              readFailed={tableView && tableText.isError}
+            />
+          )}
           {page.noHistory ? (
             <p className="text-sm text-muted-foreground">
               No history while this file is larger than 64 MiB.
@@ -428,8 +451,9 @@ function FileContent({
     staleTime: Infinity,
   })
   if (view === "pending") return null
-  // A PDF reaches here only where its viewer is off or the file is too large.
-  if (view === "card" || (view === "pdf" && !tooLarge)) {
+  // A PDF or Word file reaches here only where its viewer is off or the
+  // file is too large.
+  if (view === "card" || ((view === "pdf" || view === "word") && !tooLarge)) {
     return <FileCard name={name} status="No preview for this file type" />
   }
   if (tooLarge || text.data === null) {
@@ -478,7 +502,23 @@ function FileContent({
   return null
 }
 
-function FileCard({ name, status }: { name: string; status: string }) {
+/** Whether the browser asks pages to save data, as Data Saver does. */
+function savingData(): boolean {
+  const connection = (
+    navigator as Navigator & { connection?: { saveData?: boolean } }
+  ).connection
+  return connection?.saveData === true
+}
+
+function FileCard({
+  name,
+  status,
+  action,
+}: {
+  name: string
+  status: string
+  action?: ReactNode
+}) {
   const dot = name.lastIndexOf(".")
   const type = dot > 0 ? name.slice(dot + 1).toUpperCase() : "File"
   return (
@@ -487,11 +527,14 @@ function FileCard({ name, status }: { name: string; status: string }) {
         <FileIcon className="size-5" />
       </div>
       <div className="min-w-0">
-        <div className="truncate text-sm font-medium text-foreground">{name}</div>
+        <div className="truncate text-sm font-medium text-foreground">
+          {name}
+        </div>
         <div className="text-sm text-muted-foreground">
           {type} · {status}
         </div>
       </div>
+      {action ? <div className="ml-auto shrink-0">{action}</div> : null}
     </div>
   )
 }

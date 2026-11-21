@@ -14,7 +14,7 @@ import { preferredEncoding, type ContentEncoding } from "./http-compression.ts"
 import { getStaticAssetsInfo, readBuildId } from "./static-assets.ts"
 
 /** The viewers a build may carry. */
-export const VIEWER_KEYS = ["pdf"] as const
+export const VIEWER_KEYS = ["pdf", "word"] as const
 export type ViewerKey = (typeof VIEWER_KEYS)[number]
 
 export function isViewerKey(value: string): value is ViewerKey {
@@ -139,12 +139,9 @@ export async function viewerFrameResponse(
   // Without its policy a frame would run with the app's origin: never send it.
   if (typeof csp !== "string" || !csp.startsWith("sandbox allow-scripts;"))
     return notFound()
-  const offered = (["br", "gzip"] as const).filter((coding) =>
-    existsSync(`${frame}.${coding === "br" ? "br" : "gz"}`)
-  )
   const encoding = preferredEncoding(
     request.headers.get("accept-encoding") ?? "",
-    offered
+    compressedCopies(frame)
   )
   return respond(
     request,
@@ -156,6 +153,13 @@ export async function viewerFrameResponse(
       Vary: "Accept-Encoding",
     },
     encoding
+  )
+}
+
+/** The copies of a file the build compressed, best first. */
+function compressedCopies(path: string): ContentEncoding[] {
+  return (["br", "gzip"] as const).filter((coding) =>
+    existsSync(`${path}.${coding === "br" ? "br" : "gz"}`)
   )
 }
 
@@ -175,13 +179,20 @@ export async function viewerFileResponse(
   const root = resolve(found.dir, key, "files")
   const path = resolve(root, kind, name)
   if (!path.startsWith(root + sep)) return notFound()
+  // A Word viewer's engine is sent compressed when the build made copies.
+  const offered = compressedCopies(path)
+  const encoding = preferredEncoding(
+    request.headers.get("accept-encoding") ?? "",
+    offered
+  )
   return respond(
     request,
-    path,
+    encoding ? `${path}.${encoding === "br" ? "br" : "gz"}` : path,
     {
       "Content-Type": "application/octet-stream",
       "Cache-Control": cacheControl(request, found.buildId),
+      ...(offered.length ? { Vary: "Accept-Encoding" } : {}),
     },
-    null
+    encoding
   )
 }

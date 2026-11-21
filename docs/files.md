@@ -536,8 +536,8 @@ and still reads and downloads. Pictures for tiles wait in the browser's
 background lane: they run only when no other job waits, and never take a
 place in its queue.
 
-A PDF is the one format parsed for people, and it is parsed in the browser,
-never on the server and never in the app's own page. pdf.js runs inside a
+PDFs and Word files are the formats parsed for people, and they are parsed in
+the browser, never on the server and never in the app's own page. pdf.js runs inside a
 viewer frame: a document served with `sandbox allow-scripts`, so it has no
 origin, and a policy that lets it fetch, frame, submit and navigate to
 nothing. The frame is one self-contained document, with its code allowed by
@@ -557,14 +557,36 @@ the page shows the card. `WORKTABLE_VIEWER_PDF=off` turns the viewer off, and
 PDFs go back to a card with Download. Another viewer of a parsed format uses
 the same frame, host and messages (`viewer-frame-protocol.ts`).
 
+A Word file (`.docx`, `.docm`, `.dotx`) opens the same way in the Word viewer,
+which draws it with Extend (`@extend-ai/react-docx`): pages as Word lays them
+out, with charts, shapes, headers and footers, and the file's comments and
+tracked changes beside its pages when it has any. Macros never run. Extend
+reads the file with a WebAssembly engine, which the page fetches as one of
+the viewer's own files, compressed, and the browser keeps until the next
+release; the frame compiles it and starts Extend's reader as a classic
+worker from the code the document carries. The fonts Office files name most
+(Calibri, Arial, Times New Roman, Courier New, Aptos) are drawn with
+look-alikes of the same widths, also the viewer's own files, fetched only
+when a file names one the device lacks. Extend draws with inline styles, so
+the Word frame's policy allows them and nothing else beyond the PDF frame's;
+with no network, a style can't send anything out. A password-protected file
+is never parsed. Its limits: a file up to 32 MiB and 30 seconds to show it.
+With Data Saver on, a Word file waits for Open before the viewer downloads.
+`WORKTABLE_VIEWER_WORD=off` turns the viewer off.
+
 - `apps/web/e2e/pdf-viewer.browser.ts` "a PDF opens and reads on its page,
   inside a frame that can reach nothing": the frame has no origin, cookies,
   storage, API or network, and can't read its parent.
 - `apps/web/viewer-frames.test.ts` "is one document that loads nothing, under
   a policy that lets it reach nothing".
+- `apps/web/e2e/word-viewer.browser.ts` "a Word file opens on its page in the
+  Word viewer, and a damaged one keeps its card".
+- `apps/web/viewer-frames.test.ts` "carries Extend with its engine and fonts as
+  files, and lets inline styles alone through".
 - `viewer-frames.test.ts` "sends a frame only under the policy that takes its
   origin away", "serves a viewer's own files by plain name, and nothing beside
-  them" and "turns a viewer off without a release".
+  them", "sends a viewer's engine compressed to a browser that takes it" and
+  "turns a viewer off without a release".
 - `apps/web/src/lib/viewer-frame-protocol.test.ts`: what a frame may ask for.
 
 Files parsed for their contents (PDF, Office) are parsed in the contents

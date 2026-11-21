@@ -70,9 +70,10 @@ export interface FileSurfacePolicies {
    * frame shows the page the file makes, in a frame sandboxed with no
    * scripts, as the server's sandboxed response does too. A pdf shows in
    * the PDF viewer, which parses the file inside a viewer frame: a frame
-   * with no origin that is handed the file's bytes and nothing else.
+   * with no origin that is handed the file's bytes and nothing else. A
+   * word file shows in the Word viewer, in a viewer frame the same way.
    */
-  page: "image" | "frame" | "table" | "text" | "pdf" | "card"
+  page: "image" | "frame" | "table" | "text" | "pdf" | "word" | "card"
   /** The icon lists show for it. */
   icon:
     | "image"
@@ -435,20 +436,21 @@ export const FILE_TYPES = {
     mediaType:
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     family: "document",
-    surfaces: { ...BINARY, serve: "bytes", icon: "document" },
+    surfaces: { ...BINARY, serve: "bytes", page: "word", icon: "document" },
   },
   docm: {
     extensions: ["docm"],
     mediaType: "application/vnd.ms-word.document.macroenabled.12",
     family: "document",
-    surfaces: { ...BINARY, serve: "bytes", icon: "document" },
+    // Shown, never run: the viewer reads no macros.
+    surfaces: { ...BINARY, serve: "bytes", page: "word", icon: "document" },
   },
   dotx: {
     extensions: ["dotx"],
     mediaType:
       "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
     family: "document",
-    surfaces: { ...BINARY, serve: "bytes", icon: "document" },
+    surfaces: { ...BINARY, serve: "bytes", page: "word", icon: "document" },
   },
   odt: {
     extensions: ["odt"],

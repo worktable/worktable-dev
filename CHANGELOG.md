@@ -11,6 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **Word files:** A Word file opens on its page looking like the document: its pages as Word lays them out, with charts, shapes, headers and footers, and its comments and tracked changes beside the pages. Zoom and jump to a page from the toolbar. Fonts Office files use most, such as Calibri and Aptos, are drawn with look-alikes of the same widths, so lines break where they do in Word. The first Word file downloads the viewer once; with Data Saver on, it waits until you choose Open.
 - **PDFs:** A PDF opens on its page and reads in place: scroll, select and copy text, find, jump to a page and zoom, with a picture of each page and the file's outline beside it. A password-protected PDF asks for its password, and a link ending in `#page=12` opens at that page.
 - **Pinned pictures:** On Home and Space Home, a pinned image, PDF or drawing shows a picture of it instead of its icon.
 - **Export downloads resume:** A Worktable export that stops downloading partway can pick up where it stopped, in a browser or download tool that resumes downloads.

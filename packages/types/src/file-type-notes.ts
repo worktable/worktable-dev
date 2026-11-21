@@ -25,6 +25,11 @@ export interface FileTypeNote {
 }
 
 /** Each type's notes, by the surfaces that break an agreement rule. */
+const WORD_AGENT = {
+  why: "People read a Word file in the viewer; agents get its bytes until Worktable extracts a file's contents for agents.",
+  fix: "Give agents a Word file's text once file contents for agents read Word files.",
+}
+
 export const FILE_TYPE_NOTES: {
   readonly [K in FileTypeId]?: { readonly [S in FileSurface]?: FileTypeNote }
 } = {
@@ -56,6 +61,9 @@ export const FILE_TYPE_NOTES: {
       fix: "Give agents a PDF's text, by page, once file contents for agents are built.",
     },
   },
+  docx: { agent: WORD_AGENT },
+  docm: { agent: WORD_AGENT },
+  dotx: { agent: WORD_AGENT },
   html: {
     serve: {
       why: "Served inline as text/html, unlike other text, because its page shows it in a frame. The response's sandbox policy and the frame's sandbox keep its scripts off and load nothing, so it shows as a static page until a person opens it as an HTML Doc.",

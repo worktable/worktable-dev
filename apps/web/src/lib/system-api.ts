@@ -155,6 +155,8 @@ export interface DeploymentInfo {
     files: boolean
     /** PDFs open in the viewer: off where WORKTABLE_VIEWER_PDF=off. */
     pdfViewer?: boolean
+    /** Word files open in the viewer: off where WORKTABLE_VIEWER_WORD=off. */
+    wordViewer?: boolean
     /** Comments can be sent to people and agents. */
     commentRecipients?: boolean
     /** People manage the skill libraries agents read (Preview agent tools). */

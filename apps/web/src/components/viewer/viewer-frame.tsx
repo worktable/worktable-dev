@@ -215,12 +215,23 @@ export function ViewerFrame({
     }
     // The file starts loading with the frame, not after it.
     const start = first().catch(() => null)
-    // The time to show the file, paused while the reader types a password.
-    let deadline = window.setTimeout(() => refuse("failed"), SHOW_DEADLINE_MS)
-    answerPassword.current = (password) => {
-      if (password !== null) {
+    // The time to show the file, paused while the reader types a password
+    // and while the viewer's own files download: a Word viewer's engine is
+    // several MB on its first open, which slow mobile data takes a while to
+    // bring.
+    let shown = false
+    let asking = false
+    let fetching = 0
+    let deadline = 0
+    const startDeadline = () => {
+      window.clearTimeout(deadline)
+      if (!shown && !asking && fetching === 0 && !over)
         deadline = window.setTimeout(() => refuse("failed"), SHOW_DEADLINE_MS)
-      }
+    }
+    startDeadline()
+    answerPassword.current = (password) => {
+      asking = false
+      if (password !== null) startDeadline()
       send({ type: "viewer.password", password })
     }
 
@@ -279,6 +290,8 @@ export function ViewerFrame({
         }
         case "viewer.asset": {
           const path = viewerAssetPath(message)
+          fetching += 1
+          window.clearTimeout(deadline)
           const response = path
             ? await authenticatedFetch(
                 viewerUrl(viewer, `/files/${path}`, []),
@@ -287,7 +300,11 @@ export function ViewerFrame({
                 }
               ).catch(() => null)
             : null
-          const data = response?.ok ? await response.arrayBuffer() : null
+          const data = response?.ok
+            ? await response.arrayBuffer().catch(() => null)
+            : null
+          fetching -= 1
+          startDeadline()
           send(
             { type: "viewer.asset", id: message.id, data },
             data ? [data] : []
@@ -295,6 +312,7 @@ export function ViewerFrame({
           return
         }
         case "viewer.shown":
+          shown = true
           window.clearTimeout(deadline)
           setSettled(true)
           handlers.current.onShown(message)
@@ -313,6 +331,7 @@ export function ViewerFrame({
           })
           return
         case "viewer.password":
+          asking = true
           window.clearTimeout(deadline)
           handlers.current.onPassword?.(message.retry === true)
           return

@@ -90,6 +90,32 @@ describe("viewer frames", () => {
     }
   })
 
+  it("sends a viewer's engine compressed to a browser that takes it", async () => {
+    writeViewer({ csp: POLICY })
+    mkdirSync(join(dir, "pdf/files/wasm"), { recursive: true })
+    writeFileSync(join(dir, "pdf/files/wasm/engine.wasm"), "engine")
+    writeFileSync(join(dir, "pdf/files/wasm/engine.wasm.br"), "small engine")
+    const accepted = await viewerFileResponse(
+      "pdf",
+      "wasm",
+      "engine.wasm",
+      new Request("http://worktable.test/", {
+        headers: { "Accept-Encoding": "gzip, br" },
+      })
+    )
+    expect(accepted.headers.get("Content-Encoding")).toBe("br")
+    expect(accepted.headers.get("Vary")).toBe("Accept-Encoding")
+    expect(await accepted.text()).toBe("small engine")
+    const plain = await viewerFileResponse(
+      "pdf",
+      "wasm",
+      "engine.wasm",
+      get("/")
+    )
+    expect(plain.headers.get("Content-Encoding")).toBeNull()
+    expect(await plain.text()).toBe("engine")
+  })
+
   it("turns a viewer off without a release", async () => {
     writeViewer({ csp: POLICY })
     process.env["WORKTABLE_VIEWER_PDF"] = "off"

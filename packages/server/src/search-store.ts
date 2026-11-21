@@ -170,8 +170,7 @@ const ENTRY_FORMAT = 1
  * title's relevance among titles, three times over, plus its whole text's,
  * where title words also weigh three times body words; the rest by their
  * whole text's. Measured on a real Worktable, a document's whole length
- * otherwise outweighs a short title that names what was searched for
- * (research/2026-11-20-search-rework-claude).
+ * otherwise outweighs a short title that names what was searched for.
  */
 const RANK = "(t.score IS NULL), 3 * coalesce(t.score, 0) + bm25(pieces, 3.0, 1.0)"
 

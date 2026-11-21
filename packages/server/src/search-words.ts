@@ -7,8 +7,8 @@
 // nearest words the index holds instead: the index's own word list, by
 // edits (a missing, extra or wrong letter, or two neighbours swapped).
 // Short words take no edits, then one, then two, as Typesense rations
-// them; measured on a real Worktable, the meant word was among the three
-// nearest 97% of the time (research/2026-11-20-search-rework-claude).
+// them. On a real Worktable's words, the meant word was among the three
+// nearest 97% of the time.
 // Words with digits or other marks (numbers, IDs, code) are never changed.
 
 /** Letters from which a word may take one edit, and two. */

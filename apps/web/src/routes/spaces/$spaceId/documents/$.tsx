@@ -130,7 +130,9 @@ function DocumentPageRoute() {
     return (
       <Suspense fallback={<EditorSkeleton />}>
         <DocumentCheckStatus unavailable={temporarilyUnavailable}>
-          <FilePage spaceId={spaceId} page={page} />
+          {/* A file's page starts afresh for each file: what was picked or
+              opened on one never carries to the next. */}
+          <FilePage key={`${spaceId}/${path}`} spaceId={spaceId} page={page} />
         </DocumentCheckStatus>
       </Suspense>
     )

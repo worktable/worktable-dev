@@ -33,6 +33,13 @@ export interface ViewerFrameHandle {
 /** How long a frame has to show the file before the page gives up on it. */
 const SHOW_DEADLINE_MS = 30_000
 
+/**
+ * How long one of the viewer's own files may take to arrive. It doesn't
+ * count toward showing the file, so it has its own limit: room for the Word
+ * viewer's engine over slow mobile data.
+ */
+const ASSET_DEADLINE_MS = 120_000
+
 function viewerUrl(viewer: ViewerKey, rest: string, query: string[]): string {
   const version = buildVersionQuery()
   const all = [...query, ...(version ? [version] : [])].join("&")
@@ -292,17 +299,23 @@ export function ViewerFrame({
           const path = viewerAssetPath(message)
           fetching += 1
           window.clearTimeout(deadline)
+          // A transfer that stalls ends as one that failed, as does one
+          // the frame closes on.
+          const transfer = new AbortController()
+          const stop = () => transfer.abort()
+          abort.signal.addEventListener("abort", stop, { once: true })
+          const timer = window.setTimeout(stop, ASSET_DEADLINE_MS)
           const response = path
             ? await authenticatedFetch(
                 viewerUrl(viewer, `/files/${path}`, []),
-                {
-                  signal: abort.signal,
-                }
+                { signal: transfer.signal }
               ).catch(() => null)
             : null
           const data = response?.ok
             ? await response.arrayBuffer().catch(() => null)
             : null
+          window.clearTimeout(timer)
+          abort.signal.removeEventListener("abort", stop)
           fetching -= 1
           startDeadline()
           send(

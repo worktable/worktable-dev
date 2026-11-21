@@ -29,7 +29,7 @@ import {
   skillNameFrom,
   type DocLastSave,
   type PendingItem,
-  type SearchResult,
+  type FoundResult,
 } from "@worktable/types"
 import { ensureAppDir } from "./app-storage.ts"
 import { atomicWriteText } from "./atomic-file.ts"
@@ -888,9 +888,9 @@ const wordsOf = (text: string) => text.toLowerCase().split(/[^\p{L}\p{N}]+/u).fi
 export async function withSkills(
   identity: TokenIdentity,
   query: string,
-  results: SearchResult[],
+  results: FoundResult[],
   options: { spaceId?: string; maxResults: number }
-): Promise<SearchResult[]> {
+): Promise<FoundResult[]> {
   if (!isPerson(identity)) return results
   const sees = libraryVisibility(identity)
   const live: LibraryEntry[] = []
@@ -926,12 +926,12 @@ export async function withSkills(
   if (skills.size === 0) return results
 
   const shown = new Map<string, LibraryEntry>()
-  const first: SearchResult[] = []
-  const rest: SearchResult[] = []
+  const first: FoundResult[] = []
+  const rest: FoundResult[] = []
   for (const result of results) {
     const key = result.type === "doc" && result.path ? `${result.spaceId}\0${result.path}` : undefined
     const skill = key ? skills.get(key) : undefined
-    if (!key || !skill) {
+    if (!key || !skill || result.type === "thread") {
       rest.push(result)
       continue
     }
@@ -961,7 +961,7 @@ export async function withSkills(
 
   const labels = await personLabels([...shown.values()])
   return [...first, ...rest].slice(0, options.maxResults).map((result) => {
-    if (!result.skill) return result
+    if (result.type === "thread" || !result.skill) return result
     const libraryName = labels.name(result.skill.library)
     return libraryName ? { ...result, skill: { ...result.skill, libraryName } } : result
   })

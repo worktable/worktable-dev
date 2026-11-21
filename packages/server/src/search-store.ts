@@ -72,7 +72,41 @@ export interface RecordEntry {
   body: string
 }
 
-export type IndexEntry = DocEntry | RecordEntry
+/**
+ * One message of a thread, under the thread's title. `spaceId` is its
+ * Space, or WORKTABLE_THREADS for a thread of the whole Worktable.
+ */
+export interface ThreadEntry {
+  id: string
+  spaceId: string
+  path: string
+  type: "thread"
+  threadId: string
+  messageId: string
+  sequence: number
+  title: string
+  body: string
+  /** When the thread goes quiet enough to be archived; absent while kept. */
+  archivedFrom?: number
+}
+
+/** Where a Worktable's own threads are kept in the index, apart from Spaces'. */
+export const WORKTABLE_THREADS = ""
+
+export type IndexEntry = DocEntry | RecordEntry | ThreadEntry
+
+/** From when an entry counts as archived, or null when it doesn't. */
+function archivedFrom(entry: IndexEntry): number | null {
+  if (entry.type === "doc") return entry.archived ? 0 : null
+  if (entry.type === "thread") return entry.archivedFrom ?? null
+  return null
+}
+
+/** Whether an entry is itself archived at `now`. */
+export function entryArchived(entry: IndexEntry, now: number): boolean {
+  const from = archivedFrom(entry)
+  return from !== null && from <= now
+}
 
 export function entryKind(entry: IndexEntry): SearchKind {
   return searchResultKind(
@@ -86,7 +120,10 @@ export function entryKind(entry: IndexEntry): SearchKind {
 export interface StoredEntry {
   id: string
   spaceId: string
-  /** A document's key in its Space's catalog; null for a record. */
+  /**
+   * A document's key in its Space's catalog, or a thread message's thread
+   * as `thread:` and its id; null for a record.
+   */
   key: string | null
   revision: string
   readAt: number
@@ -108,19 +145,24 @@ export interface IndexFacts {
   type: IndexEntry["type"]
   kind: SearchKind
   view?: "live" | "archived"
+  /** The entry itself is archived at the search's time. */
+  archived: boolean
 }
 
-function factsOf(entry: IndexEntry): IndexFacts {
+function factsOf(entry: IndexEntry, now: number): IndexFacts {
   return {
     spaceId: entry.spaceId,
     type: entry.type,
     kind: entryKind(entry),
     ...(entry.type === "doc" && entry.view ? { view: entry.view } : {}),
+    archived: entryArchived(entry, now),
   }
 }
 
 export interface IndexSearchOptions {
   spaceId?: string
+  /** The time archive states are decided at. */
+  now: number
   accept: (facts: IndexFacts) => boolean
   /**
    * Archived hits after the rest. An entry is archived when it is itself,
@@ -157,13 +199,13 @@ export interface VariantIndex {
   retire(): void
 }
 
-const isArchivedIn = (entry: IndexEntry, spaces: ReadonlySet<string>) =>
-  (entry.type === "doc" && entry.archived === true) || spaces.has(entry.spaceId)
+const isArchivedIn = (entry: IndexEntry, spaces: ReadonlySet<string>, now: number) =>
+  entryArchived(entry, now) || spaces.has(entry.spaceId)
 
 // ── SQLite FTS5 ──────────────────────────────────────────────
 
 /** Bump to rebuild the tables from nothing. */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 /**
  * Bump when entries are made differently (search-index.ts), so every
  * document is read again, while the old entries answer meanwhile. A new
@@ -225,7 +267,7 @@ class Fts5Store {
         "CREATE TABLE IF NOT EXISTS items (" +
           "id INTEGER PRIMARY KEY, variant TEXT NOT NULL, entry_id TEXT NOT NULL, " +
           "space_id TEXT NOT NULL, doc_key TEXT, revision TEXT NOT NULL DEFAULT '', " +
-          "read_at INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0, " +
+          "read_at INTEGER NOT NULL DEFAULT 0, archived_from INTEGER, " +
           "type TEXT NOT NULL, kind TEXT NOT NULL, view TEXT, " +
           "meta TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, " +
           "display_mode INTEGER NOT NULL, display TEXT, " +
@@ -373,7 +415,7 @@ type Row = {
   type: IndexEntry["type"]
   kind: SearchKind
   view: "live" | "archived" | null
-  archived: number
+  archived_from: number | null
   score: number
 }
 
@@ -435,12 +477,12 @@ class Fts5VariantIndex implements VariantIndex {
     this.#store
       .db()
       .query(
-        "INSERT INTO items (variant, entry_id, space_id, doc_key, revision, read_at, archived, " +
+        "INSERT INTO items (variant, entry_id, space_id, doc_key, revision, read_at, archived_from, " +
           "type, kind, view, meta, title, body, display_mode, display) " +
           "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
           "ON CONFLICT (variant, entry_id) DO UPDATE SET space_id = excluded.space_id, " +
           "doc_key = excluded.doc_key, revision = excluded.revision, read_at = excluded.read_at, " +
-          "archived = excluded.archived, type = excluded.type, kind = excluded.kind, " +
+          "archived_from = excluded.archived_from, type = excluded.type, kind = excluded.kind, " +
           "view = excluded.view, meta = excluded.meta, title = excluded.title, " +
           "body = excluded.body, display_mode = excluded.display_mode, display = excluded.display"
       )
@@ -451,7 +493,7 @@ class Fts5VariantIndex implements VariantIndex {
         stored?.key ?? null,
         stored?.revision ?? "",
         stored?.readAt ?? 0,
-        entry.type === "doc" && entry.archived ? 1 : 0,
+        archivedFrom(entry),
         entry.type,
         entryKind(entry),
         entry.type === "doc" ? (entry.view ?? null) : null,
@@ -521,14 +563,14 @@ class Fts5VariantIndex implements VariantIndex {
         // Title scores are read once: joined as a subquery, they were read
         // again for every match, which took seconds for a one-letter search.
         "WITH t AS MATERIALIZED (SELECT rowid, bm25(titles) AS score FROM titles WHERE titles MATCH ?1) " +
-          "SELECT i.id, i.entry_id, i.space_id, i.type, i.kind, i.view, i.archived, " +
+          "SELECT i.id, i.entry_id, i.space_id, i.type, i.kind, i.view, i.archived_from, " +
           "-(3 * coalesce(t.score, 0) + bm25(pieces, 3.0, 1.0)) AS score " +
           "FROM pieces JOIN items i ON i.id = pieces.rowid " +
           "LEFT JOIN t ON t.rowid = i.id " +
           "WHERE pieces MATCH ?1 AND i.variant = ?2 AND (?3 IS NULL OR i.space_id = ?3) " +
           "ORDER BY " +
           (archivedSpaces
-            ? "(i.archived OR i.space_id IN (SELECT value FROM json_each(?4))), "
+            ? "((i.archived_from IS NOT NULL AND i.archived_from <= ?5) OR i.space_id IN (SELECT value FROM json_each(?4))), "
             : "") +
           RANK
       )
@@ -541,7 +583,7 @@ class Fts5VariantIndex implements VariantIndex {
         indexQuery(queryWords),
         this.#variant,
         options.spaceId ?? null,
-        ...(archivedSpaces ? [JSON.stringify([...archivedSpaces])] : [])
+        ...(archivedSpaces ? [JSON.stringify([...archivedSpaces]), options.now] : [])
       ) as IterableIterator<Row>
       for (const row of rows) {
         const facts: IndexFacts = {
@@ -549,9 +591,10 @@ class Fts5VariantIndex implements VariantIndex {
           type: row.type,
           kind: row.kind,
           ...(row.view ? { view: row.view } : {}),
+          archived: row.archived_from !== null && row.archived_from <= options.now,
         }
         if (!options.accept(facts)) continue
-        if (archivedSpaces && (row.archived === 1 || archivedSpaces.has(row.space_id))) {
+        if (archivedSpaces && (facts.archived || archivedSpaces.has(row.space_id))) {
           if (archived >= options.limit) {
             more.archived = true
             break
@@ -637,6 +680,10 @@ class MiniSearchVariantIndex implements VariantIndex {
       "archiveOn",
       "view",
       "archived",
+      "threadId",
+      "messageId",
+      "sequence",
+      "archivedFrom",
     ],
     searchOptions: { boost: { title: 3 }, fuzzy: 0.2, prefix: true },
   })
@@ -672,7 +719,7 @@ class MiniSearchVariantIndex implements VariantIndex {
         filter: (result) => {
           const entry = result as unknown as IndexEntry
           if (options.spaceId !== undefined && entry.spaceId !== options.spaceId) return false
-          return options.accept(factsOf(entry))
+          return options.accept(factsOf(entry, options.now))
         },
       })
       .map(
@@ -686,8 +733,8 @@ class MiniSearchVariantIndex implements VariantIndex {
     const spaces = options.archivedLast?.spaces
     const parts = spaces
       ? [
-          found.filter((hit) => !isArchivedIn(hit.entry, spaces)),
-          found.filter((hit) => isArchivedIn(hit.entry, spaces)),
+          found.filter((hit) => !isArchivedIn(hit.entry, spaces, options.now)),
+          found.filter((hit) => isArchivedIn(hit.entry, spaces, options.now)),
         ]
       : [found]
     return {

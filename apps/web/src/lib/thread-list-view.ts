@@ -18,3 +18,21 @@ export interface ThreadViewSearch {
 export function threadViewSearch(value: unknown): ThreadViewSearch {
   return value === "archived" ? { view: "archived" } : {}
 }
+
+/** A thread opened at one of its messages, as a search found it. */
+export interface ThreadMessageSearch {
+  message?: string
+}
+
+/** A thread page's search, for its other threads and views. */
+export function withoutMessage<T extends ThreadMessageSearch>(search: T): Omit<T, "message"> {
+  const rest: T = { ...search }
+  delete rest.message
+  return rest
+}
+
+export function threadMessageSearch(value: unknown): ThreadMessageSearch {
+  return typeof value === "string" && /^msg_[A-Za-z0-9_-]{12,}$/.test(value)
+    ? { message: value }
+    : {}
+}

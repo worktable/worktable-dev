@@ -1,16 +1,23 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
 import type { ThreadLocation } from "@worktable/types"
 import { ThreadViewSelect } from "@/components/threads/thread-view-select"
 import { ThreadsView } from "@/components/threads/threads-view"
 import { useThreadListFilter } from "@/lib/thread-lifetime"
-import { threadViewSearch, type ThreadListView } from "@/lib/thread-list-view"
+import {
+  threadMessageSearch,
+  threadViewSearch,
+  withoutMessage,
+  type ThreadListView,
+} from "@/lib/thread-list-view"
 import { preloadThread, threadsQueryOptions } from "@/lib/threads-queries"
 
 export const Route = createFileRoute("/spaces/$spaceId/threads/$")({
   ssr: false,
-  validateSearch: (search: Record<string, unknown>) =>
-    threadViewSearch(search.view),
+  validateSearch: (search: Record<string, unknown>) => ({
+    ...threadViewSearch(search.view),
+    ...threadMessageSearch(search.message),
+  }),
   beforeLoad: ({ context, params, search, preload }) => {
     const location = { kind: "space", spaceId: params.spaceId } as const
     void context.queryClient.prefetchQuery(
@@ -25,7 +32,10 @@ export const Route = createFileRoute("/spaces/$spaceId/threads/$")({
 
 function SpaceThreadsPage() {
   const { spaceId, _splat } = Route.useParams()
-  const search = Route.useSearch()
+  // The message a search opened the thread at belongs to that thread alone.
+  const routeSearch = Route.useSearch()
+  const message = routeSearch.message
+  const search = useMemo(() => withoutMessage(routeSearch), [routeSearch])
   const threadId = _splat ?? ""
   const navigate = useNavigate()
   const location = { kind: "space", spaceId } satisfies ThreadLocation
@@ -62,6 +72,7 @@ function SpaceThreadsPage() {
         />
       }
       threadId={threadId}
+      {...(message ? { openAt: message } : {})}
       selectedLocation={location}
       createLocation={location}
       locationLabel={() => "This Space"}

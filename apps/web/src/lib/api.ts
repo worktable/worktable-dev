@@ -6,7 +6,7 @@ import type {
   PersonalNavigation,
   ResolvedStartHerePin,
   SearchKind,
-  SearchResult,
+  FoundResult,
   SpaceFile,
   WithContentRevision,
   WithPicture,
@@ -242,7 +242,7 @@ export function searchWorkspace(
   if (opts.maxResults !== undefined)
     params.set("maxResults", String(opts.maxResults))
   return fetchJSON<{
-    results: WithContentRevision<SearchResult>[]
+    results: WithContentRevision<FoundResult>[]
     indexing?: boolean
     corrected?: string[]
   }>(

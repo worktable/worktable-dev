@@ -1102,7 +1102,7 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
   worktable_search: (tool) => ({
     ...tool,
     description:
-      "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources. Set exact to find exact text, or a regex with regex, line by line in Docs, HTML Docs and text, code or table files instead.",
+      "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources, and threads you can read, each once with the messageId of its best match (read it with worktable_threads_read). Set exact to find exact text, or a regex with regex, line by line in Docs, HTML Docs and text, code or table files instead.",
     inputSchema: z.strictObject({
       ...tool.inputSchema.shape,
       exact: z

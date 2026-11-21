@@ -761,7 +761,7 @@ describe("search excerpts", () => {
 
       const reread = new Map<string, number>();
       setSearchIndexRebuildHookForTests(async ({ spaceId, documents }) => {
-        reread.set(spaceId, (reread.get(spaceId) ?? 0) + documents);
+        if (documents > 0) reread.set(spaceId, (reread.get(spaceId) ?? 0) + documents);
       });
       expect(await searchResults(app, "dirigible", common)).toEqual([
         expect.objectContaining({ path: "zeppelin", excerpt: "The dirigible hangar opens." }),
@@ -942,7 +942,8 @@ describe("search excerpts", () => {
   it("answers while edits keep arriving", async () => {
     for (const documentAccess of ["legacy", "common"] as const) {
       let syncs = 0;
-      setSearchIndexRebuildHookForTests(async () => {
+      setSearchIndexRebuildHookForTests(async ({ spaceId }) => {
+        if (spaceId !== "meta") return;
         syncs += 1;
         // Another save lands during every sync.
         invalidateSearchIndex({ spaceId: "meta", path: "zeppelin" });

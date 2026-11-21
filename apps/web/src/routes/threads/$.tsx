@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import type { ThreadLocation } from "@worktable/types"
 import {
   Select,
@@ -12,8 +12,11 @@ import { ThreadViewSelect } from "@/components/threads/thread-view-select"
 import { ThreadsView } from "@/components/threads/threads-view"
 import { useThreadListFilter } from "@/lib/thread-lifetime"
 import {
+  threadMessageSearch,
   threadViewSearch,
+  withoutMessage,
   type ThreadListView,
+  type ThreadMessageSearch,
   type ThreadViewSearch,
 } from "@/lib/thread-list-view"
 import { useSpaces } from "@/lib/queries"
@@ -21,7 +24,7 @@ import { threadScopeContains, type ThreadListScope } from "@/lib/threads-api"
 import { preloadThread, threadsQueryOptions } from "@/lib/threads-queries"
 import { useWorktableThreadSubscription } from "@/lib/ws"
 
-interface ThreadsSearch extends ThreadViewSearch {
+interface ThreadsSearch extends ThreadViewSearch, ThreadMessageSearch {
   location: "all" | "worktable" | "space"
   spaceId?: string
 }
@@ -41,6 +44,7 @@ export const Route = createFileRoute("/threads/$")({
       location: spaceId ? location : location === "space" ? "all" : location,
       spaceId,
       ...threadViewSearch(search.view),
+      ...threadMessageSearch(search.message),
     }
   },
   beforeLoad: ({ context, search, params, preload }) => {
@@ -89,7 +93,10 @@ function threadSplat(location: ThreadLocation, threadId: string): string {
 
 function GlobalThreadsPage() {
   const { _splat } = Route.useParams()
-  const search = Route.useSearch()
+  // The message a search opened the thread at belongs to that thread alone.
+  const routeSearch = Route.useSearch()
+  const message = routeSearch.message
+  const search = useMemo(() => withoutMessage(routeSearch), [routeSearch])
   const navigate = useNavigate()
   const spacesQuery = useSpaces()
   const spaces = spacesQuery.data ?? []
@@ -182,6 +189,7 @@ function GlobalThreadsPage() {
       view={view}
       onViewChange={setView}
       threadId={selected.threadId}
+      {...(message ? { openAt: message } : {})}
       selectedLocation={selected.location}
       createLocation={createLocation}
       showLocations={scope.kind === "all"}

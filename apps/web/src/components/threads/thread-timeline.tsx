@@ -2,6 +2,7 @@ import {
   createContext,
   memo,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -93,6 +94,8 @@ const JumpToMessageContext = createContext<
 
 interface ThreadTimelineProps {
   location: ThreadLocation
+  /** A message to open at instead of the newest, loading earlier ones if needed. */
+  openAt?: string
   messages: ThreadMessage[]
   members: ThreadMember[]
   identities: ConversationIdentity[]
@@ -227,6 +230,7 @@ function ThreadConversation({
   loadingOlder = false,
   onLoadOlder,
   onLoadReplyTarget,
+  openAt,
 }: ThreadTimelineProps) {
   const { scrollToMessage } = useMessageScroller()
   // The first rendered message, by id so loading earlier pages or receiving
@@ -331,6 +335,18 @@ function ThreadConversation({
   const loadReplyTarget = useStableCallback((messageId: string) =>
     onLoadReplyTarget ? onLoadReplyTarget(messageId) : Promise.resolve()
   )
+
+  // A thread a search opened at one of its messages shows that message, as
+  // a reply's quote does when it is followed.
+  const openedAt = useRef<string | null>(null)
+  useEffect(() => {
+    if (!openAt || openedAt.current === openAt) return
+    openedAt.current = openAt
+    const loaded = messages.some((message) => message.id === openAt)
+    void (loaded ? Promise.resolve() : loadReplyTarget(openAt)).then(() =>
+      requestAnimationFrame(() => jumpToMessage(openAt, { align: "center" }))
+    )
+  }, [openAt, messages, loadReplyTarget, jumpToMessage])
 
   const items = useMemo(() => {
     const rows: ReactNode[] = []

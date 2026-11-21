@@ -4,6 +4,7 @@ import type {
   DocumentHealth,
 } from "./documents";
 import type { SearchSkill } from "./skills";
+import type { ThreadLocation } from "./threads";
 
 export * from "./constants";
 export * from "./sent-comment";
@@ -122,16 +123,41 @@ export interface SearchResult {
   skill?: SearchSkill;
 }
 
+/** A thread a search found, by the message in it that matched best. */
+export interface ThreadSearchResult {
+  type: "thread";
+  location: ThreadLocation;
+  /** The thread's Space; absent for a thread of the whole Worktable. */
+  spaceId?: string;
+  threadId: string;
+  /** The message that matched best, and its place in the thread. */
+  messageId: string;
+  sequence: number;
+  title: string;
+  score: number;
+  /** Plain-text window around the first matched term in that message. */
+  excerpt?: string;
+  /**
+   * The thread or its Space is archived. Only on a search that asked for
+   * archived results after the rest.
+   */
+  archived?: true;
+}
+
+/** Anything a search finds. */
+export type FoundResult = SearchResult | ThreadSearchResult;
+
 /** The kinds a search can be narrowed to. */
-export const SEARCH_KINDS = ["doc", "html", "drawing", "file", "record"] as const;
+export const SEARCH_KINDS = ["doc", "html", "drawing", "file", "record", "thread"] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 
 /** Which kind a search result is, from its type and format. */
 export function searchResultKind(result: {
-  type: SearchResult["type"];
+  type: FoundResult["type"];
   format?: { id: string };
 }): SearchKind {
   if (result.type === "record") return "record";
+  if (result.type === "thread") return "thread";
   switch (result.format?.id) {
     case "worktable.html":
       return "html";

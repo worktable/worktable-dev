@@ -63,7 +63,8 @@ export function DocPicker({
   const [query, setQuery] = useState("")
   const asked = useDeferredValue(query.trim())
   const found = useQuery({
-    ...searchQueryOptions({ query: asked, spaceId, maxResults: 30 }),
+    // Skills are Docs: the other kinds would only take their places.
+    ...searchQueryOptions({ query: asked, spaceId, maxResults: 30, kind: "doc" }),
     enabled: asked.length > 0,
     placeholderData: keepPreviousData,
   })
@@ -87,9 +88,9 @@ export function DocPicker({
     asked
       ? (found.data ?? [])
           .filter(
-            (result) =>
+            (result): result is Extract<typeof result, { type: "doc" | "record" }> =>
               result.type === "doc" &&
-              result.path &&
+              Boolean(result.path) &&
               result.documentKind !== "conflict" &&
               (!result.format || SKILL_FORMATS.has(result.format.id))
           )

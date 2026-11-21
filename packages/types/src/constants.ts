@@ -61,16 +61,29 @@ export function isThreadArchived(
   thread: { lastMessageAt: string; lifetime?: ThreadLifetimeChoice },
   nowMs: number
 ): boolean {
+  const from = threadArchivedFrom(thread)
+  return from !== null && nowMs >= from
+}
+
+/**
+ * From when a thread counts as archived, by isThreadArchived's rule, until
+ * its next message or lifetime choice: 0 when it already is, null when it
+ * never will be (kept).
+ */
+export function threadArchivedFrom(thread: {
+  lastMessageAt: string
+  lifetime?: ThreadLifetimeChoice
+}): number | null {
   const choice = thread.lifetime
-  if (choice?.state === "kept") return false
+  if (choice?.state === "kept") return null
   const lastMessageMs = Date.parse(thread.lastMessageAt)
   const chosenMs = choice ? Date.parse(choice.at) : Number.NaN
-  if (choice?.state === "archived" && !(lastMessageMs > chosenMs)) return true
+  if (choice?.state === "archived" && !(lastMessageMs > chosenMs)) return 0
   const quietSinceMs =
     choice?.state === "temporary" && chosenMs > lastMessageMs
       ? chosenMs
       : lastMessageMs
-  return nowMs - quietSinceMs >= THREAD_QUIET_MS
+  return quietSinceMs + THREAD_QUIET_MS
 }
 
 /** The same for a thread as stored or read, from its newest message. */

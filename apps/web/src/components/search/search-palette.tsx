@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react"
 import {
+  type FoundResult,
   type SearchKind,
   type SearchResult,
   type SpaceFile,
@@ -68,6 +69,7 @@ const KINDS: ReadonlyArray<{
   { kind: "drawing", label: "Drawings", formatId: "worktable.quickdraw" },
   { kind: "file", label: "Files", formatId: "worktable.file" },
   { kind: "record", label: "Records" },
+  { kind: "thread", label: "Threads" },
 ]
 
 /** A filter left open: the menu needs a value for "no filter". */
@@ -154,10 +156,38 @@ function place(spaceName: string | undefined, folder: string | undefined) {
 }
 
 function resultRow(
-  result: SearchResult,
+  result: FoundResult,
   spaces: ReadonlyMap<string, SpaceFile>,
   worktableName: string
 ): Row {
+  if (result.type === "thread") {
+    // Opens at the message that matched, in the thread's own place.
+    const search = { message: result.messageId }
+    return {
+      key: `result:thread:${result.spaceId ?? ""}:${result.threadId}`,
+      title: result.title,
+      icon: <MessageCircle className={ICON} />,
+      target:
+        result.location.kind === "space"
+          ? {
+              to: "/spaces/$spaceId/threads/$",
+              params: { spaceId: result.location.spaceId, _splat: result.threadId },
+              search,
+            }
+          : {
+              to: "/threads/$",
+              params: { _splat: `worktable/${result.threadId}` },
+              search,
+            },
+      ...(result.excerpt ? { excerpt: result.excerpt } : {}),
+      location: place(
+        result.location.kind === "space"
+          ? spaces.get(result.location.spaceId)?.name
+          : worktableName,
+        undefined
+      ),
+    }
+  }
   const spaceName = spaces.get(result.spaceId)?.name
   const key = `result:${result.type}:${result.spaceId}:${
     result.path ?? `${result.collectionId}/${result.recordId}`

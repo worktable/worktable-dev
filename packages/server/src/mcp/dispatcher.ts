@@ -2891,6 +2891,8 @@ async function _dispatchOperationInner(
         includeArchived: includeArchived ?? false,
         maxResults: candidateLimit + 1,
         documentAccess: commonDocuments ? "common" : "legacy",
+        // Threads are searched on the preview surface, by readers of threads.
+        includeThreads: context.surface === "preview" && hasScope(identity.scopes, "threads:read"),
       })
       const candidates = ranked.slice(0, candidateLimit)
       const matching = pathPrefix

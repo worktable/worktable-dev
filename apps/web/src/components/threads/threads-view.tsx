@@ -118,6 +118,8 @@ export interface ThreadsViewProps {
   view: ThreadListView
   onViewChange: (view: ThreadListView) => void
   threadId: string
+  /** A message to open the thread at, as a search found it. */
+  openAt?: string
   selectedLocation: ThreadLocation
   createLocation: ThreadLocation
   showLocations?: boolean
@@ -172,6 +174,7 @@ function ThreadsLayout({
   view,
   onViewChange,
   threadId,
+  openAt,
   selectedLocation,
   createLocation,
   showLocations = false,
@@ -273,6 +276,7 @@ function ThreadsLayout({
         <ThreadDetail
           key={`${threadLocationKey(selectedLocation)}:${threadId}`}
           threadId={threadId}
+          {...(openAt ? { openAt } : {})}
           selectedLocation={selectedLocation}
           createLocation={createLocation}
           locationControl={locationControl}
@@ -288,6 +292,7 @@ function ThreadsLayout({
 
 function ThreadDetail({
   threadId,
+  openAt,
   selectedLocation,
   createLocation,
   locationControl,
@@ -298,6 +303,7 @@ function ThreadDetail({
 }: Pick<
   ThreadsViewProps,
   | "threadId"
+  | "openAt"
   | "selectedLocation"
   | "createLocation"
   | "locationControl"
@@ -848,6 +854,7 @@ function ThreadDetail({
           <ThreadTimeline
             key={`${threadLocationKey(selectedLocation)}:${threadId}`}
             location={selectedLocation}
+            {...(openAt ? { openAt } : {})}
             messages={threadQuery.data.thread.messages}
             members={threadQuery.data.thread.members}
             identities={threadQuery.data.thread.identities}

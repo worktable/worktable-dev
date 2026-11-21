@@ -287,6 +287,8 @@ interface SpaceSegment {
   built: boolean;
   /** The Space is archived, as of the latest listing. */
   archivedSpace: boolean;
+  /** A listing has said whether it is archived: false for a Space restored from disk until one has. */
+  listed: boolean;
   dirty: boolean;
   recordsDirty: boolean;
   /** Document keys to re-read even when their revision looks unchanged. */
@@ -390,6 +392,7 @@ function newSegment(includesRecords: boolean): SpaceSegment {
     recordIds: [],
     built: false,
     archivedSpace: false,
+    listed: false,
     dirty: true,
     recordsDirty: includesRecords,
     forced: new Set(),
@@ -936,11 +939,13 @@ function listVariantSpaces(variant: IndexVariant): Promise<void> {
           const existing = variant.segments.get(spaceId);
           if (existing) {
             existing.archivedSpace = archivedSpace;
+            existing.listed = true;
             continue;
           }
           variant.segments.set(spaceId, {
             ...newSegment(variant.includesRecords),
             archivedSpace,
+            listed: true,
           });
         }
       } catch (error) {
@@ -1267,7 +1272,7 @@ export async function searchWithStatus(
       if (entry.type === "doc" && documentAccess === "common") {
         // Archived documents and Spaces were left out before ranking, once
         // the Spaces are listed; before that, the Space is read.
-        if (!segments.has(entry.spaceId)) {
+        if (segments.get(entry.spaceId)?.listed !== true) {
           const { data: space } = await spaceOf(entry.spaceId);
           if (!space || getSpaceArchiveInfo(space)) continue;
         }

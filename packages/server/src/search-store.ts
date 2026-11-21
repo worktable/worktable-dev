@@ -757,9 +757,9 @@ export function openVariantIndex(variant: string, includesRecords: boolean): Var
       try {
         closeSearchStore()
       } catch {
-        // The open's own error is the one to report; search falls back below.
+        // The open's own error is the one to report; search falls back
+        // below, and a later close tries again.
       }
-      shared = null
       if (error instanceof FtsUnavailableError) ftsBroken = true
       else unopenable = path
       console.warn("[search] SQLite search index unavailable; searching in memory:", logError(error))

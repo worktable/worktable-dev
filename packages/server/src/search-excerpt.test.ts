@@ -38,6 +38,7 @@ import {
 import { recordDocAlias, retireDocAlias } from "./doc-aliases.ts";
 import { notifyWorkspaceChange } from "./workspace-events.ts";
 import { keepSearchIndexOnDisk } from "./search-store.ts";
+import * as storeModule from "./store.ts";
 
 function buildTestApp() {
   const app = new Hono();
@@ -770,6 +771,24 @@ describe("search excerpts", () => {
       expect(await searchResults(app, "observatory", common)).toEqual([
         expect.objectContaining({ path: "richdoc" }),
       ]);
+
+      // A Space archived while the server is down stays out of a search
+      // that answers before the Spaces are listed again.
+      expect((await req(app, "POST", "/api/spaces", { name: "Zulu" })).status).toBe(201);
+      writeFileSync(join(workspaceDir, "spaces", "zulu", "docs", "kiwi.md"), "# Kiwi\n\nThe kiwi orchard.");
+      ageDocuments(join(workspaceDir, "spaces"));
+      invalidateSearchIndex();
+      expect((await searchResults(app, "kiwi", common)).map((result) => result.path)).toEqual(["kiwi"]);
+      keepSearchIndexOnDisk(false);
+      expect((await req(app, "POST", "/api/spaces/zulu/archive", {})).status).toBe(200);
+      keepSearchIndexOnDisk(true);
+      const listing = spyOn(storeModule, "listSpaces").mockReturnValue(new Promise(() => {}));
+      try {
+        setSearchWaitForTests(200);
+        expect(await searchResults(app, "kiwi", common)).toEqual([]);
+      } finally {
+        listing.mockRestore();
+      }
     } finally {
       keepSearchIndexOnDisk(false);
     }

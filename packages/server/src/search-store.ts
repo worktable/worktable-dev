@@ -412,6 +412,7 @@ type Row = {
   id: number
   entry_id: string
   space_id: string
+  doc_key: string | null
   type: IndexEntry["type"]
   kind: SearchKind
   view: "live" | "archived" | null
@@ -563,7 +564,7 @@ class Fts5VariantIndex implements VariantIndex {
         // Title scores are read once: joined as a subquery, they were read
         // again for every match, which took seconds for a one-letter search.
         "WITH t AS MATERIALIZED (SELECT rowid, bm25(titles) AS score FROM titles WHERE titles MATCH ?1) " +
-          "SELECT i.id, i.entry_id, i.space_id, i.type, i.kind, i.view, i.archived_from, " +
+          "SELECT i.id, i.entry_id, i.space_id, i.doc_key, i.type, i.kind, i.view, i.archived_from, " +
           "-(3 * coalesce(t.score, 0) + bm25(pieces, 3.0, 1.0)) AS score " +
           "FROM pieces JOIN items i ON i.id = pieces.rowid " +
           "LEFT JOIN t ON t.rowid = i.id " +
@@ -578,6 +579,9 @@ class Fts5VariantIndex implements VariantIndex {
     let current = 0
     let archived = 0
     const more = { current: false, archived: false }
+    // A thread is one result, by its best message: its title is on every
+    // message, so one long thread would otherwise fill the limit by itself.
+    const threadsSeen = new Set<string>()
     try {
       const rows = statement.iterate(
         indexQuery(queryWords),
@@ -594,6 +598,11 @@ class Fts5VariantIndex implements VariantIndex {
           archived: row.archived_from !== null && row.archived_from <= options.now,
         }
         if (!options.accept(facts)) continue
+        if (row.type === "thread") {
+          const thread = `${row.space_id}\0${row.doc_key}`
+          if (threadsSeen.has(thread)) continue
+          threadsSeen.add(thread)
+        }
         if (archivedSpaces && (facts.archived || archivedSpaces.has(row.space_id))) {
           if (archived >= options.limit) {
             more.archived = true
@@ -714,7 +723,7 @@ class MiniSearchVariantIndex implements VariantIndex {
   }
 
   search(query: string, options: IndexSearchOptions): IndexSearch {
-    const found = this.#idx
+    const matched = this.#idx
       .search(query, {
         filter: (result) => {
           const entry = result as unknown as IndexEntry
@@ -730,6 +739,14 @@ class MiniSearchVariantIndex implements VariantIndex {
           displayBody: this.#displayBodies.get(String(result.id)) ?? "",
         })
       )
+    const threadsSeen = new Set<string>()
+    const found = matched.filter((hit) => {
+      if (hit.entry.type !== "thread") return true
+      const thread = `${hit.entry.spaceId}\0${hit.entry.threadId}`
+      if (threadsSeen.has(thread)) return false
+      threadsSeen.add(thread)
+      return true
+    })
     const spaces = options.archivedLast?.spaces
     const parts = spaces
       ? [

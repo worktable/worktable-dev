@@ -321,6 +321,12 @@ interface SpaceSegment {
   threadsDirty: boolean;
   /** Threads to re-read even when their file looks unchanged. */
   threadsForced: Set<string>;
+  /**
+   * Every thread file is listed at the next sync: the first after a start,
+   * or after a change that named no thread. Otherwise a sync reads only the
+   * threads events named.
+   */
+  threadsRescan: boolean;
 }
 
 interface IndexedThread extends DerivedRevision {
@@ -431,8 +437,11 @@ function variantFor(
   return variant;
 }
 
-/** A thread's entries are stored under this and its id. */
-const THREAD_KEY = "thread:";
+/**
+ * A thread's entries are stored under this and its id. No document's key
+ * can start with it: paths hold no NUL.
+ */
+const THREAD_KEY = "\0thread\0";
 
 function newSegment(
   variant: Pick<IndexVariant, "documentAccess" | "includesRecords">,
@@ -451,6 +460,7 @@ function newSegment(
     threads: new Map(),
     threadsDirty: holdsThreads(variant),
     threadsForced: new Set(),
+    threadsRescan: true,
   };
 }
 
@@ -497,6 +507,7 @@ function markThreads(key: string, threadId?: string): void {
     }
     segment.threadsDirty = true;
     if (threadId !== undefined) segment.threadsForced.add(threadId);
+    else segment.threadsRescan = true;
   }
 }
 
@@ -980,34 +991,44 @@ function threadEntries(
 }
 
 /**
- * Re-read the threads whose file changed, or an event named, and replace
- * their messages' entries; drop the entries of threads that are gone.
+ * Re-read the threads an event named, or with `rescan` every thread whose
+ * file changed, and replace their messages' entries; drop the entries of
+ * threads that are gone. Only a rescan lists the location's files.
  */
 async function syncSegmentThreads(
   variant: IndexVariant,
   spaceId: string,
   segment: SpaceSegment,
   forced: ReadonlySet<string>,
+  rescan: boolean,
 ): Promise<number> {
   const location: ThreadLocation =
     spaceId === WORKTABLE_THREADS ? { kind: "worktable" } : { kind: "space", spaceId };
   const dir = threadsDir(location);
   let names: string[];
-  try {
-    names = await readdir(dir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    names = [];
+  if (rescan) {
+    try {
+      names = await readdir(dir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      names = [];
+    }
+  } else {
+    names = [...forced].map((threadId) => `${threadId}.json`);
   }
   const current = new Set<string>();
+  const gone = new Set<string>();
   let reread = 0;
   for (const name of names) {
     const threadId = THREAD_FILE.exec(name)?.[1];
     if (!threadId) continue;
-    current.add(threadId);
     const readAt = Date.now();
-    const stats = await stat(join(dir, name)).catch(() => null);
+    const stats = await stat(join(dir, name)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") gone.add(threadId);
+      return null;
+    });
     if (!stats) continue;
+    current.add(threadId);
     const revision = `${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}:${stats.ino}`;
     const previous = segment.threads.get(threadId);
     if (!forced.has(threadId) && canReuseDerived(previous, revision, stats.mtimeMs)) continue;
@@ -1033,12 +1054,16 @@ async function syncSegmentThreads(
     segment.threads.set(threadId, { revision, readAt, ids });
   }
   if (variant.segments.get(spaceId) !== segment) return reread;
-  const gone = [...segment.threads].filter(([threadId]) => !current.has(threadId));
-  if (gone.length > 0) {
+  // A rescan drops every thread it didn't list; otherwise only named
+  // threads whose file is gone.
+  const dropped = [...segment.threads].filter(([threadId]) =>
+    rescan ? !current.has(threadId) : gone.has(threadId),
+  );
+  if (dropped.length > 0) {
     variant.index.batch(() => {
-      for (const [, thread] of gone) for (const id of thread.ids) dropEntry(variant, id);
+      for (const [, thread] of dropped) for (const id of thread.ids) dropEntry(variant, id);
     });
-    for (const [threadId] of gone) segment.threads.delete(threadId);
+    for (const [threadId] of dropped) segment.threads.delete(threadId);
   }
   return reread;
 }
@@ -1054,8 +1079,10 @@ async function runSegmentSync(
   const syncRecords =
     space && variant.includesRecords && (segment.recordsDirty || !segment.built);
   const syncThreads = holdsThreads(variant) && (segment.threadsDirty || !segment.built);
+  const rescanThreads = syncThreads && (segment.threadsRescan || !segment.built);
   const forced = segment.forced;
   const threadsForced = segment.threadsForced;
+  if (syncThreads) segment.threadsRescan = false;
   // Marks made while this sync runs stay for the next one.
   segment.forced = new Set();
   segment.threadsForced = new Set();
@@ -1072,13 +1099,16 @@ async function runSegmentSync(
           : await syncLegacyDocuments(variant, spaceId, segment, forced);
     }
     if (syncRecords) await syncSegmentRecords(variant, spaceId, segment);
-    if (syncThreads) documents += await syncSegmentThreads(variant, spaceId, segment, threadsForced);
+    if (syncThreads) {
+      documents += await syncSegmentThreads(variant, spaceId, segment, threadsForced, rescanThreads);
+    }
     segment.built = true;
     await rebuildHookForTests?.({ spaceId, documents });
   } catch (error) {
     segment.dirty ||= syncDocuments;
     segment.recordsDirty ||= syncRecords;
     segment.threadsDirty ||= syncThreads;
+    segment.threadsRescan ||= rescanThreads;
     for (const key of forced) segment.forced.add(key);
     for (const threadId of threadsForced) segment.threadsForced.add(threadId);
     if (error instanceof DocumentSpaceNotFoundError) {

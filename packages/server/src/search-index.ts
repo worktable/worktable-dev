@@ -1272,9 +1272,13 @@ export async function searchWithStatus(
       if (entry.type === "doc" && documentAccess === "common") {
         // Archived documents and Spaces were left out before ranking, once
         // the Spaces are listed; before that, the Space is read.
-        if (segments.get(entry.spaceId)?.listed !== true) {
+        const segment = segments.get(entry.spaceId);
+        if (segment?.listed !== true) {
           const { data: space } = await spaceOf(entry.spaceId);
           if (!space || getSpaceArchiveInfo(space)) continue;
+        } else if (segment.archivedSpace) {
+          // Listed as archived since the index was asked.
+          continue;
         }
         filtered.push(hit);
         continue;

@@ -396,7 +396,14 @@ class Fts5VariantIndex implements VariantIndex {
   }
 
   current(): boolean {
-    return !this.#retired && this.#store.open && shared?.store === this.#store && shared.path === storePath()
+    return (
+      !this.#retired &&
+      this.#store.open &&
+      !ftsBroken &&
+      shared?.store === this.#store &&
+      shared.path === storePath() &&
+      unopenable !== shared.path
+    )
   }
 
   #writable(): boolean {

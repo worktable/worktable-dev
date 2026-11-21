@@ -428,6 +428,11 @@ export function applyThreadEvent(
     }
     return
   }
+  // A thread that changed or went can change what a search finds: searches
+  // read again when next asked, as after a Doc's save.
+  if (message.type === "thread_update" || message.type === "thread_deleted") {
+    void queryClient.invalidateQueries({ queryKey: ["search"], refetchType: "none" })
+  }
   if (message.type === "thread_update" && message.threadId && message.data) {
     applyThreadPayload(queryClient, location, message.data as Thread)
     return

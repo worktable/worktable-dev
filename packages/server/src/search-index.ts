@@ -7,7 +7,16 @@
 // Entries are kept by search-store.ts.
 // ============================================================
 
-import { assertSpaceAccess, canAccessSpace, readableSpaceIds, runWithoutTeamIdentity } from "./team-policy.ts";
+import { readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
+import {
+  assertSpaceAccess,
+  canAccessSpace,
+  canAccessWorktableThreads,
+  readableSpaceIds,
+  runWithoutTeamIdentity,
+} from "./team-policy.ts";
+import { readThread, threadsDir } from "./thread-store.ts";
 import {
   docStat,
   getDocArchiveInfo,
@@ -48,9 +57,20 @@ import {
   type DocEntry,
   type IndexEntry,
   type IndexHit,
+  type ThreadEntry,
   type VariantIndex,
+  entryArchived,
+  WORKTABLE_THREADS,
 } from "./search-store.ts";
 import { foldWord, type NearWord } from "./search-words.ts";
+import {
+  threadArchivedFrom,
+  threadLifetimeChoice,
+  type FoundResult,
+  type Thread,
+  type ThreadLocation,
+  type ThreadSearchResult,
+} from "@worktable/types";
 
 /**
  * The words searched for in place of misspelled ones that these results
@@ -295,7 +315,29 @@ interface SpaceSegment {
   forced: Set<string>;
   /** When to re-read documents that were temporarily unreadable. */
   retryAt: number | null;
+  /** When to read again threads that could not be read; apart from documents'. */
+  threadsRetryAt: number | null;
   syncing: Promise<void> | null;
+  /** Indexed threads by id: the file revision read, and their messages' entries. */
+  threads: Map<string, IndexedThread>;
+  threadsDirty: boolean;
+  /** Threads to re-read even when their file looks unchanged. */
+  threadsForced: Set<string>;
+  /**
+   * Every thread file is listed at the next sync: the first after a start,
+   * or after a change that named no thread. Otherwise a sync reads only the
+   * threads events named.
+   */
+  threadsRescan: boolean;
+}
+
+interface IndexedThread extends DerivedRevision {
+  ids: string[];
+}
+
+/** Only the index the app and agents search holds threads. */
+function holdsThreads(variant: Pick<IndexVariant, "documentAccess">): boolean {
+  return variant.documentAccess === "common";
 }
 
 interface IndexVariant {
@@ -375,18 +417,37 @@ function variantFor(
     for (const stored of index.stored()) {
       let segment = variant.segments.get(stored.spaceId);
       if (!segment) {
-        segment = newSegment(includesRecords);
+        segment = newSegment(variant);
         variant.segments.set(stored.spaceId, segment);
       }
       if (stored.key === null) segment.recordIds.push(stored.id);
-      else segment.documents.set(stored.key, stored);
+      else if (stored.key.startsWith(THREAD_KEY)) {
+        const threadId = stored.key.slice(THREAD_KEY.length);
+        const thread = segment.threads.get(threadId);
+        if (thread) thread.ids.push(stored.id);
+        else {
+          segment.threads.set(threadId, {
+            revision: stored.revision,
+            readAt: stored.readAt,
+            ids: [stored.id],
+          });
+        }
+      } else segment.documents.set(stored.key, stored);
     }
     variants.set(key, variant);
   }
   return variant;
 }
 
-function newSegment(includesRecords: boolean): SpaceSegment {
+/**
+ * A thread's entries are stored under this and its id. No document's key
+ * can start with it: paths hold no NUL.
+ */
+const THREAD_KEY = "\0thread\0";
+
+function newSegment(
+  variant: Pick<IndexVariant, "documentAccess" | "includesRecords">,
+): SpaceSegment {
   return {
     documents: new Map(),
     recordIds: [],
@@ -394,10 +455,15 @@ function newSegment(includesRecords: boolean): SpaceSegment {
     archivedSpace: false,
     listed: false,
     dirty: true,
-    recordsDirty: includesRecords,
+    recordsDirty: variant.includesRecords,
     forced: new Set(),
     retryAt: null,
+    threadsRetryAt: null,
     syncing: null,
+    threads: new Map(),
+    threadsDirty: holdsThreads(variant),
+    threadsForced: new Set(),
+    threadsRescan: true,
   };
 }
 
@@ -426,6 +492,25 @@ function markSpace(spaceId: string, documentPath?: string): void {
     if (documentPath !== undefined) {
       segment.forced.add(documentKey(variant, documentPath));
     }
+  }
+}
+
+/** The segment a thread location's threads are kept in. */
+function threadSegmentKey(location: ThreadLocation): string {
+  return location.kind === "worktable" ? WORKTABLE_THREADS : location.spaceId;
+}
+
+function markThreads(key: string, threadId?: string): void {
+  for (const variant of variants.values()) {
+    if (!holdsThreads(variant)) continue;
+    const segment = variant.segments.get(key);
+    if (!segment) {
+      variant.spacesListed = false;
+      continue;
+    }
+    segment.threadsDirty = true;
+    if (threadId !== undefined) segment.threadsForced.add(threadId);
+    else segment.threadsRescan = true;
   }
 }
 
@@ -498,6 +583,12 @@ onWorkspaceChange((event) => {
     case "recordCollectionReconcile":
       markRecords(event.spaceId);
       break;
+    case "thread":
+    case "threadCollectionReconcile": {
+      const location = event.location ?? (event.spaceId ? { kind: "space" as const, spaceId: event.spaceId } : null);
+      if (location) markThreads(threadSegmentKey(location), event.type === "thread" ? event.threadId : undefined);
+      break;
+    }
     case "workspaceReset":
       resetEpoch += 1;
       for (const [key, variant] of [...variants]) retireVariant(key, variant);
@@ -526,6 +617,9 @@ function retireSegment(variant: IndexVariant, spaceId: string, segment: SpaceSeg
   variant.index.batch(() => {
     for (const document of segment.documents.values()) dropEntry(variant, document.id);
     for (const id of segment.recordIds) dropEntry(variant, id);
+    for (const thread of segment.threads.values()) {
+      for (const id of thread.ids) dropEntry(variant, id);
+    }
   });
   variant.segments.delete(spaceId);
 }
@@ -866,20 +960,156 @@ async function syncSegmentRecords(
   segment.recordIds = [...kept];
 }
 
+/** Thread files are named by their id. */
+const THREAD_FILE = /^(thr_[A-Za-z0-9_-]{12,})\.json$/;
+
+/**
+ * One entry for each message of a thread, under its title. A thread's
+ * archive state follows the clock, so each entry keeps the time from which
+ * the thread counts as archived until it next changes.
+ */
+function threadEntries(
+  spaceId: string,
+  thread: Thread,
+): Array<{ entry: ThreadEntry; displayBody: string }> {
+  const last = thread.messages.at(-1);
+  const from = last
+    ? threadArchivedFrom({ lastMessageAt: last.createdAt, lifetime: threadLifetimeChoice(thread) })
+    : null;
+  return thread.messages.map((message) => ({
+    entry: {
+      id: `thread:${spaceId}:${thread.id}:${message.id}`,
+      spaceId,
+      path: thread.id,
+      type: "thread",
+      threadId: thread.id,
+      messageId: message.id,
+      sequence: message.sequence,
+      title: thread.title,
+      body: message.body,
+      ...(from !== null && Number.isFinite(from) ? { archivedFrom: from } : {}),
+    },
+    displayBody: markdownPlainText(message.body),
+  }));
+}
+
+/**
+ * Re-read the threads an event named, or with `rescan` every thread whose
+ * file changed, and replace their messages' entries; drop the entries of
+ * threads that are gone. Only a rescan lists the location's files.
+ */
+async function syncSegmentThreads(
+  variant: IndexVariant,
+  spaceId: string,
+  segment: SpaceSegment,
+  forced: ReadonlySet<string>,
+  rescan: boolean,
+): Promise<number> {
+  const location: ThreadLocation =
+    spaceId === WORKTABLE_THREADS ? { kind: "worktable" } : { kind: "space", spaceId };
+  const dir = threadsDir(location);
+  let names: string[];
+  if (rescan) {
+    try {
+      names = await readdir(dir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      names = [];
+    }
+  } else {
+    names = [...forced].map((threadId) => `${threadId}.json`);
+  }
+  const current = new Set<string>();
+  const gone = new Set<string>();
+  let reread = 0;
+  for (const name of names) {
+    const threadId = THREAD_FILE.exec(name)?.[1];
+    if (!threadId) continue;
+    const readAt = Date.now();
+    const stats = await stat(join(dir, name)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") gone.add(threadId);
+      return null;
+    });
+    if (!stats) {
+      if (!gone.has(threadId)) {
+        // There but not readable now: its entries stay, and it is tried
+        // again after a pause.
+        current.add(threadId);
+        segment.threadsForced.add(threadId);
+        segment.threadsRetryAt = Date.now() + UNREADABLE_RETRY_MS;
+      }
+      continue;
+    }
+    current.add(threadId);
+    const revision = `${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}:${stats.ino}`;
+    const previous = segment.threads.get(threadId);
+    if (!forced.has(threadId) && canReuseDerived(previous, revision, stats.mtimeMs)) continue;
+    reread += 1;
+    let entries: ReturnType<typeof threadEntries>;
+    try {
+      entries = threadEntries(spaceId, await readThread(location, threadId));
+    } catch {
+      // Not readable now: its entries stay as they were, and it is read
+      // again after a pause, as an unreadable document is.
+      reread -= 1;
+      segment.threadsForced.add(threadId);
+      segment.threadsRetryAt = Date.now() + UNREADABLE_RETRY_MS;
+      continue;
+    }
+    if (variant.segments.get(spaceId) !== segment) return reread;
+    const ids = entries.map(({ entry }) => entry.id);
+    const kept = new Set(ids);
+    variant.index.batch(() => {
+      for (const id of previous?.ids ?? []) if (!kept.has(id)) dropEntry(variant, id);
+      for (const { entry, displayBody } of entries) {
+        variant.index.put(entry, displayBody, { key: `${THREAD_KEY}${threadId}`, revision, readAt });
+      }
+    });
+    segment.threads.set(threadId, { revision, readAt, ids });
+  }
+  if (variant.segments.get(spaceId) !== segment) return reread;
+  // A rescan drops every thread it didn't list; otherwise only named
+  // threads whose file is gone.
+  const dropped = [...segment.threads].filter(([threadId]) =>
+    rescan ? !current.has(threadId) : gone.has(threadId),
+  );
+  if (dropped.length > 0) {
+    variant.index.batch(() => {
+      for (const [, thread] of dropped) for (const id of thread.ids) dropEntry(variant, id);
+    });
+    for (const [threadId] of dropped) segment.threads.delete(threadId);
+  }
+  return reread;
+}
+
 async function runSegmentSync(
   variant: IndexVariant,
   spaceId: string,
   segment: SpaceSegment,
 ): Promise<void> {
-  const syncDocuments = segment.dirty || !segment.built || retryDue(segment);
+  // The Worktable's own threads have a segment with no documents or records.
+  const space = spaceId !== WORKTABLE_THREADS;
+  const syncDocuments = space && (segment.dirty || !segment.built || retryDue(segment));
   const syncRecords =
-    variant.includesRecords && (segment.recordsDirty || !segment.built);
+    space && variant.includesRecords && (segment.recordsDirty || !segment.built);
+  const syncThreads =
+    holdsThreads(variant) &&
+    (segment.threadsDirty || !segment.built || threadsRetryDue(segment));
+  const rescanThreads = syncThreads && (segment.threadsRescan || !segment.built);
   const forced = segment.forced;
+  // Threads waiting to be read again stay marked until a sync reads them.
+  const threadsForced = syncThreads ? segment.threadsForced : new Set<string>();
   // Marks made while this sync runs stay for the next one.
   segment.forced = new Set();
+  if (syncThreads) {
+    segment.threadsForced = new Set();
+    segment.threadsRescan = false;
+    segment.threadsDirty = false;
+  }
   segment.dirty = false;
   segment.recordsDirty = false;
   if (syncDocuments) segment.retryAt = null;
+  if (syncThreads) segment.threadsRetryAt = null;
   try {
     let documents = 0;
     if (syncDocuments) {
@@ -889,12 +1119,18 @@ async function runSegmentSync(
           : await syncLegacyDocuments(variant, spaceId, segment, forced);
     }
     if (syncRecords) await syncSegmentRecords(variant, spaceId, segment);
+    if (syncThreads) {
+      documents += await syncSegmentThreads(variant, spaceId, segment, threadsForced, rescanThreads);
+    }
     segment.built = true;
     await rebuildHookForTests?.({ spaceId, documents });
   } catch (error) {
     segment.dirty ||= syncDocuments;
     segment.recordsDirty ||= syncRecords;
+    segment.threadsDirty ||= syncThreads;
+    segment.threadsRescan ||= rescanThreads;
     for (const key of forced) segment.forced.add(key);
+    for (const threadId of threadsForced) segment.threadsForced.add(threadId);
     if (error instanceof DocumentSpaceNotFoundError) {
       // Deleted while syncing: the next listing retires the segment.
       variant.spacesListed = false;
@@ -931,6 +1167,8 @@ function listVariantSpaces(variant: IndexVariant): Promise<void> {
         const archived = new Map(
           listed.map((space) => [space.id, Boolean(getSpaceArchiveInfo(space))]),
         );
+        // The Worktable's own threads are listed along with the Spaces.
+        if (holdsThreads(variant)) archived.set(WORKTABLE_THREADS, false);
         for (const [spaceId, segment] of variant.segments) {
           if (!archived.has(spaceId)) retireSegment(variant, spaceId, segment);
         }
@@ -943,7 +1181,7 @@ function listVariantSpaces(variant: IndexVariant): Promise<void> {
             continue;
           }
           variant.segments.set(spaceId, {
-            ...newSegment(variant.includesRecords),
+            ...newSegment(variant),
             archivedSpace,
             listed: true,
           });
@@ -969,12 +1207,19 @@ function retryDue(segment: SpaceSegment): boolean {
   return segment.retryAt !== null && Date.now() >= segment.retryAt;
 }
 
+// The same for threads, on their own clock.
+function threadsRetryDue(segment: SpaceSegment): boolean {
+  return segment.threadsRetryAt !== null && Date.now() >= segment.threadsRetryAt;
+}
+
 function segmentNeedsSync(segment: SpaceSegment): boolean {
   return (
     !segment.built ||
     segment.dirty ||
     segment.recordsDirty ||
+    segment.threadsDirty ||
     retryDue(segment) ||
+    threadsRetryDue(segment) ||
     segment.syncing !== null
   );
 }
@@ -1142,7 +1387,10 @@ export async function search(
   query: string,
   opts?: Parameters<typeof searchWithStatus>[1],
 ): Promise<SearchResult[]> {
-  return (await searchWithStatus(query, opts)).results;
+  // Docs and Records: callers here read them as such.
+  return (await searchWithStatus(query, opts)).results.filter(
+    (result): result is SearchResult => result.type !== "thread",
+  );
 }
 
 /**
@@ -1165,9 +1413,14 @@ export async function searchWithStatus(
     kinds?: readonly SearchKind[];
     /** Select only after caller authorization; common projection needs documents:read. */
     documentAccess?: DocumentSearchAccess;
+    /**
+     * The caller may read threads (threads:read): their messages are
+     * searched too, with common documents.
+     */
+    includeThreads?: boolean;
   }
 ): Promise<{
-  results: SearchResult[];
+  results: FoundResult[];
   complete: boolean;
   /** Words searched for in place of misspelled ones; see shownCorrections. */
   corrected: NearWord[];
@@ -1184,6 +1437,9 @@ export async function searchWithStatus(
   const includeArchived = opts?.includeArchived ?? false;
   const documentAccess = opts?.documentAccess ?? "legacy";
   const kinds = opts?.kinds && opts.kinds.length > 0 ? new Set(opts.kinds) : null;
+  const includeThreads = opts?.includeThreads === true && documentAccess === "common";
+  // Thread archive states follow the clock: one time decides them all.
+  const now = Date.now();
   const {
     variant: { index, segments },
     complete: indexComplete,
@@ -1229,7 +1485,17 @@ export async function searchWithStatus(
 
   const ask = (limit: number) => index.search(query, {
     ...(opts?.spaceId ? { spaceId: opts.spaceId } : {}),
+    now,
     accept: (facts) => {
+      if (facts.type === "thread") {
+        if (!includeThreads) return false;
+        const readable =
+          facts.spaceId === WORKTABLE_THREADS
+            ? canAccessWorktableThreads("read")
+            : canAccessSpace(facts.spaceId);
+        if (!readable || (kinds && !kinds.has("thread"))) return false;
+        return includeArchived || (!facts.archived && !inArchivedSpace(facts.spaceId));
+      }
       if (!canAccessSpace(facts.spaceId)) return false;
       if (kinds && !kinds.has(facts.kind)) return false;
       if (facts.type === "doc" && documentAccess === "common") {
@@ -1254,8 +1520,15 @@ export async function searchWithStatus(
 
   const eligible = async (hits: IndexHit[]): Promise<IndexHit[]> => {
     const filtered: IndexHit[] = [];
+    // A thread is found once, by its message that matched best.
+    const threadsFound = new Set<string>();
     for (const hit of hits) {
       const entry = hit.entry;
+      if (entry.type === "thread") {
+        const key = `${entry.spaceId}:${entry.threadId}`;
+        if (threadsFound.has(key)) continue;
+        threadsFound.add(key);
+      }
       if (
         !indexComplete &&
         entry.type === "doc" &&
@@ -1269,7 +1542,11 @@ export async function searchWithStatus(
         continue;
       }
 
-      if (entry.type === "doc" && documentAccess === "common") {
+      if (entry.type === "thread" && entry.spaceId === WORKTABLE_THREADS) {
+        filtered.push(hit);
+        continue;
+      }
+      if ((entry.type === "doc" && documentAccess === "common") || entry.type === "thread") {
         // Archived documents and Spaces were left out before ranking, once
         // the Spaces are listed; before that, the Space is read.
         const segment = segments.get(entry.spaceId);
@@ -1302,7 +1579,7 @@ export async function searchWithStatus(
   };
 
   const isArchived = (entry: IndexEntry) =>
-    (entry.type === "doc" && entry.archived === true) || inArchivedSpace(entry.spaceId);
+    entryArchived(entry, now) || inArchivedSpace(entry.spaceId);
   // The checks above rarely leave a hit out (a document deleted while the
   // index catches up, an archived legacy Doc), so the index is asked for a
   // few more than the limit, and for more again when they left too few.
@@ -1336,8 +1613,26 @@ export async function searchWithStatus(
           .slice(0, maxResults),
       ]
     : filtered.slice(0, maxResults);
-  const results: SearchResult[] = docHits.map(({ entry, score, terms, displayBody }) => {
+  const results: FoundResult[] = docHits.map(({ entry, score, terms, displayBody }): FoundResult => {
     const excerpt = makeExcerpt(displayBody, terms);
+    if (entry.type === "thread") {
+      const thread: ThreadSearchResult = {
+        type: "thread",
+        location:
+          entry.spaceId === WORKTABLE_THREADS
+            ? { kind: "worktable" }
+            : { kind: "space", spaceId: entry.spaceId },
+        ...(entry.spaceId === WORKTABLE_THREADS ? {} : { spaceId: entry.spaceId }),
+        threadId: entry.threadId,
+        messageId: entry.messageId,
+        sequence: entry.sequence,
+        title: entry.title,
+        score,
+        ...(excerpt !== undefined ? { excerpt } : {}),
+        ...(opts?.archivedLast && isArchived(entry) ? { archived: true as const } : {}),
+      };
+      return thread;
+    }
     return {
       spaceId: entry.spaceId,
       type: entry.type,
@@ -1381,6 +1676,7 @@ export async function searchWithStatus(
       [...segments]
         .filter(
           ([spaceId, segment]) =>
+            spaceId !== WORKTABLE_THREADS &&
             segment.archivedSpace === archived &&
             (!allowedSpaces || allowedSpaces.includes(spaceId)),
         )

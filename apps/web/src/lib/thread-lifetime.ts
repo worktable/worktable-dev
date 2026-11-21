@@ -1,5 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useSyncExternalStore } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState, useSyncExternalStore } from "react"
 import {
   isStoredThreadArchived,
   THREAD_LIFETIME_KEY,
@@ -15,7 +15,11 @@ import {
 import { fetchJSON } from "./http"
 import type { ThreadListFilter, ThreadListView } from "./thread-list-view"
 import { threadBase } from "./threads-api"
-import { threadListKeys, threadQueryKeys } from "./threads-queries"
+import {
+  threadListKeys,
+  threadQueryKeys,
+  threadQueryOptions,
+} from "./threads-queries"
 
 function setThreadLifetime(
   location: ThreadLocation,
@@ -39,6 +43,35 @@ export function threadsInView(
     (thread) =>
       thread.members.some((member) => member.kind === "human") === withPeople
   )
+}
+
+/**
+ * The view a list beside an open thread shows: the one asked for, or, when
+ * the thread is one its filter leaves out (an agents' thread under People),
+ * the one that holds it. Only for that thread, and only until someone picks
+ * a view while it is open; the remembered filter stays as it was.
+ */
+export function useShownThreadView(
+  location: ThreadLocation,
+  threadId: string,
+  view: ThreadListView
+): [ThreadListView, () => void] {
+  // Read from the cache the open thread fills; this asks for nothing.
+  const open = useQuery({ ...threadQueryOptions(location, threadId), enabled: false })
+  // A pick lasts while its thread stays open, not into its next opening.
+  const [picked, setPicked] = useState(false)
+  const [openThread, setOpenThread] = useState(threadId)
+  if (openThread !== threadId) {
+    setOpenThread(threadId)
+    setPicked(false)
+  }
+  const members = open.data?.thread.members
+  let shown = view
+  if (members && !picked && (view === "people" || view === "agents")) {
+    const withPeople = members.some((member) => member.kind === "human")
+    if (withPeople !== (view === "people")) shown = withPeople ? "people" : "agents"
+  }
+  return [shown, () => setPicked(true)]
 }
 
 // ── Remembered filter ──────────────────────────────────────

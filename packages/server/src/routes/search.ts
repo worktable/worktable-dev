@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import {
   SEARCH_KINDS,
+  type FoundResult,
   type SearchKind,
-  type SearchResult,
   type WithContentRevision,
 } from "@worktable/types";
 import { requireScope } from "../auth.ts";
@@ -54,6 +54,7 @@ searchRouter.get("/", async (c) => {
     ...(kinds ? { kinds } : {}),
     maxResults,
     documentAccess: commonDocuments ? "common" : "legacy",
+    includeThreads: hasScope(c.get("identity")?.scopes ?? [], "threads:read"),
   });
 
   // Skills show only to a reader the Library itself would admit. A skill is
@@ -71,7 +72,7 @@ searchRouter.get("/", async (c) => {
       result.type === "doc" && result.path && result.documentView
         ? { spaceId: result.spaceId, path: result.path }
         : null,
-    (result, revision): WithContentRevision<SearchResult> => ({
+    (result, revision): WithContentRevision<FoundResult> => ({
       ...result,
       revision,
     })

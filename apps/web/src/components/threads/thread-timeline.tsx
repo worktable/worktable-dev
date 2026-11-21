@@ -2,6 +2,7 @@ import {
   createContext,
   memo,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -93,6 +94,10 @@ const JumpToMessageContext = createContext<
 
 interface ThreadTimelineProps {
   location: ThreadLocation
+  /** A message to open at instead of the newest, loading earlier ones if needed. */
+  openAt?: string
+  /** Names each opening, so the same message opened again is shown again. */
+  openKey?: string
   messages: ThreadMessage[]
   members: ThreadMember[]
   identities: ConversationIdentity[]
@@ -227,6 +232,8 @@ function ThreadConversation({
   loadingOlder = false,
   onLoadOlder,
   onLoadReplyTarget,
+  openAt,
+  openKey,
 }: ThreadTimelineProps) {
   const { scrollToMessage } = useMessageScroller()
   // The first rendered message, by id so loading earlier pages or receiving
@@ -330,6 +337,59 @@ function ThreadConversation({
   const canLoadReplyTarget = Boolean(onLoadReplyTarget)
   const loadReplyTarget = useStableCallback((messageId: string) =>
     onLoadReplyTarget ? onLoadReplyTarget(messageId) : Promise.resolve()
+  )
+
+  // A thread a search opened at one of its messages shows that message, as
+  // a reply's quote does when it is followed. Messages away from the screen
+  // take an estimated height until they are drawn, so the first scroll lands
+  // near it; it is centred again until it stays.
+  const openedAt = useRef<string | null>(null)
+  const centreOn = useStableCallback((messageId: string, opening: string) => {
+    const attempt = (tries: number) => {
+      jumpToMessage(messageId, { align: "center" })
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          // A later opening, or leaving the thread, ends this one.
+          if (openedAt.current !== opening) return
+          const viewport = viewportRef.current
+          const target = viewport?.querySelector(
+            `[data-message-id="${CSS.escape(messageId)}"]`
+          )
+          if (!viewport || tries <= 1) return
+          if (target) {
+            const shown = viewport.getBoundingClientRect()
+            const at = target.getBoundingClientRect()
+            const off = at.top + at.height / 2 - (shown.top + shown.height / 2)
+            if (Math.abs(off) <= 8) return
+          }
+          attempt(tries - 1)
+        })
+      )
+    }
+    attempt(10)
+  })
+  useEffect(() => {
+    if (!openAt) {
+      // The thread was opened again without a message: nothing pending
+      // jumps, and the same message can be opened once more.
+      openedAt.current = null
+      return
+    }
+    const opening = `${openAt}\0${openKey ?? ""}`
+    if (openedAt.current === opening) return
+    openedAt.current = opening
+    const loaded = messages.some((message) => message.id === openAt)
+    void (loaded ? Promise.resolve() : loadReplyTarget(openAt)).then(() =>
+      requestAnimationFrame(() => {
+        if (openedAt.current === opening) centreOn(openAt, opening)
+      })
+    )
+  }, [openAt, openKey, messages, loadReplyTarget, centreOn])
+  useEffect(
+    () => () => {
+      openedAt.current = null
+    },
+    []
   )
 
   const items = useMemo(() => {

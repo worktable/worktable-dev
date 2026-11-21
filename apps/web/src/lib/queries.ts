@@ -9,7 +9,7 @@ import { getWidget } from "./widgets-api"
 import { SPACE_CONTENTS_GC_MS } from "./space-contents-cache"
 import { abandonableRead } from "./http"
 import { getRecordCollectionHealth, listRecordCollections, listRecords, queryRecords } from "./records-api"
-import type { RecordQuery, SearchResult } from "@worktable/types"
+import type { FoundResult, RecordQuery } from "@worktable/types"
 
 /** What a search asks for. */
 export type SearchOptions = Parameters<typeof searchWorkspace>[0]
@@ -225,6 +225,6 @@ export function useRecordPages(
 
 export function useSearchResults(
   opts: SearchOptions
-): ReturnType<typeof useQuery<SearchResult[]>> {
+): ReturnType<typeof useQuery<FoundResult[]>> {
   return useQuery(searchQueryOptions(opts))
 }

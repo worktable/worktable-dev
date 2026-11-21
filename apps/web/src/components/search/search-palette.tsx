@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react"
 import {
+  type FoundResult,
   type SearchKind,
   type SearchResult,
   type SpaceFile,
@@ -51,6 +52,7 @@ import { libraryKey } from "@/lib/library"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { searchQueryOptions, useSpaces, useWorkspace } from "@/lib/queries"
 import { readRecentOpens, type RecentOpen } from "@/lib/recent-opens"
+import { countMessageOpening } from "@/lib/message-openings"
 import { matchPlaces } from "@/lib/search-places"
 import { openSettings } from "@/lib/settings-open"
 
@@ -68,6 +70,7 @@ const KINDS: ReadonlyArray<{
   { kind: "drawing", label: "Drawings", formatId: "worktable.quickdraw" },
   { kind: "file", label: "Files", formatId: "worktable.file" },
   { kind: "record", label: "Records" },
+  { kind: "thread", label: "Threads" },
 ]
 
 /** A filter left open: the menu needs a value for "no filter". */
@@ -89,7 +92,7 @@ interface Row {
   icon: ReactNode
   /** Where the row leads; a row without one can't be opened. */
   target?: LinkTarget
-  /** Runs in place of a navigation. */
+  /** Runs when the row is chosen, before its navigation or in place of one. */
   action?: () => void
   excerpt?: string
   location?: ReactNode
@@ -154,10 +157,40 @@ function place(spaceName: string | undefined, folder: string | undefined) {
 }
 
 function resultRow(
-  result: SearchResult,
+  result: FoundResult,
   spaces: ReadonlyMap<string, SpaceFile>,
   worktableName: string
 ): Row {
+  if (result.type === "thread") {
+    // Opens at the message that matched, in the thread's own place.
+    const search = { message: result.messageId }
+    return {
+      key: `result:thread:${result.spaceId ?? ""}:${result.threadId}`,
+      title: result.title,
+      icon: <MessageCircle className={ICON} />,
+      // Shows the message again when this result is chosen again.
+      action: countMessageOpening,
+      target:
+        result.location.kind === "space"
+          ? {
+              to: "/spaces/$spaceId/threads/$",
+              params: { spaceId: result.location.spaceId, _splat: result.threadId },
+              search,
+            }
+          : {
+              to: "/threads/$",
+              params: { _splat: `worktable/${result.threadId}` },
+              search,
+            },
+      ...(result.excerpt ? { excerpt: result.excerpt } : {}),
+      location: place(
+        result.location.kind === "space"
+          ? spaces.get(result.location.spaceId)?.name
+          : worktableName,
+        undefined
+      ),
+    }
+  }
   const spaceName = spaces.get(result.spaceId)?.name
   const key = `result:${result.type}:${result.spaceId}:${
     result.path ?? `${result.collectionId}/${result.recordId}`
@@ -619,6 +652,8 @@ function PaletteBody({
             label: item.label,
             icon: item.formatId ? (
               <DocumentFormatIcon formatId={item.formatId} className={ICON} />
+            ) : item.kind === "thread" ? (
+              <MessageCircle className={ICON} />
             ) : (
               <Database className={ICON} />
             ),

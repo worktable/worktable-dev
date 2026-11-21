@@ -1868,7 +1868,36 @@ const FileGrepOutputSchema = z.looseObject({
  * Results checked like the others that stay out of the listed variants: the
  * tool declares their fields with outputFields (catalog.ts).
  */
+/**
+ * Ranked search that finds threads too, on the preview surface: a thread
+ * once, by its message that matched best.
+ */
+export const SearchResultsWithThreadsSchema = z.array(
+  z.union([
+    SearchResultSchema,
+    z.looseObject({
+      type: z.literal("thread"),
+      location: PortableThreadLocationSchema,
+      spaceId: PortableCanonicalIdSchema.optional(),
+      threadId: z.string(),
+      messageId: z.string(),
+      sequence: z.number().int().positive(),
+      title: z.string(),
+      score: z.number(),
+      excerpt: z.string().optional(),
+    }),
+  ])
+)
+
+const ThreadSearchOutputSchema = z.looseObject({
+  results: SearchResultsWithThreadsSchema,
+  truncated: z.boolean(),
+  scope: ListScopeSchema,
+})
+
 const HELD_OPERATION_OUTPUT_VARIANTS: Partial<Record<OperationId, readonly z.ZodObject[]>> = {
+  // Ranked search with threads, on the preview surface.
+  "workspace.search": [ThreadSearchOutputSchema],
   // A page of a file's contents, on the preview surface.
   "documents.read_source": [FileContentsOutputSchema],
   // Exact search in plain files, on the preview surface.

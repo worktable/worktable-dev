@@ -975,7 +975,7 @@
   {
     "name": "worktable_search",
     "title": "Search Worktable context",
-    "description": "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources. Set exact to find exact text, or a regex with regex, line by line in Docs, HTML Docs and text, code or table files instead.",
+    "description": "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources, and threads you can read, each once with the messageId of its best match (read it with worktable_threads_read). Set exact to find exact text, or a regex with regex, line by line in Docs, HTML Docs and text, code or table files instead.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1028,104 +1028,158 @@
       "type": "object",
       "properties": {
         "results": {
+          "description": "Ranked search: matching items, best first. A thread is one item of type thread, with its location and the messageId and sequence of the message that matched best.",
           "type": "array",
           "items": {
-            "type": "object",
-            "properties": {
-              "spaceId": {
-                "$ref": "#/definitions/CanonicalId"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "doc",
-                  "record"
-                ]
-              },
-              "path": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "score": {
-                "type": "number"
-              },
-              "documentKind": {
-                "type": "string",
-                "enum": [
-                  "document",
-                  "conflict"
-                ]
-              },
-              "documentView": {
-                "type": "string",
-                "enum": [
-                  "doc",
-                  "html"
-                ]
-              },
-              "format": {
+            "anyOf": [
+              {
                 "type": "object",
                 "properties": {
-                  "id": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 96,
-                    "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+                  "spaceId": {
+                    "$ref": "#/definitions/CanonicalId"
                   },
-                  "sourceVersion": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "doc",
+                      "record"
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "score": {
+                    "type": "number"
+                  },
+                  "documentKind": {
+                    "type": "string",
+                    "enum": [
+                      "document",
+                      "conflict"
+                    ]
+                  },
+                  "documentView": {
+                    "type": "string",
+                    "enum": [
+                      "doc",
+                      "html"
+                    ]
+                  },
+                  "format": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 96,
+                        "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+                      },
+                      "sourceVersion": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "sourceVersion"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "health": {
+                    "type": "string",
+                    "enum": [
+                      "supported",
+                      "unsupported-format",
+                      "unsupported-version",
+                      "invalid",
+                      "ambiguous",
+                      "temporarily-unavailable"
+                    ]
+                  },
+                  "collectionId": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/CanonicalId"
+                      }
+                    ]
+                  },
+                  "recordId": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/CanonicalId"
+                      }
+                    ]
+                  },
+                  "excerpt": {
+                    "type": "string"
+                  },
+                  "archiveOn": {
+                    "description": "Present on temporary documents: when the document archives.",
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "id",
-                  "sourceVersion"
+                  "spaceId",
+                  "type",
+                  "title",
+                  "score"
                 ],
-                "additionalProperties": false
+                "additionalProperties": {}
               },
-              "health": {
-                "type": "string",
-                "enum": [
-                  "supported",
-                  "unsupported-format",
-                  "unsupported-version",
-                  "invalid",
-                  "ambiguous",
-                  "temporarily-unavailable"
-                ]
-              },
-              "collectionId": {
-                "allOf": [
-                  {
-                    "$ref": "#/definitions/CanonicalId"
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "thread"
+                  },
+                  "location": {
+                    "$ref": "#/definitions/ThreadLocation"
+                  },
+                  "spaceId": {
+                    "allOf": [
+                      {
+                        "$ref": "#/definitions/CanonicalId"
+                      }
+                    ]
+                  },
+                  "threadId": {
+                    "type": "string"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "sequence": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "score": {
+                    "type": "number"
+                  },
+                  "excerpt": {
+                    "type": "string"
                   }
-                ]
-              },
-              "recordId": {
-                "allOf": [
-                  {
-                    "$ref": "#/definitions/CanonicalId"
-                  }
-                ]
-              },
-              "excerpt": {
-                "type": "string"
-              },
-              "archiveOn": {
-                "description": "Present on temporary documents: when the document archives.",
-                "type": "string"
+                },
+                "required": [
+                  "type",
+                  "location",
+                  "threadId",
+                  "messageId",
+                  "sequence",
+                  "title",
+                  "score"
+                ],
+                "additionalProperties": {}
               }
-            },
-            "required": [
-              "spaceId",
-              "type",
-              "title",
-              "score"
-            ],
-            "additionalProperties": {}
+            ]
           }
         },
         "truncated": {
@@ -1257,6 +1311,41 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$"
+        },
+        "ThreadLocation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "worktable"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": {}
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "space"
+                },
+                "spaceId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "spaceId"
+              ],
+              "additionalProperties": {}
+            }
+          ]
         }
       }
     },

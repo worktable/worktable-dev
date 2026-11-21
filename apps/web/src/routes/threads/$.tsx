@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router"
 import { useCallback, useMemo, useState } from "react"
 import type { ThreadLocation } from "@worktable/types"
 import {
@@ -96,6 +96,10 @@ function GlobalThreadsPage() {
   // The message a search opened the thread at belongs to that thread alone.
   const routeSearch = Route.useSearch()
   const message = routeSearch.message
+  // Each navigation has its own key: opening the same message again shows it again.
+  const openKey = useRouterState({
+    select: (state) => state.location.state.__TSR_key ?? state.location.state.key ?? "",
+  })
   const search = useMemo(() => withoutMessage(routeSearch), [routeSearch])
   const navigate = useNavigate()
   const spacesQuery = useSpaces()
@@ -195,7 +199,7 @@ function GlobalThreadsPage() {
       view={view}
       onViewChange={setView}
       threadId={selected.threadId}
-      {...(message ? { openAt: message } : {})}
+      {...(message ? { openAt: message, openKey } : {})}
       selectedLocation={selected.location}
       createLocation={createLocation}
       showLocations={scope.kind === "all"}

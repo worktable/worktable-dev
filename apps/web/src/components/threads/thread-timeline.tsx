@@ -96,6 +96,8 @@ interface ThreadTimelineProps {
   location: ThreadLocation
   /** A message to open at instead of the newest, loading earlier ones if needed. */
   openAt?: string
+  /** Names each opening, so the same message opened again is shown again. */
+  openKey?: string
   messages: ThreadMessage[]
   members: ThreadMember[]
   identities: ConversationIdentity[]
@@ -231,6 +233,7 @@ function ThreadConversation({
   onLoadOlder,
   onLoadReplyTarget,
   openAt,
+  openKey,
 }: ThreadTimelineProps) {
   const { scrollToMessage } = useMessageScroller()
   // The first rendered message, by id so loading earlier pages or receiving
@@ -341,13 +344,13 @@ function ThreadConversation({
   // take an estimated height until they are drawn, so the first scroll lands
   // near it; it is centred again until it stays.
   const openedAt = useRef<string | null>(null)
-  const centreOn = useStableCallback((messageId: string) => {
+  const centreOn = useStableCallback((messageId: string, opening: string) => {
     const attempt = (tries: number) => {
       jumpToMessage(messageId, { align: "center" })
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
           // A later opening, or leaving the thread, ends this one.
-          if (openedAt.current !== messageId) return
+          if (openedAt.current !== opening) return
           const viewport = viewportRef.current
           const target = viewport?.querySelector(
             `[data-message-id="${CSS.escape(messageId)}"]`
@@ -372,15 +375,16 @@ function ThreadConversation({
       openedAt.current = null
       return
     }
-    if (openedAt.current === openAt) return
-    openedAt.current = openAt
+    const opening = `${openAt}\0${openKey ?? ""}`
+    if (openedAt.current === opening) return
+    openedAt.current = opening
     const loaded = messages.some((message) => message.id === openAt)
     void (loaded ? Promise.resolve() : loadReplyTarget(openAt)).then(() =>
       requestAnimationFrame(() => {
-        if (openedAt.current === openAt) centreOn(openAt)
+        if (openedAt.current === opening) centreOn(openAt, opening)
       })
     )
-  }, [openAt, messages, loadReplyTarget, centreOn])
+  }, [openAt, openKey, messages, loadReplyTarget, centreOn])
   useEffect(
     () => () => {
       openedAt.current = null

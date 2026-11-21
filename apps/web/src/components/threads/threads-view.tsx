@@ -120,6 +120,8 @@ export interface ThreadsViewProps {
   threadId: string
   /** A message to open the thread at, as a search found it. */
   openAt?: string
+  /** Names the navigation that asked, so asking again shows it again. */
+  openKey?: string
   selectedLocation: ThreadLocation
   createLocation: ThreadLocation
   showLocations?: boolean
@@ -175,6 +177,7 @@ function ThreadsLayout({
   onViewChange,
   threadId,
   openAt,
+  openKey,
   selectedLocation,
   createLocation,
   showLocations = false,
@@ -277,6 +280,7 @@ function ThreadsLayout({
           key={`${threadLocationKey(selectedLocation)}:${threadId}`}
           threadId={threadId}
           {...(openAt ? { openAt } : {})}
+          {...(openKey ? { openKey } : {})}
           selectedLocation={selectedLocation}
           createLocation={createLocation}
           locationControl={locationControl}
@@ -293,6 +297,7 @@ function ThreadsLayout({
 function ThreadDetail({
   threadId,
   openAt,
+  openKey,
   selectedLocation,
   createLocation,
   locationControl,
@@ -304,6 +309,7 @@ function ThreadDetail({
   ThreadsViewProps,
   | "threadId"
   | "openAt"
+  | "openKey"
   | "selectedLocation"
   | "createLocation"
   | "locationControl"
@@ -855,6 +861,7 @@ function ThreadDetail({
             key={`${threadLocationKey(selectedLocation)}:${threadId}`}
             location={selectedLocation}
             {...(openAt ? { openAt } : {})}
+            {...(openKey ? { openKey } : {})}
             messages={threadQuery.data.thread.messages}
             members={threadQuery.data.thread.members}
             identities={threadQuery.data.thread.identities}

@@ -649,6 +649,8 @@ function PaletteBody({
             label: item.label,
             icon: item.formatId ? (
               <DocumentFormatIcon formatId={item.formatId} className={ICON} />
+            ) : item.kind === "thread" ? (
+              <MessageCircle className={ICON} />
             ) : (
               <Database className={ICON} />
             ),

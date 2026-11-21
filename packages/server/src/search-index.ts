@@ -44,7 +44,6 @@ import {
 import { logError } from "./debug-log.ts";
 import {
   closeSearchStore,
-  entryKind,
   openVariantIndex,
   type DocEntry,
   type IndexEntry,
@@ -1127,18 +1126,19 @@ export async function searchWithStatus(
   const inArchivedSpace = (spaceId: string) =>
     segments.get(spaceId)?.archivedSpace === true;
 
-  // The checks below can leave hits out, so the index is asked for more
-  // than the limit.
+  // The checks below rarely leave a hit out (a document deleted while the
+  // index catches up, an archived legacy Doc), so the index is asked for a
+  // few more than the limit.
   const { hits, corrected } = index.search(query, {
     ...(opts?.spaceId ? { spaceId: opts.spaceId } : {}),
-    accept: (entry) => {
-      if (!canAccessSpace(entry.spaceId)) return false;
-      if (kinds && !kinds.has(entryKind(entry))) return false;
-      if (entry.type === "doc" && documentAccess === "common") {
+    accept: (facts) => {
+      if (!canAccessSpace(facts.spaceId)) return false;
+      if (kinds && !kinds.has(facts.kind)) return false;
+      if (facts.type === "doc" && documentAccess === "common") {
         // Each kind of search has its own view of a path that archived and
         // current documents both claim.
-        if (entry.view === (includeArchived ? "live" : "archived")) return false;
-        if (!includeArchived && inArchivedSpace(entry.spaceId)) return false;
+        if (facts.view === (includeArchived ? "live" : "archived")) return false;
+        if (!includeArchived && inArchivedSpace(facts.spaceId)) return false;
       }
       return true;
     },
@@ -1151,7 +1151,7 @@ export async function searchWithStatus(
           },
         }
       : {}),
-    limit: maxResults * 4 + 100,
+    limit: maxResults + 25,
   });
 
   // Many hits share a Space: each Space is read once per search.
@@ -1238,10 +1238,8 @@ export async function searchWithStatus(
           .slice(0, maxResults),
       ]
     : filtered.slice(0, maxResults);
-  // Excerpt text only for the hits shown.
-  const displayBodies = index.displayBodies(docHits);
-  const results: SearchResult[] = docHits.map(({ entry, score, terms }, at) => {
-    const excerpt = makeExcerpt(displayBodies[at] ?? "", terms);
+  const results: SearchResult[] = docHits.map(({ entry, score, terms, displayBody }) => {
+    const excerpt = makeExcerpt(displayBody, terms);
     return {
       spaceId: entry.spaceId,
       type: entry.type,

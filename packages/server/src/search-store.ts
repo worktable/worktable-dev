@@ -97,11 +97,30 @@ export interface IndexHit {
   score: number
   /** Words to find in the text for its excerpt. */
   terms: string[]
+  /** The text its excerpt comes from. */
+  displayBody: string
+}
+
+/** What a search decides on before it reads an entry. */
+export interface IndexFacts {
+  spaceId: string
+  type: IndexEntry["type"]
+  kind: SearchKind
+  view?: "live" | "archived"
+}
+
+function factsOf(entry: IndexEntry): IndexFacts {
+  return {
+    spaceId: entry.spaceId,
+    type: entry.type,
+    kind: entryKind(entry),
+    ...(entry.type === "doc" && entry.view ? { view: entry.view } : {}),
+  }
 }
 
 export interface IndexSearchOptions {
   spaceId?: string
-  accept: (entry: IndexEntry) => boolean
+  accept: (facts: IndexFacts) => boolean
   /**
    * Archived hits after the rest. An entry is archived when it is itself,
    * or when its Space is one of these.
@@ -128,8 +147,6 @@ export interface VariantIndex {
   /** Runs writes as one, so a slice of a sync lands at once. */
   batch(write: () => void): void
   search(query: string, options: IndexSearchOptions): IndexSearch
-  /** The text each hit's excerpt comes from, as it is now, read at once. */
-  displayBodies(hits: readonly IndexHit[]): string[]
   /** Stops writing: another index took its place. */
   retire(): void
 }
@@ -204,6 +221,7 @@ class Fts5Store {
           "id INTEGER PRIMARY KEY, variant TEXT NOT NULL, entry_id TEXT NOT NULL, " +
           "space_id TEXT NOT NULL, doc_key TEXT, revision TEXT NOT NULL DEFAULT '', " +
           "read_at INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0, " +
+          "type TEXT NOT NULL, kind TEXT NOT NULL, view TEXT, " +
           "meta TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, " +
           "display_mode INTEGER NOT NULL, display TEXT, " +
           "UNIQUE (variant, entry_id))"
@@ -347,8 +365,9 @@ type Row = {
   id: number
   entry_id: string
   space_id: string
-  meta: string
-  title: string
+  type: IndexEntry["type"]
+  kind: SearchKind
+  view: "live" | "archived" | null
   archived: number
   score: number
 }
@@ -405,10 +424,12 @@ class Fts5VariantIndex implements VariantIndex {
       .db()
       .query(
         "INSERT INTO items (variant, entry_id, space_id, doc_key, revision, read_at, archived, " +
-          "meta, title, body, display_mode, display) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+          "type, kind, view, meta, title, body, display_mode, display) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
           "ON CONFLICT (variant, entry_id) DO UPDATE SET space_id = excluded.space_id, " +
           "doc_key = excluded.doc_key, revision = excluded.revision, read_at = excluded.read_at, " +
-          "archived = excluded.archived, meta = excluded.meta, title = excluded.title, " +
+          "archived = excluded.archived, type = excluded.type, kind = excluded.kind, " +
+          "view = excluded.view, meta = excluded.meta, title = excluded.title, " +
           "body = excluded.body, display_mode = excluded.display_mode, display = excluded.display"
       )
       .run(
@@ -419,6 +440,9 @@ class Fts5VariantIndex implements VariantIndex {
         stored?.revision ?? "",
         stored?.readAt ?? 0,
         entry.type === "doc" && entry.archived ? 1 : 0,
+        entry.type,
+        entryKind(entry),
+        entry.type === "doc" ? (entry.view ?? null) : null,
         JSON.stringify(rest),
         title,
         body,
@@ -480,7 +504,7 @@ class Fts5VariantIndex implements VariantIndex {
         // Title scores are read once: joined as a subquery, they were read
         // again for every match, which took seconds for a one-letter search.
         "WITH t AS MATERIALIZED (SELECT rowid, bm25(titles) AS score FROM titles WHERE titles MATCH ?1) " +
-          "SELECT i.id, i.entry_id, i.space_id, i.meta, i.title, i.archived, " +
+          "SELECT i.id, i.entry_id, i.space_id, i.type, i.kind, i.view, i.archived, " +
           "-(3 * coalesce(t.score, 0) + bm25(pieces, 3.0, 1.0)) AS score " +
           "FROM pieces JOIN items i ON i.id = pieces.rowid " +
           "LEFT JOIN t ON t.rowid = i.id " +
@@ -491,7 +515,7 @@ class Fts5VariantIndex implements VariantIndex {
             : "") +
           RANK
       )
-    const hits: IndexHit[] = []
+    const kept: Array<{ id: number; score: number }> = []
     let current = 0
     let archived = 0
     try {
@@ -502,15 +526,14 @@ class Fts5VariantIndex implements VariantIndex {
         ...(archivedSpaces ? [JSON.stringify([...archivedSpaces])] : [])
       ) as IterableIterator<Row>
       for (const row of rows) {
-        const entry = {
-          ...(JSON.parse(row.meta) as Omit<IndexEntry, "title" | "body">),
-          id: row.entry_id,
+        const facts: IndexFacts = {
           spaceId: row.space_id,
-          title: row.title,
-          body: "",
-        } as IndexEntry
-        if (!options.accept(entry)) continue
-        if (archivedSpaces && isArchivedIn(entry, archivedSpaces)) {
+          type: row.type,
+          kind: row.kind,
+          ...(row.view ? { view: row.view } : {}),
+        }
+        if (!options.accept(facts)) continue
+        if (archivedSpaces && (row.archived === 1 || archivedSpaces.has(row.space_id))) {
           if (archived >= options.limit) break
           archived += 1
         } else {
@@ -521,39 +544,50 @@ class Fts5VariantIndex implements VariantIndex {
           }
           current += 1
         }
-        hits.push({ entry, score: row.score, terms })
+        kept.push({ id: row.id, score: row.score })
       }
     } finally {
       statement.finalize()
     }
-    return hits
-  }
-
-  displayBodies(hits: readonly IndexHit[]): string[] {
-    if (!this.#store.open || hits.length === 0) return hits.map(() => "")
-    const rows = this.#store
+    // Only the hits kept are read whole, now: a later sync replaces entries
+    // in place.
+    const entries = this.#store
       .db()
       .query(
-        "SELECT entry_id, body, display_mode, display FROM items " +
-          "WHERE variant = ? AND entry_id IN (SELECT value FROM json_each(?))"
+        "SELECT id, entry_id, space_id, meta, title, body, display_mode, display FROM items " +
+          "WHERE id IN (SELECT value FROM json_each(?))"
       )
-      .all(this.#variant, JSON.stringify(hits.map((hit) => hit.entry.id))) as Array<{
+      .all(JSON.stringify(kept.map((hit) => hit.id))) as Array<{
+      id: number
       entry_id: string
+      space_id: string
+      meta: string
+      title: string
       body: string
       display_mode: number
       display: string | null
     }>
-    const byId = new Map(
-      rows.map((row) => [
-        row.entry_id,
+    const byId = new Map(entries.map((row) => [row.id, row]))
+    const hits: IndexHit[] = []
+    for (const { id, score } of kept) {
+      const row = byId.get(id)
+      if (!row) continue
+      const entry = {
+        ...(JSON.parse(row.meta) as Omit<IndexEntry, "title" | "body">),
+        id: row.entry_id,
+        spaceId: row.space_id,
+        title: row.title,
+        body: "",
+      } as IndexEntry
+      const displayBody =
         row.display_mode === DISPLAY_STORED
           ? (row.display ?? "")
           : row.display_mode === DISPLAY_AFTER_FIRST_LINE
             ? row.body.slice(row.body.indexOf("\n") + 1)
-            : row.body,
-      ])
-    )
-    return hits.map((hit) => byId.get(hit.entry.id) ?? "")
+            : row.body
+      hits.push({ entry, score, terms, displayBody })
+    }
+    return hits
   }
 
   retire(): void {
@@ -616,7 +650,7 @@ class MiniSearchVariantIndex implements VariantIndex {
         filter: (result) => {
           const entry = result as unknown as IndexEntry
           if (options.spaceId !== undefined && entry.spaceId !== options.spaceId) return false
-          return options.accept(entry)
+          return options.accept(factsOf(entry))
         },
       })
       .map(
@@ -624,6 +658,7 @@ class MiniSearchVariantIndex implements VariantIndex {
           entry: { ...(result as unknown as IndexEntry), id: String(result.id), body: "" },
           score: result.score,
           terms: result.terms,
+          displayBody: this.#displayBodies.get(String(result.id)) ?? "",
         })
       )
     const spaces = options.archivedLast?.spaces
@@ -634,10 +669,6 @@ class MiniSearchVariantIndex implements VariantIndex {
         ]
       : found.slice(0, options.limit)
     return { hits, corrected: [] }
-  }
-
-  displayBodies(hits: readonly IndexHit[]): string[] {
-    return hits.map((hit) => this.#displayBodies.get(hit.entry.id) ?? "")
   }
 
   retire(): void {}

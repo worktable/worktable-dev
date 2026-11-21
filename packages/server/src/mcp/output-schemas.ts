@@ -1872,23 +1872,25 @@ const FileGrepOutputSchema = z.looseObject({
  * Ranked search that finds threads too, on the preview surface: a thread
  * once, by its message that matched best.
  */
+export const SearchResultsWithThreadsSchema = z.array(
+  z.union([
+    SearchResultSchema,
+    z.looseObject({
+      type: z.literal("thread"),
+      location: PortableThreadLocationSchema,
+      spaceId: PortableCanonicalIdSchema.optional(),
+      threadId: z.string(),
+      messageId: z.string(),
+      sequence: z.number().int().positive(),
+      title: z.string(),
+      score: z.number(),
+      excerpt: z.string().optional(),
+    }),
+  ])
+)
+
 const ThreadSearchOutputSchema = z.looseObject({
-  results: z.array(
-    z.union([
-      SearchResultSchema,
-      z.looseObject({
-        type: z.literal("thread"),
-        location: PortableThreadLocationSchema,
-        spaceId: PortableCanonicalIdSchema.optional(),
-        threadId: z.string(),
-        messageId: z.string(),
-        sequence: z.number().int().positive(),
-        title: z.string(),
-        score: z.number(),
-        excerpt: z.string().optional(),
-      }),
-    ])
-  ),
+  results: SearchResultsWithThreadsSchema,
   truncated: z.boolean(),
   scope: ListScopeSchema,
 })

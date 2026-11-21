@@ -18,6 +18,7 @@ import {
 import {
   PUBLIC_OPERATION_OUTPUT_VARIANTS,
   RemovedSkillSchema,
+  SearchResultsWithThreadsSchema,
   SkillListingSchema,
 } from "./output-schemas.ts"
 import type { McpSurface } from "./surface.ts"
@@ -1114,6 +1115,9 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
     }),
     outputFields: {
       ...tool.outputFields,
+      results: SearchResultsWithThreadsSchema.describe(
+        "Matching items, best first. A thread is one item of type thread, with its location and the messageId and sequence of the message that matched best."
+      ),
       skipped: z
         .array(
           z.looseObject({

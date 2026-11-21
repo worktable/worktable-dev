@@ -1037,9 +1037,11 @@ async function syncSegmentThreads(
     try {
       entries = threadEntries(spaceId, await readThread(location, threadId));
     } catch {
-      // Gone since the listing, or not readable now: its entries stay as
-      // they were, and the next sync tries again.
+      // Not readable now: its entries stay as they were, and it is read
+      // again after a pause, as an unreadable document is.
       reread -= 1;
+      segment.threadsForced.add(threadId);
+      segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
       continue;
     }
     if (variant.segments.get(spaceId) !== segment) return reread;
@@ -1078,18 +1080,24 @@ async function runSegmentSync(
   const syncDocuments = space && (segment.dirty || !segment.built || retryDue(segment));
   const syncRecords =
     space && variant.includesRecords && (segment.recordsDirty || !segment.built);
-  const syncThreads = holdsThreads(variant) && (segment.threadsDirty || !segment.built);
+  const syncThreads =
+    holdsThreads(variant) &&
+    (segment.threadsDirty || !segment.built || (retryDue(segment) && segment.threadsForced.size > 0));
   const rescanThreads = syncThreads && (segment.threadsRescan || !segment.built);
   const forced = segment.forced;
-  const threadsForced = segment.threadsForced;
-  if (syncThreads) segment.threadsRescan = false;
+  // Threads waiting to be read again stay marked until a sync reads them.
+  const threadsForced = syncThreads ? segment.threadsForced : new Set<string>();
   // Marks made while this sync runs stay for the next one.
   segment.forced = new Set();
-  segment.threadsForced = new Set();
+  if (syncThreads) {
+    segment.threadsForced = new Set();
+    segment.threadsRescan = false;
+    segment.threadsDirty = false;
+  }
   segment.dirty = false;
   segment.recordsDirty = false;
-  segment.threadsDirty = false;
-  if (syncDocuments) segment.retryAt = null;
+  // A thread still waiting keeps the pause it waits out.
+  if ((syncDocuments || syncThreads) && segment.threadsForced.size === 0) segment.retryAt = null;
   try {
     let documents = 0;
     if (syncDocuments) {

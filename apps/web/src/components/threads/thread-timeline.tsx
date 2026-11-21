@@ -346,6 +346,8 @@ function ThreadConversation({
       jumpToMessage(messageId, { align: "center" })
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
+          // A later opening, or leaving the thread, ends this one.
+          if (openedAt.current !== messageId) return
           const viewport = viewportRef.current
           const target = viewport?.querySelector(
             `[data-message-id="${CSS.escape(messageId)}"]`
@@ -368,9 +370,17 @@ function ThreadConversation({
     openedAt.current = openAt
     const loaded = messages.some((message) => message.id === openAt)
     void (loaded ? Promise.resolve() : loadReplyTarget(openAt)).then(() =>
-      requestAnimationFrame(() => centreOn(openAt))
+      requestAnimationFrame(() => {
+        if (openedAt.current === openAt) centreOn(openAt)
+      })
     )
   }, [openAt, messages, loadReplyTarget, centreOn])
+  useEffect(
+    () => () => {
+      openedAt.current = null
+    },
+    []
+  )
 
   const items = useMemo(() => {
     const rows: ReactNode[] = []

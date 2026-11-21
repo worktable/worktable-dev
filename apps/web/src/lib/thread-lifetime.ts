@@ -58,14 +58,20 @@ export function useShownThreadView(
 ): [ThreadListView, () => void] {
   // Read from the cache the open thread fills; this asks for nothing.
   const open = useQuery({ ...threadQueryOptions(location, threadId), enabled: false })
-  const [pickedFor, setPickedFor] = useState<string | null>(null)
+  // A pick lasts while its thread stays open, not into its next opening.
+  const [picked, setPicked] = useState(false)
+  const [openThread, setOpenThread] = useState(threadId)
+  if (openThread !== threadId) {
+    setOpenThread(threadId)
+    setPicked(false)
+  }
   const members = open.data?.thread.members
   let shown = view
-  if (members && pickedFor !== threadId && (view === "people" || view === "agents")) {
+  if (members && !picked && (view === "people" || view === "agents")) {
     const withPeople = members.some((member) => member.kind === "human")
     if (withPeople !== (view === "people")) shown = withPeople ? "people" : "agents"
   }
-  return [shown, () => setPickedFor(threadId)]
+  return [shown, () => setPicked(true)]
 }
 
 // ── Remembered filter ──────────────────────────────────────

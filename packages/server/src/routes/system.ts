@@ -218,7 +218,8 @@ export function getDeploymentInfo(): DeploymentInfo {
       files: filesEnabled(),
       pdfViewer: filesEnabled() && viewerEnabled("pdf"),
       wordViewer: filesEnabled() && viewerEnabled("word"),
-      wordPdf: filesEnabled() && wordRenditionsAvailable(),
+      // Read in the PDF viewer, so only where it is on.
+      wordPdf: filesEnabled() && viewerEnabled("pdf") && wordRenditionsAvailable(),
       commentRecipients: true,
       skillLibraries: true,
       help: true,

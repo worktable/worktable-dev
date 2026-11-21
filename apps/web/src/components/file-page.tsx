@@ -136,15 +136,17 @@ export function FilePage({
       ? deployment?.capabilities.pdfViewer
       : deployment?.capabilities.wordViewer) === true
   // A Word file reads as the PDF the server draws of it, where the server
-  // draws them: quick to open on any device. Where it can't, or this file's
-  // PDF can't be had, the Word viewer draws it here.
-  const [noWordPdf, setNoWordPdf] = useState(false)
+  // draws them and the PDF viewer is on: quick to open on any device. The
+  // PDF is asked for by the file's revision. Where it can't be had for that
+  // version, the Word viewer draws it here.
+  const [noWordPdfFor, setNoWordPdfFor] = useState<string | null>(null)
   const wordPdf =
     framedOn &&
     view === "word" &&
     deployment?.capabilities.wordPdf === true &&
-    !noWordPdf &&
-    version !== null
+    deployment.capabilities.pdfViewer === true &&
+    basedOn !== undefined &&
+    noWordPdfFor !== basedOn
   // The Word viewer downloads several MB the first time, so with Data Saver
   // on it waits until the person asks for it.
   const [openAnyway, setOpenAnyway] = useState(false)
@@ -323,9 +325,11 @@ export function FilePage({
             spaceId={spaceId}
             path={path}
             name={name}
-            fileUrl={wordPdf ? wordPdfUrl(spaceId, path, version!) : url}
+            fileUrl={wordPdf ? wordPdfUrl(spaceId, path, basedOn!) : url}
             byteLength={wordPdf ? undefined : page.byteLength!}
-            {...(wordPdf ? { onFallback: () => setNoWordPdf(true) } : {})}
+            {...(wordPdf
+              ? { onFallback: () => setNoWordPdfFor(basedOn ?? null) }
+              : {})}
             refusal={(status) => <FileCard name={name} status={status} />}
             leading={
               <DocumentByline

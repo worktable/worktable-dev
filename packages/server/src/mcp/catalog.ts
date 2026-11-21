@@ -1115,8 +1115,8 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
     }),
     outputFields: {
       ...tool.outputFields,
-      results: SearchResultsWithThreadsSchema.describe(
-        "Matching items, best first. A thread is one item of type thread, with its location and the messageId and sequence of the message that matched best."
+      results: SearchResultsWithThreadsSchema.optional().describe(
+        "Ranked search: matching items, best first. A thread is one item of type thread, with its location and the messageId and sequence of the message that matched best."
       ),
       skipped: z
         .array(

@@ -1028,6 +1028,7 @@
       "type": "object",
       "properties": {
         "results": {
+          "description": "Ranked search: matching items, best first. A thread is one item of type thread, with its location and the messageId and sequence of the message that matched best.",
           "type": "array",
           "items": {
             "anyOf": [
@@ -1179,8 +1180,7 @@
                 "additionalProperties": {}
               }
             ]
-          },
-          "description": "Matching items, best first. A thread is one item of type thread, with its location and the messageId and sequence of the message that matched best."
+          }
         },
         "truncated": {
           "type": "boolean"
@@ -1304,9 +1304,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "results"
-      ],
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": {},
       "definitions": {

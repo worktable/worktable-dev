@@ -194,6 +194,28 @@ function recordDisplayText(collectionName: string, data: unknown): string {
 const EXCERPT_LENGTH = 160;
 const EXCERPT_LEAD = 40;
 
+/** Where any term first occurs in `text`, compared as the index folds words; -1 if none. */
+function foldedMatch(text: string, terms: string[]): number {
+  let folded = "";
+  // The position in `text` of each code unit of `folded`.
+  const from: number[] = [];
+  for (let at = 0; at < text.length; ) {
+    const letter = String.fromCodePoint(text.codePointAt(at)!);
+    const own = foldWord(letter);
+    for (let unit = 0; unit < own.length; unit += 1) from.push(at);
+    folded += own;
+    at += letter.length;
+  }
+  let found = -1;
+  for (const term of terms) {
+    const needle = foldWord(term.trim());
+    if (!needle) continue;
+    const at = folded.indexOf(needle);
+    if (at !== -1 && (found === -1 || from[at]! < found)) found = from[at]!;
+  }
+  return found;
+}
+
 /**
  * Plain-text window around the first occurrence of any matched term.
  * Title-only matches (no term in the body) fall back to the body's start.
@@ -210,6 +232,9 @@ export function makeExcerpt(body: string, terms: string[]): string | undefined {
     const at = lower.indexOf(needle);
     if (at !== -1 && (matchAt === -1 || at < matchAt)) matchAt = at;
   }
+  // The index matches words with accents removed ("cafe" finds "café"):
+  // look again that way, in text that has any.
+  if (matchAt === -1 && /[^ -~\s]/.test(text)) matchAt = foldedMatch(text, terms);
 
   let start = matchAt <= EXCERPT_LEAD ? 0 : matchAt - EXCERPT_LEAD;
   if (start > 0) {
@@ -787,7 +812,9 @@ async function syncLegacyDocuments(
   for (const docPath of paths) {
     const readAt = Date.now();
     const stat = await docStat(spaceId, docPath);
-    const revision = stat ? `${stat.format}:${stat.updatedAt}` : "";
+    // The fingerprint holds ctime, which a restored file can't set back:
+    // entries outlive a restart, and a file replaced meanwhile is read again.
+    const revision = stat ? `${stat.format}:${stat.fingerprint}` : "";
     const previous = segment.documents.get(docPath);
     if (!forced.has(docPath) && canReuseDerived(previous, revision, stat?.updatedAt)) {
       continue;
@@ -1238,7 +1265,12 @@ export async function searchWithStatus(
       }
 
       if (entry.type === "doc" && documentAccess === "common") {
-        // Archived documents and Spaces were left out before ranking.
+        // Archived documents and Spaces were left out before ranking, once
+        // the Spaces are listed; before that, the Space is read.
+        if (!segments.has(entry.spaceId)) {
+          const { data: space } = await spaceOf(entry.spaceId);
+          if (!space || getSpaceArchiveInfo(space)) continue;
+        }
         filtered.push(hit);
         continue;
       }

@@ -150,7 +150,7 @@ export function nearestWords(
     const whole = editDistance(word, term, max)
     if (whole <= max) consider(term, false, whole, docs)
     const own = letters(term)
-    if (prefix && own.length > typed.length) {
+    if (prefix) {
       const start = nearestStart(typed, own, max)
       if (start && start.distance < whole && start.length < own.length) {
         const text = typeof own === "string" ? own.slice(0, start.length) : own.slice(0, start.length).join("")

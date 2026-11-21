@@ -315,6 +315,8 @@ interface SpaceSegment {
   forced: Set<string>;
   /** When to re-read documents that were temporarily unreadable. */
   retryAt: number | null;
+  /** When to read again threads that could not be read; apart from documents'. */
+  threadsRetryAt: number | null;
   syncing: Promise<void> | null;
   /** Indexed threads by id: the file revision read, and their messages' entries. */
   threads: Map<string, IndexedThread>;
@@ -456,6 +458,7 @@ function newSegment(
     recordsDirty: variant.includesRecords,
     forced: new Set(),
     retryAt: null,
+    threadsRetryAt: null,
     syncing: null,
     threads: new Map(),
     threadsDirty: holdsThreads(variant),
@@ -1033,7 +1036,7 @@ async function syncSegmentThreads(
         // again after a pause.
         current.add(threadId);
         segment.threadsForced.add(threadId);
-        segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
+        segment.threadsRetryAt = Date.now() + UNREADABLE_RETRY_MS;
       }
       continue;
     }
@@ -1050,7 +1053,7 @@ async function syncSegmentThreads(
       // again after a pause, as an unreadable document is.
       reread -= 1;
       segment.threadsForced.add(threadId);
-      segment.retryAt = Date.now() + UNREADABLE_RETRY_MS;
+      segment.threadsRetryAt = Date.now() + UNREADABLE_RETRY_MS;
       continue;
     }
     if (variant.segments.get(spaceId) !== segment) return reread;
@@ -1091,7 +1094,7 @@ async function runSegmentSync(
     space && variant.includesRecords && (segment.recordsDirty || !segment.built);
   const syncThreads =
     holdsThreads(variant) &&
-    (segment.threadsDirty || !segment.built || (retryDue(segment) && segment.threadsForced.size > 0));
+    (segment.threadsDirty || !segment.built || threadsRetryDue(segment));
   const rescanThreads = syncThreads && (segment.threadsRescan || !segment.built);
   const forced = segment.forced;
   // Threads waiting to be read again stay marked until a sync reads them.
@@ -1105,8 +1108,8 @@ async function runSegmentSync(
   }
   segment.dirty = false;
   segment.recordsDirty = false;
-  // A thread still waiting keeps the pause it waits out.
-  if ((syncDocuments || syncThreads) && segment.threadsForced.size === 0) segment.retryAt = null;
+  if (syncDocuments) segment.retryAt = null;
+  if (syncThreads) segment.threadsRetryAt = null;
   try {
     let documents = 0;
     if (syncDocuments) {
@@ -1204,6 +1207,11 @@ function retryDue(segment: SpaceSegment): boolean {
   return segment.retryAt !== null && Date.now() >= segment.retryAt;
 }
 
+// The same for threads, on their own clock.
+function threadsRetryDue(segment: SpaceSegment): boolean {
+  return segment.threadsRetryAt !== null && Date.now() >= segment.threadsRetryAt;
+}
+
 function segmentNeedsSync(segment: SpaceSegment): boolean {
   return (
     !segment.built ||
@@ -1211,6 +1219,7 @@ function segmentNeedsSync(segment: SpaceSegment): boolean {
     segment.recordsDirty ||
     segment.threadsDirty ||
     retryDue(segment) ||
+    threadsRetryDue(segment) ||
     segment.syncing !== null
   );
 }

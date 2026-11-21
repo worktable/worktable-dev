@@ -10,7 +10,7 @@ import {
 } from "@worktable/ui/components/select"
 import { ThreadViewSelect } from "@/components/threads/thread-view-select"
 import { ThreadsView } from "@/components/threads/threads-view"
-import { useThreadListFilter } from "@/lib/thread-lifetime"
+import { useShownThreadView, useThreadListFilter } from "@/lib/thread-lifetime"
 import {
   threadMessageSearch,
   threadViewSearch,
@@ -161,8 +161,14 @@ function GlobalThreadsPage() {
   }
 
   const [filter, rememberFilter] = useThreadListFilter()
-  const view: ThreadListView = search.view ?? filter
+  // The list shows the open thread even when the remembered filter doesn't.
+  const [view, pickView] = useShownThreadView(
+    selected.location,
+    selected.threadId,
+    search.view ?? filter
+  )
   const setView = (next: ThreadListView) => {
+    pickView()
     if (next !== "archived") rememberFilter(next)
     if ((next === "archived") === (search.view === "archived")) return
     void navigate({

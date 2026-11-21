@@ -52,6 +52,7 @@ import { libraryKey } from "@/lib/library"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { searchQueryOptions, useSpaces, useWorkspace } from "@/lib/queries"
 import { readRecentOpens, type RecentOpen } from "@/lib/recent-opens"
+import { countMessageOpening } from "@/lib/message-openings"
 import { matchPlaces } from "@/lib/search-places"
 import { openSettings } from "@/lib/settings-open"
 
@@ -91,7 +92,7 @@ interface Row {
   icon: ReactNode
   /** Where the row leads; a row without one can't be opened. */
   target?: LinkTarget
-  /** Runs in place of a navigation. */
+  /** Runs when the row is chosen, before its navigation or in place of one. */
   action?: () => void
   excerpt?: string
   location?: ReactNode
@@ -167,6 +168,8 @@ function resultRow(
       key: `result:thread:${result.spaceId ?? ""}:${result.threadId}`,
       title: result.title,
       icon: <MessageCircle className={ICON} />,
+      // Shows the message again when this result is chosen again.
+      action: countMessageOpening,
       target:
         result.location.kind === "space"
           ? {

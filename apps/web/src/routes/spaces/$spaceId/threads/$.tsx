@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate, useRouterState } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { useMessageOpenings } from "@/lib/message-openings"
 import { useCallback, useMemo } from "react"
 import type { ThreadLocation } from "@worktable/types"
 import { ThreadViewSelect } from "@/components/threads/thread-view-select"
@@ -35,10 +36,8 @@ function SpaceThreadsPage() {
   // The message a search opened the thread at belongs to that thread alone.
   const routeSearch = Route.useSearch()
   const message = routeSearch.message
-  // Each navigation has its own key: opening the same message again shows it again.
-  const openKey = useRouterState({
-    select: (state) => state.location.state.__TSR_key ?? state.location.state.key ?? "",
-  })
+  // Choosing the same result again leaves the address alone; the count moves.
+  const openKey = String(useMessageOpenings())
   const search = useMemo(() => withoutMessage(routeSearch), [routeSearch])
   const threadId = _splat ?? ""
   const navigate = useNavigate()

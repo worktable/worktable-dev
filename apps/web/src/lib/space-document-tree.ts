@@ -85,6 +85,8 @@ export function documentTreeInputResolver(
       format: item.format,
       health: item.health,
       archived: item.archived,
+      ...(item.lifetime ? { lifetime: item.lifetime } : {}),
+      ...(item.archiveOn ? { archiveOn: item.archiveOn } : {}),
       updatedAt:
         doc?.provenance?.updatedAt ??
         (typeof doc?.updatedAt === "number"
@@ -127,6 +129,17 @@ export function fileDisplayLabels(
   return labels
 }
 
+/**
+ * An image a Doc in the Space shows. It belongs to that Doc, so lists that
+ * present the Space's documents leave it out. The documents list marks it.
+ */
+export function isEmbeddedFile(item: DocumentListItem): boolean {
+  return (
+    item.kind === "document" &&
+    (item as DocumentListItem & { embedded?: boolean }).embedded === true
+  )
+}
+
 /** Temporary documents are supporting work the sidebar lists on their own. */
 export function isTemporaryDocument(item: DocumentListItem): boolean {
   return item.kind === "document" && item.lifetime === "temporary"
@@ -147,12 +160,21 @@ export function buildSpaceDocumentTrees({
   sort,
   order,
   separateTemporary = false,
+  live = false,
+  withEmbedded = false,
 }: {
   documents: DocumentListItem[]
   docs: DocListEntry[]
   sort: DocSortMode
   order?: string[]
   separateTemporary?: boolean
+  /**
+   * The sidebar's tree: newest first where nobody set an order, without the
+   * images Docs show.
+   */
+  live?: boolean
+  /** Keep the files Docs show, as a folder's whole list does. */
+  withEmbedded?: boolean
 }): SpaceDocumentTrees {
   const resolve = documentTreeInputResolver(docs)
   const fileLabels = fileDisplayLabels(documents)
@@ -161,11 +183,15 @@ export function buildSpaceDocumentTrees({
     const label = fileLabels.get(input.path)
     return label === undefined ? input : { ...input, title: label }
   }
-  const options = { folderPaths: documentFolderPaths(documents) }
-  const treeSort = { mode: sort, order }
+  const listed =
+    live && !withEmbedded
+      ? documents.filter((item) => !isEmbeddedFile(item))
+      : documents
+  const options = { folderPaths: documentFolderPaths(listed) }
+  const treeSort = { mode: sort, order, newestFirst: live }
   const build = (items: DocumentListItem[]) =>
     buildTree(items.map(toTreeInput), treeSort, options)
-  const active = documents.filter((item) => !documentListItemArchived(item))
+  const active = listed.filter((item) => !documentListItemArchived(item))
   return {
     active: build(
       separateTemporary
@@ -175,7 +201,7 @@ export function buildSpaceDocumentTrees({
     temporary: separateTemporary
       ? build(active.filter(isTemporaryDocument))
       : [],
-    archived: build(documents.filter(documentListItemArchived)),
+    archived: build(listed.filter(documentListItemArchived)),
   }
 }
 
@@ -300,6 +326,8 @@ export function spaceDocumentTrees(
   const variant = [
     input.sort,
     input.separateTemporary ? "separate" : "together",
+    input.live ? "live" : "full",
+    input.withEmbedded ? "embedded" : "",
     ...(input.order ?? []),
   ].join("\n")
   return cachedBuild(treeCache, input, variant, () =>

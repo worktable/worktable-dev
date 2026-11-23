@@ -1393,10 +1393,66 @@ async function expandSpace(session: Session, name: string) {
   if ((await row.getAttribute("aria-expanded")) === "false") await row.click()
 }
 
+/**
+ * Brings the document's link into view the way a person would: opening its
+ * folders in the sidebar, and where a folder shows only its first rows,
+ * its See All, which lists it beside the page (or as a page on a phone),
+ * and the folders there.
+ */
 async function revealDocument(session: Session, doc: DocTarget) {
   await showSidebar(session)
   const root = sidebar(session)
   await expandSpace(session, doc.spaceName)
+  // Builds before rows carried their paths (the release gate measures the
+  // previous release too) list every row by name.
+  const marked = await root
+    .locator("[data-tree-path]")
+    .first()
+    .waitFor({ timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false)
+  if (!marked) return revealDocumentByName(session, doc)
+  // Paths are each Space's own: look only in the target Space's tree, in
+  // whichever copy of it (pinned or listed) is open.
+  const tree = root
+    .locator(`[data-space-id="${doc.spaceId}"]`)
+    .filter({ visible: true })
+    .first()
+  await tree.locator("[data-tree-path]").first().waitFor()
+  const folders = doc.path
+    .split("/")
+    .slice(0, -1)
+    .map((_, index, parts) => parts.slice(0, index + 1).join("/"))
+  // Folders that hold one folder share a row with it, so some have none.
+  await openFolders(tree, folders)
+  const inTree = tree.locator(`a[href="${documentHref(doc)}"]`).first()
+  if (!(await inTree.isVisible())) {
+    // The deepest open level whose See All lists the document's branch.
+    let listed: string | undefined
+    for (const folder of ["", ...folders]) {
+      if (await tree.locator(`[data-see-all="${folder}"]`).first().isVisible())
+        listed = folder
+    }
+    if (listed === undefined)
+      throw new Error(`no row or See All leads to ${doc.path}`)
+    await press(session, tree.locator(`[data-see-all="${listed}"]`).first())
+    const list = session.page.locator(
+      'aside[aria-label="Folder"], main nav'
+    )
+    await list.locator("a, button").first().waitFor()
+    await openFolders(
+      list,
+      folders.filter((folder) => folder.length > listed!.length)
+    )
+  }
+  const link = session.page.locator(documentLinks(doc)).first()
+  await link.waitFor({ state: "visible" })
+  await link.scrollIntoViewIfNeeded()
+}
+
+/** A build whose rows carry no paths: open each folder by its name. */
+async function revealDocumentByName(session: Session, doc: DocTarget) {
+  const root = sidebar(session)
   for (const segment of doc.path.split("/").slice(0, -1)) {
     const folder = root
       .getByRole("button", {
@@ -1410,6 +1466,29 @@ async function revealDocument(session: Session, doc: DocTarget) {
   const link = root.locator(`a[href="${documentHref(doc)}"]`).first()
   await link.waitFor({ state: "visible" })
   await link.scrollIntoViewIfNeeded()
+}
+
+async function openFolders(scope: Locator, folders: string[]) {
+  for (const folder of folders) {
+    const toggle = scope
+      .locator(
+        `[data-tree-path="${folder}"] button[aria-expanded], button[data-tree-path="${folder}"]`
+      )
+      .first()
+    if (!(await toggle.isVisible())) continue
+    if ((await toggle.getAttribute("aria-expanded")) === "false")
+      await toggle.click()
+  }
+}
+
+/** The document's link in the sidebar, in the list beside the page, or on a folder's page. */
+function documentLinks(doc: DocTarget): string {
+  const href = `a[href="${documentHref(doc)}"]`
+  return [
+    `[data-worktable-sidebar-root] ${href}`,
+    `aside[aria-label="Folder"] ${href}`,
+    `main nav ${href}`,
+  ].join(", ")
 }
 
 function documentHref(doc: DocTarget): string {
@@ -1582,11 +1661,7 @@ function openDocument(pass: Pass, journey: string, doc: DocTarget): Action {
       }
     })(),
     prepare: (session) => revealDocument(session, doc),
-    act: (session) =>
-      press(
-        session,
-        `[data-worktable-sidebar-root] a[href="${documentHref(doc)}"]`
-      ),
+    act: (session) => press(session, documentLinks(doc)),
     t0: "click",
   }
 }

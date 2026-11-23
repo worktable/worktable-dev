@@ -22,6 +22,9 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
+- **Sidebar in large Spaces:** A Space and each of its folders show their newest few rows, with **See All** to list the whole folder beside the page, where its folders unfold in place. Temporary docs stay in their folders with a clock that shows when they archive, and images a Doc shows are no longer rows of their own. **Records** is one row that opens the collection you had open last; switch collections from its name above the table. A Space's archived docs show when you choose **Show Archived** in its menu. A folder's menu in the path at the top lists its newest docs first.
+- **Sidebar follows what you open:** Opening a doc from search, Home or a link opens its Space and folders in the sidebar and brings its row into view. Clicking around the sidebar itself leaves it where it is.
+- **Folders Only:** Settings > Appearance > Sidebar can show only folders. A folder then opens with its docs listed beside the page.
 - **Storage counts your files:** A Worktable's limit now counts its Docs, files, Records and threads, not their version history: a 2 GB Worktable holds 2 GB of files. Worktable keeps history, deleted items and indexes within an allowance of its own, removing the oldest first, and Settings shows your files against the limit with the rest below. Exports can now hold everything a Worktable keeps, up to 5.25 GiB.
 - **A lower limit keeps your history:** When a Worktable's storage limit goes down, nothing is removed to make it fit. Everything it holds stays, and new files wait until you've made room.
 - **Smaller exports:** A file and the copy of it kept in its version history are stored once in an export, so a Worktable of uploaded files exports at about half the size. Exports from this version need this version of Worktable or later to import; older exports still import.

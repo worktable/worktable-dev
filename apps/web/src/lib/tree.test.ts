@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import fc from "fast-check";
-import { buildTree, flattenTreeOrder, humanizeSegment } from "./tree";
+import { buildTree, flattenTreeOrder, humanizeSegment, newestFirst } from "./tree";
 import type { TreeNode } from "./tree";
 import { searchResultDocumentView } from "./document-views";
 import type { SearchResult } from "@worktable/types";
@@ -331,5 +331,34 @@ describe("buildTree sorting", () => {
       { order }
     );
     expect(flattenTreeOrder(rebuilt)).toEqual(order);
+  });
+});
+
+describe("newestFirst", () => {
+  it("puts the latest work first, folders and docs together, a dated name by its date", () => {
+    const tree = buildTree([
+      { path: "plans/old-plan", updatedAt: "2026-09-01T00:00:00.000Z" },
+      { path: "plans/2026-11-20-launch/notes", updatedAt: "2026-10-01T00:00:00.000Z" },
+      { path: "plans/new-plan", updatedAt: "2026-11-10T00:00:00.000Z" },
+    ])
+    expect(newestFirst(tree[0]!.children).map((node) => node.name)).toEqual([
+      "2026-11-20-launch",
+      "new-plan",
+      "old-plan",
+    ])
+  })
+})
+
+describe("dated names", () => {
+  it("set the date apart, unless siblings would then read the same", () => {
+    const tree = buildTree([
+      "reviews/2026-11-04-weekly-review/notes",
+      "reviews/2025-11-11-weekly-review/notes",
+      "reviews/2026-11-05-launch/notes",
+    ]);
+    const labels = tree[0]!.children.map((node) => node.label).sort();
+    expect(labels[0]).toBe("Launch");
+    expect(labels.slice(1).every((label) => /^Weekly Review · \S/.test(label))).toBe(true);
+    expect(new Set(labels).size).toBe(3);
   });
 });

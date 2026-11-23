@@ -23,6 +23,7 @@ import {
 import { Button } from "@worktable/ui/components/button"
 import { Input } from "@worktable/ui/components/input"
 import {
+  Eye,
   MoreVertical,
   Pencil,
   Trash,
@@ -84,6 +85,8 @@ interface SpaceContextMenuProps {
   }
   docSort: DocSortMode
   onChangeDocSort: (sort: DocSortMode) => void
+  /** Whether the sidebar lists this Space's archived docs, on this device. */
+  showArchived?: { on: boolean; onToggle: () => void }
   onRename: (newName: string) => void
   onChangeIcon: (icon: string) => void
   onChangeColor: (color: RecognitionColor) => Promise<void>
@@ -114,6 +117,7 @@ export function SpaceContextMenuButton({
   personal,
   docSort,
   onChangeDocSort,
+  showArchived,
   onRename,
   onChangeIcon,
   onChangeColor,
@@ -214,6 +218,15 @@ export function SpaceContextMenuButton({
               ))}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
+          {showArchived && (
+            <DropdownMenuItem onClick={showArchived.onToggle}>
+              <Eye className="mr-2 h-4 w-4" />
+              Show Archived
+              {showArchived.on && (
+                <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+              )}
+            </DropdownMenuItem>
+          )}
           {(archived ? onRestore : onArchive) && (
             <DropdownMenuItem disabled={!canAdminister}
               onClick={archived ? onRestore : onArchive}>

@@ -45,7 +45,7 @@ import type { Breadcrumb } from "@/lib/breadcrumbs"
 import { documentPathIsAtOrBelow, documentPathKey } from "@/lib/document-views"
 import { resolveIcon } from "@/lib/icons"
 import { recognitionChip } from "@/lib/recognition"
-import type { TreeNode } from "@/lib/tree"
+import { newestFirst, type TreeNode } from "@/lib/tree"
 
 const rowClass =
   "flex min-h-11 w-full min-w-0 items-center gap-3 rounded-lg px-3 text-left text-sm text-foreground outline-none transition-colors hover:bg-accent focus-visible:bg-accent active:bg-accent"
@@ -546,12 +546,13 @@ function FolderTrail({
   children: ReactNode
 }) {
   const [expanded, setExpanded] = useState(false)
-  const trailIndex = node.children.findIndex((child) =>
+  // Newest first, as the header's folder menus list them.
+  const entries = newestFirst(node.children)
+  const trailIndex = entries.findIndex((child) =>
     documentPathIsAtOrBelow(currentPath, child.path)
   )
-  const before =
-    trailIndex < 0 ? node.children : node.children.slice(0, trailIndex)
-  const after = trailIndex < 0 ? [] : node.children.slice(trailIndex + 1)
+  const before = trailIndex < 0 ? entries : entries.slice(0, trailIndex)
+  const after = trailIndex < 0 ? [] : entries.slice(trailIndex + 1)
   return (
     <>
       <FolderRow
@@ -657,7 +658,7 @@ function TreeFolder({
         onNavigate={onNavigate}
       />
       <TreeRows
-        nodes={node.children}
+        nodes={newestFirst(node.children)}
         open={expanded}
         spaceId={spaceId}
         currentPath={currentPath}

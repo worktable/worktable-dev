@@ -72,6 +72,9 @@ const SCREENS: Record<Exclude<keyof FileRoutesById, "__root__">, AppScreen | nul
   "/spaces/$spaceId": "space",
   "/spaces/$spaceId/docs/$": "doc",
   "/spaces/$spaceId/documents/$": "document",
+  // A wide screen opens a folder at its first document; until analytics
+  // names a folder page, its narrow-screen list goes unnamed.
+  "/spaces/$spaceId/folders/$": null,
   "/spaces/$spaceId/records/$": "records",
   "/spaces/$spaceId/records/$collectionId/$recordId": "record",
   "/spaces/$spaceId/threads/$": "space_threads",

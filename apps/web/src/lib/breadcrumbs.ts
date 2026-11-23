@@ -72,7 +72,11 @@ const DOCUMENT_SECTIONS = new Set(["documents", "docs", "widgets"])
 export function isDocumentPathname(pathname: string): boolean {
   const [, section, ...segments] =
     pathname.match(/^\/spaces\/[^/]+\/([^/]+)\/(.*)$/) ?? []
-  return !!section && DOCUMENT_SECTIONS.has(section) && segments.join("") !== ""
+  return (
+    !!section &&
+    (DOCUMENT_SECTIONS.has(section) || section === "folders") &&
+    segments.join("") !== ""
+  )
 }
 
 /** "Threads", linking to the list when a thread is open, then its title. */
@@ -207,8 +211,11 @@ export function buildBreadcrumbs({
         titleOverride
       )
     )
+  } else if (section === "records" && !segments[0]) {
+    crumbs.push({ kind: "text", role: "collection", label: "Records" })
   } else if (section === "records" && segments[0]) {
     const [collectionId, recordId] = segments
+    crumbs.push({ kind: "text", role: "collection", label: "Records" })
     if (recordId) {
       crumbs.push({
         kind: "link",
@@ -233,9 +240,11 @@ export function buildBreadcrumbs({
     }
   } else if (
     section !== undefined &&
-    DOCUMENT_SECTIONS.has(section) &&
+    (DOCUMENT_SECTIONS.has(section) || section === "folders") &&
     segments.some(Boolean)
   ) {
+    // A folder's page names the folder last, as a document's names it.
+    const folderPage = section === "folders"
     // A trailing or doubled slash names no document of its own.
     const parts = segments.filter(Boolean)
     const currentPath = parts.join("/")
@@ -248,8 +257,8 @@ export function buildBreadcrumbs({
       if (index === parts.length - 1) {
         crumbs.push({
           kind: "text",
-          role: "document",
-          label: titleOverride ?? label,
+          role: folderPage ? "folder" : "document",
+          label: folderPage ? label : (titleOverride ?? label),
           node,
         })
         return

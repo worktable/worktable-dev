@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
@@ -13,8 +13,11 @@ import { recordsRouter } from "./routes/records.ts"
 import { sidebarRouter } from "./routes/sidebar.ts"
 import { spacesRouter } from "./routes/spaces.ts"
 import { writeSpace } from "./store.ts"
+import { noteSpaceChanged } from "./workspace-read-model.ts"
+import { getSpaceLinkGraph, invalidateLinkGraph, onEmbeddedFilesChanged } from "./link-graph.ts"
 import {
   ensureWorkspaceManifest,
+  getWorkspaceRoot,
   setWorkspaceRootOverride,
 } from "./workspace.ts"
 
@@ -65,6 +68,7 @@ beforeEach(async () => {
   appDir = mkdtempSync(join(tmpdir(), "worktable-sidebar-app-"))
   setWorkspaceRootOverride(root)
   setAppDirOverride(appDir)
+  invalidateLinkGraph()
   ensureWorkspaceManifest()
   for (const id of ["alpha", "beta"]) {
     await writeSpace(space(id))
@@ -114,5 +118,52 @@ describe("GET /api/sidebar", () => {
       expect(entry["collections"]).toBeUndefined()
       expect((entry["page"] as { pins: unknown[] }).pins).toEqual([])
     }
+  })
+})
+
+describe("GET /api/spaces/:id/documents", () => {
+  it("marks the files a Doc shows, without waiting for the Space's links", async () => {
+    const folder = join(getWorkspaceRoot(), "spaces", "alpha", "docs", "notes")
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, "shown.png"), "png")
+    writeFileSync(join(folder, "linked.png"), "png")
+    writeFileSync(join(folder, "loose.png"), "png")
+    await writeDoc(
+      "alpha",
+      "notes/first",
+      "# First\n\n![Shot](shown.png)\n\nSee [the other](linked.png).\n"
+    )
+    noteSpaceChanged("alpha")
+    const embedded = async () => {
+      const { documents } = (await get("/api/spaces/alpha/documents")) as {
+        documents: Array<{ path: string; embedded?: true }>
+      }
+      return documents.flatMap((item) => (item.embedded ? [item.path] : []))
+    }
+    // The first list answers at once; the links are read behind it.
+    const changed: string[] = []
+    const stop = onEmbeddedFilesChanged((spaceId) => changed.push(spaceId))
+    await embedded()
+    await getSpaceLinkGraph("alpha")
+    stop()
+    expect(changed).toContain("alpha")
+    // Shown, not merely linked or loose.
+    expect(await embedded()).toEqual(["notes/shown.png"])
+
+    // A save that drops the picture is heard without another read.
+    const heard = new Promise<string>((resolve) => {
+      const done = onEmbeddedFilesChanged((spaceId) => {
+        done()
+        resolve(spaceId)
+      })
+    })
+    await writeDoc("alpha", "notes/first", "# First\n\nNo picture now.\n")
+    expect(
+      await Promise.race([
+        heard,
+        new Promise((resolve) => setTimeout(() => resolve("timeout"), 5_000)),
+      ])
+    ).toBe("alpha")
+    expect(await embedded()).toEqual([])
   })
 })

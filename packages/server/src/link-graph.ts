@@ -68,6 +68,8 @@ export interface SpaceLinkGraph {
   broken: Array<{ docPath: string; target: string; resolvedPath: string }>;
   /** For each linked doc, its first link from each source doc and how many there are. */
   inboundContext: Map<string, Map<string, InboundLinks>>;
+  /** Files a doc shows (an image, a card), as opposed to links to them. */
+  embedded: Set<string>;
 }
 
 /** A source doc's links to one doc: the first one's sentence, and the count. */
@@ -379,6 +381,23 @@ function markSpace(spaceId: string, docPath?: string): void {
   if (!space) return;
   space.dirty = true;
   if (docPath !== undefined) space.forced.add(docPath);
+  // A save can add or drop a file a Doc shows; read the change soon, so open
+  // lists hear of it without waiting for another read to ask.
+  if (space.graph && embeddedListeners.size > 0) scheduleWarm(spaceId);
+}
+
+const WARM_AFTER_MS = 1_000;
+const warmTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Rebuild a Space's graph once a burst of saves has settled. */
+function scheduleWarm(spaceId: string): void {
+  clearTimeout(warmTimers.get(spaceId));
+  const timer = setTimeout(() => {
+    warmTimers.delete(spaceId);
+    warmLinkGraph(spaceId);
+  }, WARM_AFTER_MS);
+  (timer as { unref?: () => void }).unref?.();
+  warmTimers.set(spaceId, timer);
 }
 
 /** Re-check every Space at its next read; unchanged Docs are not re-read. */
@@ -411,6 +430,8 @@ onWorkspaceChange((event) => {
     case "workspaceReset":
       resetEpoch += 1;
       spaces.clear();
+      for (const timer of warmTimers.values()) clearTimeout(timer);
+      warmTimers.clear();
       break;
   }
 });
@@ -438,6 +459,7 @@ function resolveSpaceLinkGraph(
   const inbound = new Map<string, string[]>();
   const broken: SpaceLinkGraph["broken"] = [];
   const inboundContext: SpaceLinkGraph["inboundContext"] = new Map();
+  const embedded = new Set<string>();
 
   for (const docPath of [...docPaths, ...otherSources]) {
     const extracted = docs.get(docPath)?.links;
@@ -454,6 +476,7 @@ function resolveSpaceLinkGraph(
         throw new Error(`Document alias cycle or hop limit exceeded for ${lexicalPath}`);
       }
       if (resolvedPath === docPath) continue;
+      if (embed && filePaths?.has(resolvedPath)) embedded.add(resolvedPath);
       if (seen.has(resolvedPath)) {
         const known = inboundContext.get(resolvedPath)?.get(docPath);
         if (known) known.count += 1;
@@ -478,7 +501,7 @@ function resolveSpaceLinkGraph(
   }
 
   const orphans = docPaths.filter((path) => !inbound.has(path));
-  return { outbound, inbound, orphans, broken, inboundContext };
+  return { outbound, inbound, orphans, broken, inboundContext, embedded };
 }
 
 /**
@@ -553,10 +576,14 @@ async function buildSpaceLinks(spaceId: string, space: SpaceLinks): Promise<void
       [...html.keys()],
     );
     await rebuildHookForTests?.();
+    const shownBefore = space.graph?.embedded;
     space.docs = docs;
     space.html = html;
     space.htmlImages = htmlImages;
     space.graph = graph;
+    if (!sameSet(shownBefore, graph.embedded)) {
+      for (const listener of embeddedListeners) listener(spaceId);
+    }
   } catch (error) {
     space.dirty = true;
     for (const docPath of forced) space.forced.add(docPath);
@@ -721,6 +748,38 @@ export function peekDocOutbound(spaceId: string, docPath: string): string[] | nu
   return (graph.outbound.get(docPath) ?? []).flatMap((link) =>
     link.resolved ? [link.resolvedPath] : []
   );
+}
+
+const embeddedListeners = new Set<(spaceId: string) => void>();
+
+function sameSet(
+  before: ReadonlySet<string> | undefined,
+  after: ReadonlySet<string>,
+): boolean {
+  if (!before) return after.size === 0;
+  if (before.size !== after.size) return false;
+  for (const path of after) if (!before.has(path)) return false;
+  return true;
+}
+
+/**
+ * The files Docs in a Space show, from the graph as last built, without
+ * waiting: lists of the Space's documents leave them to those Docs. A Space
+ * whose graph is out of date is read again in the background, and when what
+ * the Docs show changes, `onEmbeddedFilesChanged` says so.
+ */
+export function peekEmbeddedFiles(spaceId: string): ReadonlySet<string> | null {
+  const space = spaces.get(spaceId);
+  if (outOfDate(space)) warmLinkGraph(spaceId);
+  return space?.graph?.embedded ?? null;
+}
+
+/** Called with a Space's id when the files its Docs show change. */
+export function onEmbeddedFilesChanged(
+  listener: (spaceId: string) => void,
+): () => void {
+  embeddedListeners.add(listener);
+  return () => embeddedListeners.delete(listener);
 }
 
 /** Start building a Space's graph in the background if it is missing or out of date. */

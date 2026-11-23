@@ -18,6 +18,7 @@ import { Route as SpacesSpaceIdRouteImport } from './routes/spaces/$spaceId'
 import { Route as ThreadsSplatRouteImport } from './routes/threads/$'
 import { Route as SpacesSpaceIdDocsSplatRouteImport } from './routes/spaces/$spaceId/docs/$'
 import { Route as SpacesSpaceIdDocumentsSplatRouteImport } from './routes/spaces/$spaceId/documents/$'
+import { Route as SpacesSpaceIdFoldersSplatRouteImport } from './routes/spaces/$spaceId/folders/$'
 import { Route as SpacesSpaceIdRecordsSplatRouteImport } from './routes/spaces/$spaceId/records/$'
 import { Route as SpacesSpaceIdThreadsSplatRouteImport } from './routes/spaces/$spaceId/threads/$'
 import { Route as SpacesSpaceIdWidgetsSplatRouteImport } from './routes/spaces/$spaceId/widgets/$'
@@ -69,6 +70,12 @@ const SpacesSpaceIdDocumentsSplatRoute =
     path: '/documents/$',
     getParentRoute: () => SpacesSpaceIdRoute,
   } as any)
+const SpacesSpaceIdFoldersSplatRoute =
+  SpacesSpaceIdFoldersSplatRouteImport.update({
+    id: '/folders/$',
+    path: '/folders/$',
+    getParentRoute: () => SpacesSpaceIdRoute,
+  } as any)
 const SpacesSpaceIdRecordsSplatRoute =
   SpacesSpaceIdRecordsSplatRouteImport.update({
     id: '/records/$',
@@ -104,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/threads/$': typeof ThreadsSplatRoute
   '/spaces/$spaceId/docs/$': typeof SpacesSpaceIdDocsSplatRoute
   '/spaces/$spaceId/documents/$': typeof SpacesSpaceIdDocumentsSplatRoute
+  '/spaces/$spaceId/folders/$': typeof SpacesSpaceIdFoldersSplatRoute
   '/spaces/$spaceId/records/$': typeof SpacesSpaceIdRecordsSplatRoute
   '/spaces/$spaceId/threads/$': typeof SpacesSpaceIdThreadsSplatRoute
   '/spaces/$spaceId/widgets/$': typeof SpacesSpaceIdWidgetsSplatRoute
@@ -119,6 +127,7 @@ export interface FileRoutesByTo {
   '/threads/$': typeof ThreadsSplatRoute
   '/spaces/$spaceId/docs/$': typeof SpacesSpaceIdDocsSplatRoute
   '/spaces/$spaceId/documents/$': typeof SpacesSpaceIdDocumentsSplatRoute
+  '/spaces/$spaceId/folders/$': typeof SpacesSpaceIdFoldersSplatRoute
   '/spaces/$spaceId/records/$': typeof SpacesSpaceIdRecordsSplatRoute
   '/spaces/$spaceId/threads/$': typeof SpacesSpaceIdThreadsSplatRoute
   '/spaces/$spaceId/widgets/$': typeof SpacesSpaceIdWidgetsSplatRoute
@@ -135,6 +144,7 @@ export interface FileRoutesById {
   '/threads/$': typeof ThreadsSplatRoute
   '/spaces/$spaceId/docs/$': typeof SpacesSpaceIdDocsSplatRoute
   '/spaces/$spaceId/documents/$': typeof SpacesSpaceIdDocumentsSplatRoute
+  '/spaces/$spaceId/folders/$': typeof SpacesSpaceIdFoldersSplatRoute
   '/spaces/$spaceId/records/$': typeof SpacesSpaceIdRecordsSplatRoute
   '/spaces/$spaceId/threads/$': typeof SpacesSpaceIdThreadsSplatRoute
   '/spaces/$spaceId/widgets/$': typeof SpacesSpaceIdWidgetsSplatRoute
@@ -152,6 +162,7 @@ export interface FileRouteTypes {
     | '/threads/$'
     | '/spaces/$spaceId/docs/$'
     | '/spaces/$spaceId/documents/$'
+    | '/spaces/$spaceId/folders/$'
     | '/spaces/$spaceId/records/$'
     | '/spaces/$spaceId/threads/$'
     | '/spaces/$spaceId/widgets/$'
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
     | '/threads/$'
     | '/spaces/$spaceId/docs/$'
     | '/spaces/$spaceId/documents/$'
+    | '/spaces/$spaceId/folders/$'
     | '/spaces/$spaceId/records/$'
     | '/spaces/$spaceId/threads/$'
     | '/spaces/$spaceId/widgets/$'
@@ -182,6 +194,7 @@ export interface FileRouteTypes {
     | '/threads/$'
     | '/spaces/$spaceId/docs/$'
     | '/spaces/$spaceId/documents/$'
+    | '/spaces/$spaceId/folders/$'
     | '/spaces/$spaceId/records/$'
     | '/spaces/$spaceId/threads/$'
     | '/spaces/$spaceId/widgets/$'
@@ -263,6 +276,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpacesSpaceIdDocumentsSplatRouteImport
       parentRoute: typeof SpacesSpaceIdRoute
     }
+    '/spaces/$spaceId/folders/$': {
+      id: '/spaces/$spaceId/folders/$'
+      path: '/folders/$'
+      fullPath: '/spaces/$spaceId/folders/$'
+      preLoaderRoute: typeof SpacesSpaceIdFoldersSplatRouteImport
+      parentRoute: typeof SpacesSpaceIdRoute
+    }
     '/spaces/$spaceId/records/$': {
       id: '/spaces/$spaceId/records/$'
       path: '/records/$'
@@ -297,6 +317,7 @@ declare module '@tanstack/react-router' {
 interface SpacesSpaceIdRouteChildren {
   SpacesSpaceIdDocsSplatRoute: typeof SpacesSpaceIdDocsSplatRoute
   SpacesSpaceIdDocumentsSplatRoute: typeof SpacesSpaceIdDocumentsSplatRoute
+  SpacesSpaceIdFoldersSplatRoute: typeof SpacesSpaceIdFoldersSplatRoute
   SpacesSpaceIdRecordsSplatRoute: typeof SpacesSpaceIdRecordsSplatRoute
   SpacesSpaceIdThreadsSplatRoute: typeof SpacesSpaceIdThreadsSplatRoute
   SpacesSpaceIdWidgetsSplatRoute: typeof SpacesSpaceIdWidgetsSplatRoute
@@ -306,6 +327,7 @@ interface SpacesSpaceIdRouteChildren {
 const SpacesSpaceIdRouteChildren: SpacesSpaceIdRouteChildren = {
   SpacesSpaceIdDocsSplatRoute: SpacesSpaceIdDocsSplatRoute,
   SpacesSpaceIdDocumentsSplatRoute: SpacesSpaceIdDocumentsSplatRoute,
+  SpacesSpaceIdFoldersSplatRoute: SpacesSpaceIdFoldersSplatRoute,
   SpacesSpaceIdRecordsSplatRoute: SpacesSpaceIdRecordsSplatRoute,
   SpacesSpaceIdThreadsSplatRoute: SpacesSpaceIdThreadsSplatRoute,
   SpacesSpaceIdWidgetsSplatRoute: SpacesSpaceIdWidgetsSplatRoute,

@@ -20,6 +20,10 @@ export interface TreeNode {
   archived?: boolean;
   /** Last-write time (ms). Folders carry the newest of their descendants. */
   updatedAt?: number;
+  /** A temporary document: it archives itself, on this date when known. */
+  temporary?: { archiveOn?: string };
+  /** The date a slug starts with ("2026-11-04-home-redesign"), as YYYY-MM-DD. */
+  dated?: string;
   children: TreeNode[];
 }
 
@@ -36,6 +40,8 @@ export interface TreeInput {
   headings?: string[];
   /** ISO timestamp of the doc's last write (provenance.updatedAt). */
   updatedAt?: string;
+  lifetime?: "durable" | "temporary";
+  archiveOn?: string;
 }
 
 export type DocSortMode = "custom" | "alphabetical" | "updated";
@@ -45,11 +51,52 @@ export interface TreeSort {
   mode?: DocSortMode;
   /** Manual document/folder order (legacy setting key `docOrder`). */
   order?: string[];
+  /**
+   * List newest first, folders and documents together, wherever nobody set
+   * an order by hand.
+   */
+  newestFirst?: boolean;
 }
 
 export interface TreeBuildOptions {
   /** Paths that remain folders because another projected cohort has children. */
   folderPaths?: ReadonlySet<string>;
+}
+
+const DATED_SLUG = /^(\d{4})-(\d{2})-(\d{2})[-_](.+)$/;
+
+/**
+ * A slug that starts with a date ("2026-11-04-home-redesign") reads as its
+ * name ("Home Redesign") with the date apart, so a list of them doesn't
+ * start every row with the same digits.
+ */
+export function datedSegment(
+  segment: string
+): { label: string; dated?: string } {
+  const match = DATED_SLUG.exec(segment);
+  if (!match) return { label: humanizeSegment(segment) };
+  const [, year, month, day, rest] = match;
+  const dated = `${year}-${month}-${day}`;
+  if (Number.isNaN(Date.parse(dated))) return { label: humanizeSegment(segment) };
+  return { label: humanizeSegment(rest), dated };
+}
+
+/**
+ * When a node is from, for newest-first lists: a date in its name, which is
+ * the date its row shows, or else its last write.
+ */
+export function nodeTime(node: TreeNode): number {
+  return node.dated ? Date.parse(`${node.dated}T23:59:59`) : (node.updatedAt ?? 0);
+}
+
+/**
+ * Newest first, folders and documents together: the order menus that jump
+ * to a document use, so the work in progress is at the top.
+ */
+export function newestFirst(nodes: readonly TreeNode[]): TreeNode[] {
+  return [...nodes].sort(
+    (a, b) => nodeTime(b) - nodeTime(a) || a.name.localeCompare(b.name)
+  );
 }
 
 /** Turn a slug segment ("planning-onsite") into a readable label ("Planning Onsite"). */
@@ -88,6 +135,10 @@ export function buildTree(
         ? undefined
         : (item.title?.trim() || item.headings?.[0]?.trim());
     const updatedAtIso = typeof item === "string" ? undefined : item.updatedAt;
+    const temporary =
+      typeof item !== "string" && item.lifetime === "temporary"
+        ? { ...(item.archiveOn ? { archiveOn: item.archiveOn } : {}) }
+        : undefined;
     const updatedAt = updatedAtIso ? Date.parse(updatedAtIso) || undefined : undefined;
     const parts = path.split("/");
     let current = root;
@@ -103,17 +154,20 @@ export function buildTree(
       const names = namesAt(current);
       let node = names.get(part);
       if (!node) {
+        const slug = datedSegment(part);
         node = {
           name: part,
           title: isLast ? title : undefined,
           // Catalog titles win; folders and label-less leaves humanize the slug.
-          label: isLast && title ? title : humanizeSegment(part),
+          label: isLast && title ? title : slug.label,
+          ...(slug.dated && !(isLast && title) ? { dated: slug.dated } : {}),
           path: currentPath,
           kind: isLast ? kind : "folder",
           isFolder: !isLast || options?.folderPaths?.has(currentPath) === true,
           format: isLast ? format : undefined,
           health: isLast ? health : undefined,
           archived: isLast ? archived : undefined,
+          ...(isLast && temporary ? { temporary } : {}),
           updatedAt,
           children: [],
         };
@@ -130,11 +184,15 @@ export function buildTree(
           if (health) node.health = health;
           if (archived) node.archived = true;
           if (title) node.title = title;
+          if (temporary) node.temporary = temporary;
           node.kind = kind;
         }
         // Recompute display label: a doc's H1 always wins over the humanized slug,
         // and survives promotion when a path is both a doc and a folder.
-        node.label = node.title ?? humanizeSegment(part);
+        const slug = datedSegment(part);
+        node.label = node.title ?? slug.label;
+        if (node.title || !slug.dated) delete node.dated;
+        else node.dated = slug.dated;
       }
       // Ancestors inherit the newest descendant write time ("updated" sort).
       if (updatedAt && (!node.updatedAt || updatedAt > node.updatedAt)) {
@@ -152,6 +210,16 @@ export function buildTree(
     (mode === "custom" ? (sort?.order ?? []) : []).map((path, i) => [path, i])
   );
   const sortNodes = (nodes: TreeNode[]) => {
+    // Nobody ordered these by hand: newest first, folders and docs together.
+    if (
+      sort?.newestFirst &&
+      mode === "custom" &&
+      !nodes.some((node) => orderIndex.has(node.path))
+    ) {
+      nodes.sort((a, b) => nodeTime(b) - nodeTime(a) || a.name.localeCompare(b.name));
+      nodes.forEach((n) => sortNodes(n.children));
+      return;
+    }
     nodes.sort((a, b) => {
       if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
       if (mode === "updated") {
@@ -168,8 +236,39 @@ export function buildTree(
     nodes.forEach((n) => sortNodes(n.children));
   };
   sortNodes(root);
+  keepDatesApart(root);
 
   return root;
+}
+
+/**
+ * Siblings whose names read the same once their dates are set apart
+ * ("2026-11-04-weekly-review" and "2026-11-11-weekly-review") keep their
+ * dates in their names, so none is mistaken for another.
+ */
+function keepDatesApart(nodes: TreeNode[]): void {
+  const byLabel = new Map<string, TreeNode[]>();
+  for (const node of nodes) {
+    const key = node.label.toLowerCase();
+    byLabel.set(key, [...(byLabel.get(key) ?? []), node]);
+    keepDatesApart(node.children);
+  }
+  for (const same of byLabel.values()) {
+    if (same.length < 2) continue;
+    for (const node of same) {
+      if (node.dated) node.label = `${node.label} · ${shortDate(node.dated)}`;
+    }
+  }
+}
+
+/** "Nov 4" this year, "Nov 4, 2025" otherwise, from YYYY-MM-DD. */
+function shortDate(dated: string): string {
+  const [year, month, day] = dated.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(year === new Date().getFullYear() ? {} : { year: "numeric" }),
+  });
 }
 
 /** All document and folder paths in display order. */

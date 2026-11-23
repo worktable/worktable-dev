@@ -715,6 +715,9 @@ export function applySpaceEvent(
     }
   }
 
+  // What the Space's Docs show changed: its list leaves those files out.
+  if (type === "embedded_files_update") refresh.push(documents)
+
   if (type === "doc_update" || type === "doc_deleted") {
     // Rows open the new revision at once; the lists still read again for
     // what else the change moved (a conversion's format, dates, titles).

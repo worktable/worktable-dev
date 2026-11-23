@@ -42,12 +42,11 @@ export function compactFolders(nodes: TreeNode[]): TreeNode[] {
   })
 }
 
-/** Only the folders, at every level. */
+/** Only the folders, and documents that hold others, at every level. */
 export function foldersOnly(nodes: TreeNode[]): TreeNode[] {
+  // A document that holds others stays, as the way to what it holds.
   return nodes.flatMap((node) =>
-    node.isFolder && node.kind === "folder"
-      ? [{ ...node, children: foldersOnly(node.children) }]
-      : []
+    node.isFolder ? [{ ...node, children: foldersOnly(node.children) }] : []
   )
 }
 

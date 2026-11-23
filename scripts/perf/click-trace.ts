@@ -1403,7 +1403,15 @@ async function revealDocument(session: Session, doc: DocTarget) {
   await showSidebar(session)
   const root = sidebar(session)
   await expandSpace(session, doc.spaceName)
-  await root.locator("[data-tree-path]").first().waitFor()
+  // Builds before rows carried their paths (the release gate measures the
+  // previous release too) list every row by name.
+  const marked = await root
+    .locator("[data-tree-path]")
+    .first()
+    .waitFor({ timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false)
+  if (!marked) return revealDocumentByName(session, doc)
   const folders = doc.path
     .split("/")
     .slice(0, -1)
@@ -1431,6 +1439,24 @@ async function revealDocument(session: Session, doc: DocTarget) {
     )
   }
   const link = session.page.locator(documentLinks(doc)).first()
+  await link.waitFor({ state: "visible" })
+  await link.scrollIntoViewIfNeeded()
+}
+
+/** A build whose rows carry no paths: open each folder by its name. */
+async function revealDocumentByName(session: Session, doc: DocTarget) {
+  const root = sidebar(session)
+  for (const segment of doc.path.split("/").slice(0, -1)) {
+    const folder = root
+      .getByRole("button", {
+        name: new RegExp(`^${escapeRegExp(segment)}$`, "i"),
+      })
+      .first()
+    await folder.waitFor()
+    if ((await folder.getAttribute("aria-expanded")) === "false")
+      await folder.click()
+  }
+  const link = root.locator(`a[href="${documentHref(doc)}"]`).first()
   await link.waitFor({ state: "visible" })
   await link.scrollIntoViewIfNeeded()
 }

@@ -1,5 +1,5 @@
 import { Link, Navigate, useParams, useRouterState } from "@tanstack/react-router"
-import { ChevronLeft, Folder, FolderOpen, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, Folder, FolderOpen, X } from "lucide-react"
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { TruncatedText } from "@worktable/ui/components/truncated-text"
 import { cn } from "@worktable/ui/lib/utils"
@@ -168,21 +168,12 @@ function DocumentRow({
 }
 
 /**
- * A folder inside the list. It unfolds in place, as folders do in the
- * sidebar, and stays open on this device; it opens by itself when the
- * open document is inside it.
+ * Whether a branch of the list is unfolded: as the person left it on this
+ * device, and open by itself while the open document is inside it.
  */
-function FolderBranch({
-  spaceId,
-  node,
-  openPath,
-}: {
-  spaceId: string
-  node: TreeNode
-  openPath: string | null
-}) {
+function useBranchOpen(spaceId: string, node: TreeNode, openPath: string | null) {
   const key = `list:${spaceId}:${node.path}`
-  const holdsOpen = pathIsAtOrBelow(openPath, node.path)
+  const holdsOpen = openPath !== node.path && pathIsAtOrBelow(openPath, node.path)
   const [open, setOpenState] = useState(
     () => holdsOpen || (rememberedOpen("folder", key) ?? false)
   )
@@ -203,6 +194,24 @@ function FolderBranch({
     if (!root) return set()
     transitionSidebar(root, set, () => collapsiblePanel(root))
   }
+  return [open, onOpenChange] as const
+}
+
+/**
+ * A folder inside the list. It unfolds in place, as folders do in the
+ * sidebar, and stays open on this device; it opens by itself when the
+ * open document is inside it.
+ */
+function FolderBranch({
+  spaceId,
+  node,
+  openPath,
+}: {
+  spaceId: string
+  node: TreeNode
+  openPath: string | null
+}) {
+  const [open, onOpenChange] = useBranchOpen(spaceId, node, openPath)
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <CollapsibleTrigger
@@ -216,6 +225,47 @@ function FolderBranch({
         )}
         <TruncatedText text={node.label} className="min-w-0 flex-1" />
       </CollapsibleTrigger>
+      <CollapsibleContent className="collapsible-instant">
+        <div className="ml-4 pl-2">
+          <FolderItems spaceId={spaceId} items={node.children} openPath={openPath} />
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+/**
+ * A document that holds others, such as a Doc with its files: its name
+ * opens it, and its chevron unfolds what it holds, as in the sidebar.
+ */
+function DocumentBranch({
+  spaceId,
+  node,
+  openPath,
+}: {
+  spaceId: string
+  node: TreeNode
+  openPath: string | null
+}) {
+  const [open, onOpenChange] = useBranchOpen(spaceId, node, openPath)
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange}>
+      <div className="flex min-w-0 items-center">
+        <DocumentRow spaceId={spaceId} node={node} active={openPath === node.path} />
+        <CollapsibleTrigger
+          className="ml-0.5 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          render={
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-label={open ? `Collapse ${node.label}` : `Expand ${node.label}`}
+              data-tree-path={node.path}
+            />
+          }
+        >
+          <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+        </CollapsibleTrigger>
+      </div>
       <CollapsibleContent className="collapsible-instant">
         <div className="ml-4 pl-2">
           <FolderItems spaceId={spaceId} items={node.children} openPath={openPath} />
@@ -240,6 +290,13 @@ function FolderItems({
         node.isFolder && node.kind === "folder" ? (
           <FolderBranch
             key={`f:${node.path}`}
+            spaceId={spaceId}
+            node={node}
+            openPath={openPath}
+          />
+        ) : node.isFolder && node.children.length > 0 ? (
+          <DocumentBranch
+            key={`d:${node.path}`}
             spaceId={spaceId}
             node={node}
             openPath={openPath}

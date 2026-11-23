@@ -4,6 +4,7 @@ import {
   currentReveal,
   FOLDER_ROWS,
   folderRows,
+  foldersOnly,
   markTreeNavigation,
   noteRouteChange,
 } from "./sidebar-live"
@@ -36,5 +37,12 @@ describe("revealing what opened from elsewhere", () => {
 
     noteRouteChange("/spaces/work/documents/research/c")
     expect(currentReveal()).toMatchObject({ spaceId: "work", path: "research/c" })
+  })
+})
+
+describe("Folders Only", () => {
+  it("keeps a document that holds others, as the way to what it holds", () => {
+    const tree = buildTree(["notes", "notes/sub", "plans/brief", "loose"])
+    expect(foldersOnly(tree).map((node) => node.path).sort()).toEqual(["notes", "plans"])
   })
 })

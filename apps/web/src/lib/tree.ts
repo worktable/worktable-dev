@@ -236,8 +236,39 @@ export function buildTree(
     nodes.forEach((n) => sortNodes(n.children));
   };
   sortNodes(root);
+  keepDatesApart(root);
 
   return root;
+}
+
+/**
+ * Siblings whose names read the same once their dates are set apart
+ * ("2026-11-04-weekly-review" and "2026-11-11-weekly-review") keep their
+ * dates in their names, so none is mistaken for another.
+ */
+function keepDatesApart(nodes: TreeNode[]): void {
+  const byLabel = new Map<string, TreeNode[]>();
+  for (const node of nodes) {
+    const key = node.label.toLowerCase();
+    byLabel.set(key, [...(byLabel.get(key) ?? []), node]);
+    keepDatesApart(node.children);
+  }
+  for (const same of byLabel.values()) {
+    if (same.length < 2) continue;
+    for (const node of same) {
+      if (node.dated) node.label = `${node.label} · ${shortDate(node.dated)}`;
+    }
+  }
+}
+
+/** "Nov 4" this year, "Nov 4, 2025" otherwise, from YYYY-MM-DD. */
+function shortDate(dated: string): string {
+  const [year, month, day] = dated.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(year === new Date().getFullYear() ? {} : { year: "numeric" }),
+  });
 }
 
 /** All document and folder paths in display order. */

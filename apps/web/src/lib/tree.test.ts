@@ -348,3 +348,17 @@ describe("newestFirst", () => {
     ])
   })
 })
+
+describe("dated names", () => {
+  it("set the date apart, unless siblings would then read the same", () => {
+    const tree = buildTree([
+      "reviews/2026-11-04-weekly-review/notes",
+      "reviews/2025-11-11-weekly-review/notes",
+      "reviews/2026-11-05-launch/notes",
+    ]);
+    const labels = tree[0]!.children.map((node) => node.label).sort();
+    expect(labels[0]).toBe("Launch");
+    expect(labels.slice(1).every((label) => /^Weekly Review · \S/.test(label))).toBe(true);
+    expect(new Set(labels).size).toBe(3);
+  });
+});

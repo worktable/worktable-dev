@@ -38,6 +38,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Pending tip on Home:** The tip about Pending sits under its heading instead of covering the greeting.
 - **Older agent connections:** An agent connected with an earlier default access now reads Docs and gets the Library's skills. Before, it saw no skills, and Settings showed it without read access.
 - **Security updates:** Libraries with published security fixes are updated, among them the web server, pasting into the editor, reading image sizes, the agent connector and the checks on agents' tool calls.
 - **Desktop security updates:** The Mac app's libraries with published security fixes are updated, among them its secure connections and the code that unpacks updates.

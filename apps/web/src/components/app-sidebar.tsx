@@ -2992,9 +2992,10 @@ export function AppSidebar() {
     }
   }, [])
   // Once its Space and folders have opened, the row comes into view, if it
-  // is not already: centred, with a short glide.
+  // is not already: centred, with a short glide. It waits for the reveal to
+  // be handled, so a Space that arrives later still brings its row in.
   useEffect(() => {
-    if (revealSeq === undefined) return
+    if (handledReveal === undefined) return
     let frames = 0
     let raf = 0
     const attempt = () => {
@@ -3025,7 +3026,7 @@ export function AppSidebar() {
     // After the frame that opens its Space and folders.
     raf = requestAnimationFrame(attempt)
     return () => cancelAnimationFrame(raf)
-  }, [revealSeq])
+  }, [handledReveal])
 
   const handleRemoveGroup = (group: PersonalGroup) => {
     if (!navigation) return

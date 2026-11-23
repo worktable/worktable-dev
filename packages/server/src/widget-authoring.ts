@@ -793,6 +793,51 @@ window.addEventListener('keydown',function(event){
   event.preventDefault();
   window.print();
 });
+// A picture on the page opens in Worktable's image viewer, as a Doc's do,
+// when a click on it has nothing else to do. The page shows images only as
+// data URLs, which the app can show too.
+(function(){
+  const ACTIVE='a,button,label,summary,select,input,textarea,[role="button"],[role="link"],[onclick],[contenteditable]';
+  const CLICKABLE=/^(pointer|zoom-in)$/;
+  let commenting=false,marked=null,markedCursor='';
+  function unmark(){if(marked){marked.style.cursor=markedCursor;marked=null}}
+  window.addEventListener('message',function(event){
+    if(event.source!==window.parent)return;
+    const d=event.data;
+    if(d&&d.type==='worktable.comment.set'){commenting=d.mode===true;if(commenting)unmark()}
+  });
+  function opens(el){
+    if(!(el instanceof HTMLImageElement)||el.closest(ACTIVE))return false;
+    const src=el.currentSrc||el.src;
+    if(src.slice(0,11).toLowerCase()!=='data:image/'||!el.complete||!el.naturalWidth)return false;
+    // Shown smaller than 40px, an image is a mark, such as a badge.
+    const box=el.getBoundingClientRect();
+    if(box.width<40||box.height<40)return false;
+    // A page that shows its image as clickable keeps the click.
+    return el===marked||!CLICKABLE.test(getComputedStyle(el).cursor);
+  }
+  window.addEventListener('pointerover',function(event){
+    if(commenting||event.pointerType!=='mouse'||event.target===marked)return;
+    unmark();
+    if(!opens(event.target))return;
+    marked=event.target;markedCursor=marked.style.cursor;marked.style.cursor='zoom-in';
+  },true);
+  window.addEventListener('pointerout',function(event){if(event.target===marked)unmark()},true);
+  window.addEventListener('click',function(event){
+    let trusted=false;
+    try{trusted=typeof eventIsTrustedGetter==='function'&&nativeApply(eventIsTrustedGetter,event,[])===true}catch{}
+    if(!trusted||commenting||event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+    const image=event.target;
+    if(!opens(image))return;
+    event.preventDefault();
+    let shown=Array.prototype.filter.call(document.images,opens).slice(0,200);
+    if(shown.indexOf(image)<0)shown=[image];
+    postToParent({type:'worktable.image.open',widgetId:cfg.widgetId,spaceId:cfg.spaceId,navigationToken:navigationToken,index:shown.indexOf(image),images:shown.map(function(each){
+      const path=each.getAttribute('data-worktable-src')||'';
+      return {src:each.currentSrc||each.src,alt:each.alt||path.slice(path.lastIndexOf('/')+1),width:each.naturalWidth,height:each.naturalHeight};
+    })},'*');
+  });
+})();
 // Interaction ping: user gestures inside the sandboxed frame never bubble to
 // the parent window, so inferred review ("reading = review" needs dwell AND an
 // interaction) would otherwise never fire for HTML docs. Post a throttled,

@@ -25,6 +25,11 @@ test.beforeAll(async () => {
     name: "Deck",
     html: placePage("First version"),
   })
+  await create(`/spaces/${spaceId}/widgets`, "POST", {
+    id: "gallery",
+    name: "Gallery",
+    html: galleryPage(),
+  })
   await create(`/spaces/${spaceId}/docs/notes`, "PUT", {
     content: [{ type: "paragraph", content: "Loaded document" }],
   })
@@ -40,6 +45,22 @@ function at() { return parseInt(location.hash.slice(1), 10) || 1 }
 function show() { document.getElementById("slide").textContent = "Slide " + at() }
 document.getElementById("next").onclick = function () { history.replaceState(null, "", "#" + (at() + 1)); show() }
 show()
+</script></body></html>`
+}
+
+/** Pictures to look at, and pictures the page uses for something else. */
+function galleryPage() {
+  const image = (alt: string, size: number, attributes = "") =>
+    `<img alt="${alt}" ${attributes} src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='${size * 1.5}' height='${size}'%3E%3Crect width='100%25' height='100%25' fill='%23369'/%3E%3C/svg%3E">`
+  return `<!doctype html><html><head><title>Gallery</title></head><body>
+${image("Harbor", 120)}${image("Badge", 16)}${image("Hills", 120)}
+<a href="#linked">${image("Linked", 120)}</a>
+${image("Card", 120, 'id="card" style="cursor:pointer"')}
+<p id="status"></p>
+<script>
+document.getElementById("card").addEventListener("click", function () {
+  document.getElementById("status").textContent = "Card opened"
+})
 </script></body></html>`
 }
 
@@ -272,3 +293,31 @@ test("Print PDF prints the open HTML page, not the app around it", async ({
   await expect.poll(printed).toEqual({ page: 3, app: 0 })
 })
 
+test("a picture on an HTML page opens full screen, and on to the page's other pictures", async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  await page.goto(url("gallery"))
+  const frame = page.frameLocator(frameSelector)
+  await frame.getByRole("img", { name: "Harbor" }).click({ timeout: 30_000 })
+  const harbor = page.getByRole("dialog", { name: "Harbor" })
+  await expect(harbor).toBeVisible()
+  // The badge, the link and the page's own button are left out.
+  await expect(harbor.getByText("1 of 2")).toBeVisible()
+  await harbor.getByRole("button", { name: "Next image" }).click()
+  await expect(page.getByRole("dialog", { name: "Hills" })).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("dialog")).toBeHidden()
+
+  // Pictures the page uses for something else keep their click.
+  await frame.getByRole("img", { name: "Card" }).click()
+  await expect(frame.locator("#status")).toHaveText("Card opened")
+  await frame.getByRole("img", { name: "Linked" }).click()
+  await expect
+    .poll(async () =>
+      (await (await page.locator(frameSelector).elementHandle())!.contentFrame())!
+        .evaluate(() => location.hash)
+    )
+    .toBe("#linked")
+  await expect(page.getByRole("dialog")).toHaveCount(0)
+})

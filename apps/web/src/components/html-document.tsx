@@ -58,6 +58,7 @@ import { useTheme } from "@/components/theme-provider"
 import { useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+  lazy,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -66,6 +67,9 @@ import {
   useRef,
   useState,
 } from "react"
+import { DeferredMount } from "@worktable/ui/components/deferred-mount"
+import type { ViewerImage } from "@/components/viewer/image-viewer"
+import { frameImages } from "@/lib/frame-images"
 import { toast } from "@worktable/ui/components/sonner"
 import {
   ResponsiveDialog,
@@ -100,6 +104,13 @@ import type {
   DocumentSharingSummary,
   WidgetFile,
 } from "@worktable/types"
+
+// The image viewer loads when the page first opens an image.
+const ImageViewer = lazy(() =>
+  import("@/components/viewer/image-viewer").then((module) => ({
+    default: module.ImageViewer,
+  }))
+)
 
 type WidgetDiagnostic = {
   id: string
@@ -536,6 +547,11 @@ function WidgetDetailPage({
         onFrameComment(data)
         return
       }
+      if (data?.type === "worktable.image.open") {
+        if (data.spaceId === spaceId && data.widgetId === widgetId)
+          onFrameImages(data)
+        return
+      }
       // Track the widget's record subscriptions so the parent's space socket can
       // relay change events back to it (see the space events above).
       if (
@@ -726,6 +742,20 @@ function WidgetDetailPage({
     if (document.fullscreenElement) void document.exitFullscreen()
     setOverlayFullscreen(false)
   }, [])
+
+  // An image the page opens fills the window in the viewer, as a Doc's do.
+  const [imageViewer, setImageViewer] = useState<{
+    images: ViewerImage[]
+    index: number
+  } | null>(null)
+  const [imageViewerOpen, setImageViewerOpen] = useState(false)
+  const onFrameImages = useEffectEvent((data: unknown) => {
+    const opened = frameImages(data)
+    if (!opened) return
+    leaveFullscreen()
+    setImageViewer(opened)
+    setImageViewerOpen(true)
+  })
 
   const toggleFullscreen = useCallback(() => {
     const el = wrapperRef.current
@@ -1251,6 +1281,20 @@ function WidgetDetailPage({
         widgetName={title}
         onConfirm={handleDelete}
       />
+      <DeferredMount active={imageViewerOpen}>
+        {imageViewer && (
+          <ImageViewer
+            open={imageViewerOpen}
+            onOpenChange={setImageViewerOpen}
+            images={imageViewer.images}
+            index={imageViewer.index}
+            onIndexChange={(index) =>
+              setImageViewer((current) => current && { ...current, index })
+            }
+            linksToFile={false}
+          />
+        )}
+      </DeferredMount>
     </div>
   )
 }

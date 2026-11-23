@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
+  noteRecentRoute,
   openFromRecent,
   readRecentOpens,
   recordRecentOpen,
@@ -64,6 +65,12 @@ describe("recent opens", () => {
       "brief",
       "notes",
     ])
+    // Leaving for a page Recent doesn't list ends the kept place too.
+    openFromRecent("/spaces/hub/documents/brief")
+    recordRecentOpen("wt", doc("brief", 8))
+    noteRecentRoute("/")
+    recordRecentOpen("wt", doc("brief", 9))
+    expect(readRecentOpens("wt")[0]?.title).toBe("brief")
   })
 
   it("forgets the oldest past its limit, and keeps each Worktable's own", () => {

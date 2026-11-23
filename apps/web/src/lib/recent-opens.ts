@@ -93,6 +93,11 @@ export function openFromRecent(path: string): void {
   keepingPlace = path
 }
 
+/** The route is at `path` now: a page left behind no longer keeps its place. */
+export function noteRecentRoute(path: string): void {
+  if (keepingPlace !== path) keepingPlace = null
+}
+
 /** `opens` with `open` where it was, under its latest name; else first. */
 export function withOpenInPlace(
   opens: readonly RecentOpen[],
@@ -104,7 +109,7 @@ export function withOpenInPlace(
 }
 
 export function recordRecentOpen(worktableId: string, open: RecentOpen): void {
-  if (keepingPlace !== open.path) keepingPlace = null
+  noteRecentRoute(open.path)
   const opens = readRecentOpens(worktableId)
   const next = keepingPlace
     ? withOpenInPlace(opens, open)

@@ -1,7 +1,9 @@
 // What a person opened on this device, newest first, for search to offer
-// before they type. Kept in the browser, so it costs no request. On a team,
-// each member keeps their own, and signing out clears it.
+// before they type and the sidebar's Recent. Kept in the browser, so it
+// costs no request. On a team, each member keeps their own, and signing out
+// clears it.
 
+import { useSyncExternalStore } from "react"
 import { browserTeamCacheKey } from "./team-context"
 
 export type RecentOpenRole =
@@ -21,7 +23,7 @@ export interface RecentOpen {
   at: number
 }
 
-export const RECENT_OPENS_LIMIT = 12
+export const RECENT_OPENS_LIMIT = 30
 
 const ROLES: ReadonlySet<string> = new Set<RecentOpenRole>([
   "document",
@@ -80,13 +82,83 @@ export function readRecentOpens(worktableId: string): RecentOpen[] {
   }
 }
 
+// The page opened from a Recent list, which keeps its place there.
+let keepingPlace: string | null = null
+
+/**
+ * The next open of `path` comes from a Recent list. It keeps its place
+ * while it stays open, so the list holds still as the person uses it.
+ */
+export function openFromRecent(path: string): void {
+  keepingPlace = path
+}
+
+/** `opens` with `open` where it was, under its latest name; else first. */
+export function withOpenInPlace(
+  opens: readonly RecentOpen[],
+  open: RecentOpen
+): RecentOpen[] {
+  const at = opens.findIndex((other) => other.path === open.path)
+  if (at === -1) return withRecentOpen(opens, open)
+  return opens.map((other, index) => (index === at ? open : other))
+}
+
 export function recordRecentOpen(worktableId: string, open: RecentOpen): void {
+  if (keepingPlace !== open.path) keepingPlace = null
+  const opens = readRecentOpens(worktableId)
+  const next = keepingPlace
+    ? withOpenInPlace(opens, open)
+    : withRecentOpen(opens, open)
   try {
-    localStorage.setItem(
-      storageKey(worktableId),
-      JSON.stringify(withRecentOpen(readRecentOpens(worktableId), open))
-    )
+    localStorage.setItem(storageKey(worktableId), JSON.stringify(next))
   } catch {
     // Storage that is full or switched off only costs the list.
   }
+  for (const listener of listeners) listener()
+}
+
+/** The Space a page belongs to, if any. */
+export function recentOpenSpace(open: RecentOpen): string | undefined {
+  return open.path.match(/^\/(?:threads\/)?spaces\/([^/]+)/)?.[1]
+}
+
+const listeners = new Set<() => void>()
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener)
+  const onStorage = (event: StorageEvent) => {
+    if (event.key?.startsWith("worktable-recent-opens:")) listener()
+  }
+  window.addEventListener("storage", onStorage)
+  return () => {
+    listeners.delete(listener)
+    window.removeEventListener("storage", onStorage)
+  }
+}
+
+const NONE: RecentOpen[] = []
+let snapshot: { key: string; raw: string | null; opens: RecentOpen[] } | null = null
+
+function currentOpens(worktableId: string | undefined): RecentOpen[] {
+  if (!worktableId) return NONE
+  const key = storageKey(worktableId)
+  let raw: string | null = null
+  try {
+    raw = localStorage.getItem(key)
+  } catch {
+    return NONE
+  }
+  if (snapshot?.key !== key || snapshot.raw !== raw) {
+    snapshot = { key, raw, opens: readRecentOpens(worktableId) }
+  }
+  return snapshot.opens
+}
+
+/** What this person opened on this device, newest first, kept current. */
+export function useRecentOpens(worktableId: string | undefined): RecentOpen[] {
+  return useSyncExternalStore(
+    subscribe,
+    () => currentOpens(worktableId),
+    () => NONE
+  )
 }

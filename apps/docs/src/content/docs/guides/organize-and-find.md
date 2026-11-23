@@ -60,6 +60,9 @@ Space's archived documents when you choose **Show Archived** in its menu.
   **Space**, or type a place's name, such as a Space or Settings, to go
   there. Drawings match on typed text only. The sidebar opens to whatever you
   open, from search or anywhere else, and brings it into view.
+- **Recent** in the sidebar lists the last few things you opened on this
+  device: docs, files, Records, threads and skills. **See All** lists the rest
+  beside the page. Opening something from Recent leaves its order as it is.
 - **Home** opens on **Latest**: one row for each sitting of work, saying who
   created or edited what, and where. Open **More** on a row for the other
   docs from that sitting. Beside it are the docs you pinned to Home and

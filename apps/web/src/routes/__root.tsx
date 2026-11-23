@@ -114,6 +114,7 @@ import { rendererPreloads } from "@/lib/document-renderers"
 import { preloadWhenIdle, whenQuiet } from "@/lib/idle-preload"
 import { useUpdateWaiting } from "@/hooks/use-update-availability"
 import { WelcomeHost } from "@/components/help/welcome-host"
+import { RecentColumn } from "@/components/recent-column"
 // Only Worktable Desktop offers to move agents, so browsers never load it.
 // Desktop injects its bridge before any page script runs.
 const inDesktop = typeof window !== "undefined" && "__TAURI__" in window
@@ -824,15 +825,18 @@ function RootLayout() {
 
             <BillingRoot />
             {/* Main content */}
-            <main
-              ref={mainScrollRef}
-              className="scroll-fade flex-1 overflow-y-auto"
-              style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
-            >
-              <TraceProfiler id="outlet">
-                <Outlet />
-              </TraceProfiler>
-            </main>
+            <div className="flex min-h-0 flex-1">
+              <RecentColumn />
+              <main
+                ref={mainScrollRef}
+                className="scroll-fade min-w-0 flex-1 overflow-y-auto"
+                style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+              >
+                <TraceProfiler id="outlet">
+                  <Outlet />
+                </TraceProfiler>
+              </main>
+            </div>
           </div>
         </div>
         {settingsLoaded ? (

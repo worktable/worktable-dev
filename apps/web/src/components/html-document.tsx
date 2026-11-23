@@ -374,6 +374,20 @@ function WidgetDetailPage({
     },
   })
   const onFrameComment = useEffectEvent(elementComments.onFrameMessage)
+
+  // An image the page opens fills the window in the viewer, as a Doc's do.
+  const [imageViewer, setImageViewer] = useState<{
+    images: ViewerImage[]
+    index: number
+  } | null>(null)
+  const [imageViewerOpen, setImageViewerOpen] = useState(false)
+  const onFrameImages = useEffectEvent((data: unknown) => {
+    const opened = frameImages(data)
+    if (!opened) return
+    leaveFullscreen()
+    setImageViewer(opened)
+    setImageViewerOpen(true)
+  })
   const revealElement = elementComments.reveal
 
   const selectAnnotation = useCallback(
@@ -742,20 +756,6 @@ function WidgetDetailPage({
     if (document.fullscreenElement) void document.exitFullscreen()
     setOverlayFullscreen(false)
   }, [])
-
-  // An image the page opens fills the window in the viewer, as a Doc's do.
-  const [imageViewer, setImageViewer] = useState<{
-    images: ViewerImage[]
-    index: number
-  } | null>(null)
-  const [imageViewerOpen, setImageViewerOpen] = useState(false)
-  const onFrameImages = useEffectEvent((data: unknown) => {
-    const opened = frameImages(data)
-    if (!opened) return
-    leaveFullscreen()
-    setImageViewer(opened)
-    setImageViewerOpen(true)
-  })
 
   const toggleFullscreen = useCallback(() => {
     const el = wrapperRef.current

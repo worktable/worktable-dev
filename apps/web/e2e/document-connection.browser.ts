@@ -295,7 +295,7 @@ test("Print PDF prints the open HTML page, not the app around it", async ({
 
 test("a picture on an HTML page opens full screen, and on to the page's other pictures", async ({
   page,
-}) => {
+}, testInfo) => {
   test.setTimeout(120_000)
   await page.goto(url("gallery"))
   const frame = page.frameLocator(frameSelector)
@@ -305,6 +305,7 @@ test("a picture on an HTML page opens full screen, and on to the page's other pi
   await expect(harbor).toBeVisible()
   // The badge, the link and the page's own button are left out.
   await expect(harbor.getByText("1 of 2")).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath("html-image-viewer.png") })
   await harbor.getByRole("button", { name: "Next image" }).click()
   await expect(page.getByRole("dialog", { name: "Hills" })).toBeVisible()
   await page.keyboard.press("Escape")

@@ -9,7 +9,9 @@ fields and validation. Use a document for anything better read as prose.
 
 ## Open a collection
 
-Choose a collection from the sidebar's **Records** section. The table has
+Open **Records** in a Space in the sidebar. It opens the collection you had
+open last; switch to another from the collection's name above the table. The
+table has
 search, sorting, filters, grouping with counts and sums, and column selection.
 Your view persists, and its URL opens the same view for anyone with access.
 

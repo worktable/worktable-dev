@@ -1,5 +1,10 @@
 import { cn } from "@worktable/ui/lib/utils"
 import { useTheme } from "@/components/theme-provider"
+import {
+  setSidebarLayout,
+  useSidebarLayout,
+  type SidebarLayout,
+} from "@/lib/sidebar-live"
 
 type ThemeValue = "system" | "light" | "dark"
 
@@ -15,6 +20,7 @@ export function AppearanceSection() {
   return (
     <div className="flex flex-col gap-6">
       <ThemeGroup />
+      <SidebarGroup />
     </div>
   )
 }
@@ -113,6 +119,86 @@ function ThemeGroup() {
           Shortcut: press <kbd className="inline-code-accent font-mono">d</kbd>{" "}
           to toggle.
         </p>
+      </div>
+    </section>
+  )
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────────────────
+
+const SIDEBAR_OPTIONS: { value: SidebarLayout; label: string }[] = [
+  { value: "tree", label: "Folders and Docs" },
+  { value: "folders", label: "Folders Only" },
+]
+
+/** A sidebar with rows, beside a list when folders open as lists. */
+function SidebarThumbnail({ value }: { value: SidebarLayout }) {
+  const rows = value === "tree" ? [3, 5, 4, 5, 3, 4] : [3, 4, 3]
+  return (
+    <div className="flex h-full w-full gap-1 overflow-hidden rounded bg-muted/40 p-1">
+      <div className="flex w-1/3 flex-col gap-1 rounded-sm bg-muted p-1">
+        {rows.map((width, index) => (
+          <span
+            key={index}
+            className="h-1 rounded-full bg-muted-foreground/30"
+            style={{ width: `${width * 18}%`, marginLeft: index % 2 && value === "tree" ? "20%" : 0 }}
+          />
+        ))}
+      </div>
+      {value === "folders" && (
+        <div className="flex w-1/4 flex-col gap-1 border-r border-border/60 p-1">
+          {[5, 4, 5].map((width, index) => (
+            <span
+              key={index}
+              className="h-1 rounded-full bg-muted-foreground/25"
+              style={{ width: `${width * 18}%` }}
+            />
+          ))}
+        </div>
+      )}
+      <div className="flex-1" />
+    </div>
+  )
+}
+
+function SidebarGroup() {
+  const layout = useSidebarLayout()
+  return (
+    <section className="flex flex-col gap-3">
+      <h3 className="text-sm font-medium text-foreground">Sidebar</h3>
+      <div className="flex flex-col gap-3 rounded-xl card-surface p-4">
+        <div role="radiogroup" aria-label="Sidebar" className="grid grid-cols-2 gap-3">
+          {SIDEBAR_OPTIONS.map((option) => {
+            const selected = layout === option.value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setSidebarLayout(option.value)}
+                className="flex flex-col items-center gap-2 outline-none"
+              >
+                <span
+                  className={cn(
+                    "block h-14 w-full rounded-lg border border-border p-1 transition-shadow",
+                    selected && "ring-2 ring-primary"
+                  )}
+                >
+                  <SidebarThumbnail value={option.value} />
+                </span>
+                <span
+                  className={cn(
+                    "text-sm",
+                    selected ? "text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  {option.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
     </section>
   )

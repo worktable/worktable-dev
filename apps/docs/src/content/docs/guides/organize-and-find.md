@@ -11,6 +11,9 @@ Start with one and add structure as the work grows.
 Create a Space from the sidebar. Its **+** menu creates documents, drawings, and
 folders. Keep names descriptive and paths shallow.
 
+- Folders list their newest documents first, unless you've ordered them by
+  hand. The sidebar shows a folder's first few rows; **See All** lists the
+  whole folder beside the page, where its folders unfold in place.
 - Drag documents and folders to reorder them.
 - **Rename** changes a doc's title and file name, or an HTML doc's path, such as
   `research/interviews`. Links and bookmarks keep working.
@@ -33,8 +36,9 @@ Doc shows itself small.
 ## Document lifetimes
 
 - **Durable** documents stay active until someone archives them.
-- **Temporary** documents sit apart from the main sidebar tree and archive seven
-  days after their last edit, rename, or comment. You can pick another date.
+- **Temporary** documents stay in their folder with a clock beside them; point at
+  it to see when they archive. They archive seven days after their last edit,
+  rename, or comment. You can pick another date.
 
 New documents start temporary. Clear **Start as Temporary** in the Space's
 **+** menu to change that. Tell agents whether to keep what they create.
@@ -44,7 +48,8 @@ On a temporary document, open the **Archives** chip under its title to
 offers **Make Temporary**.
 
 Archiving hides a document without deleting it. Restoring makes it durable.
-Archived documents are never deleted automatically.
+Archived documents are never deleted automatically. The sidebar lists a
+Space's archived documents when you choose **Show Archived** in its menu.
 
 ## Find content
 
@@ -53,7 +58,8 @@ Archived documents are never deleted automatically.
   and shows what you opened recently before you type. Archived results come
   under **Archived**, below the rest. Narrow a search with **File Type** and
   **Space**, or type a place's name, such as a Space or Settings, to go
-  there. Drawings match on typed text only.
+  there. Drawings match on typed text only. The sidebar opens to whatever you
+  open, from search or anywhere else, and brings it into view.
 - **Home** opens on **Latest**: one row for each sitting of work, saying who
   created or edited what, and where. Open **More** on a row for the other
   docs from that sitting. Beside it are the docs you pinned to Home and

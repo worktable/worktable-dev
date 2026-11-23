@@ -34,7 +34,6 @@ import {
   Plus,
   Pin,
   Archive,
-  Clock3,
   AppWindow,
   Copy,
   Database,
@@ -51,6 +50,27 @@ import {
   CollapsibleTrigger,
 } from "@worktable/ui/components/collapsible"
 import { ScrollFadeArea } from "@/components/scroll-fade-area"
+import { TemporaryMark } from "@/components/sidebar/temporary-mark"
+import {
+  compactFolders,
+  folderRows,
+  foldersOnly,
+  pathIsAtOrBelow,
+  browseFolder,
+  markTreeNavigation,
+  noteRouteChange,
+  openingDocument,
+  routeFolder,
+  routePlace,
+  setShowArchived,
+  useListBeside,
+  useRevealed,
+  useRevealedIn,
+  useShowArchived,
+  useSidebarLayout,
+} from "@/lib/sidebar-live"
+import { useFolderColumnFits } from "@/hooks/use-folder-column"
+import { collectionToOpen } from "@/lib/last-collection"
 import { WorktableHeader } from "@/components/sidebar/worktable-header"
 import { SpaceIcon } from "@/components/spaces/space-icon"
 import { ProfileMenu } from "@/components/sidebar/profile-menu"
@@ -206,9 +226,9 @@ import { canonicalConflictPath, HttpError } from "@/lib/http"
 import { DocumentNodeIcon } from "@/components/document-node-icon"
 import {
   documentListItemArchived,
+  findTreeNode,
   getDocOrder,
   getDocSort,
-  isTemporaryDocument,
   spaceDocumentIndex,
   spaceDocumentTrees,
   type SpaceDocumentIndex,
@@ -279,6 +299,151 @@ function documentRoutePrefix(spaceId: string): string {
 function routeDocumentPath(pathname: string, spaceId: string): string | null {
   const prefix = documentRoutePrefix(spaceId)
   return pathname.startsWith(prefix) ? pathname.slice(prefix.length) : null
+}
+
+/** The open document's or folder's path in this Space, for what a tree reveals. */
+function useCurrentPlace(spaceId: string): string | null {
+  return useRouterState({
+    select: (state) => routePlace(state.location.pathname, spaceId)?.path ?? null,
+  })
+}
+
+/**
+ * Opens a folder with its list beside the page: at the document its list
+ * shows first, in one navigation, or at the folder's page when it holds
+ * only folders or the screen is too narrow for the list.
+ */
+function FolderOpenLink({
+  spaceId,
+  path,
+  items,
+  onNavigate,
+  className,
+  seeAll = false,
+  children,
+}: {
+  spaceId: string
+  path: string
+  items: readonly TreeNode[]
+  onNavigate: () => void
+  className: string
+  /** A See All row, marked with the folder it lists. */
+  seeAll?: boolean
+  children: ReactNode
+}) {
+  const marked = seeAll ? { "data-see-all": path } : {}
+  const fits = useFolderColumnFits()
+  // Reading a document in this folder already: the list slides in beside
+  // it, with nothing to load.
+  const here = useRouterState({
+    select: (state) =>
+      routePlace(state.location.pathname, spaceId)?.kind === "document" &&
+      routeFolder(state.location.pathname, spaceId) === path,
+  })
+  const open = () => {
+    onNavigate()
+    browseFolder(spaceId, path)
+  }
+  if (fits && here) {
+    return (
+      <button
+        type="button"
+        onClick={open}
+        className={`${className} w-full text-left`}
+        {...marked}
+      >
+        {children}
+      </button>
+    )
+  }
+  const opens = fits ? openingDocument(items) : null
+  const props = {
+    onClick: open,
+    draggable: false,
+    className,
+    children,
+    ...marked,
+  }
+  return opens ? (
+    <Link
+      to="/spaces/$spaceId/documents/$"
+      params={{ spaceId, _splat: opens }}
+      {...props}
+    />
+  ) : (
+    <Link to="/spaces/$spaceId/folders/$" params={{ spaceId, _splat: path }} {...props} />
+  )
+}
+
+/** See All, or a Space's loose docs in Folders Only. */
+function FolderPlaceLink({
+  spaceId,
+  path,
+  items,
+  onNavigate,
+  label,
+  holdsCurrent,
+}: {
+  spaceId: string
+  path: string
+  items: readonly TreeNode[]
+  onNavigate: () => void
+  /** See All; otherwise the Space's loose docs. */
+  label?: string
+  /** The open document is further down this list. */
+  holdsCurrent?: boolean
+}) {
+  const listBeside = useListBeside(spaceId)
+  const seeAll = label !== undefined
+  // See All stands for the rows it hides: with the open document among
+  // them it is marked, as the document's row would be.
+  const current = seeAll ? holdsCurrent === true : listBeside === path
+  return (
+    <FolderOpenLink
+      spaceId={spaceId}
+      path={path}
+      items={items}
+      onNavigate={onNavigate}
+      seeAll={seeAll}
+      className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-180 sm:min-h-0 ${
+        current
+          ? "bg-sidebar-accent font-medium text-sidebar-primary"
+          : seeAll
+            ? "text-sidebar-foreground/50 hover:bg-sidebar-hover hover:text-sidebar-foreground"
+            : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+      }`}
+    >
+      {seeAll ? (
+        <span aria-hidden className="size-4 shrink-0" />
+      ) : (
+        <File
+          className={`size-4 shrink-0 ${current ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+        />
+      )}
+      <span>{label ?? "Docs"}</span>
+      {/* See All opens the folder's list beside the page. */}
+      {seeAll && <ChevronRight aria-hidden className="-ml-1 size-3.5 shrink-0" />}
+    </FolderOpenLink>
+  )
+}
+
+/**
+ * What a Space's rows share: the folder whose list sits beside the page,
+ * and the whole tree, which Folders Only filters to folders. While a list
+ * sits beside the page the tree holds still: it marks that folder instead
+ * of unfolding to the open document.
+ */
+const TreeFrame = createContext<{
+  listBeside: string | null
+  fullTree: TreeNode[]
+  /** A document opened from outside the tree, shown wherever it is. */
+  revealed: { path: string; seq: number } | null
+}>({ listBeside: null, fullTree: [], revealed: null })
+
+/** A folder's own contents, docs included even in Folders Only. */
+function useFolderItems(path: string): readonly TreeNode[] {
+  const { fullTree } = useContext(TreeFrame)
+  return path ? (findTreeNode(fullTree, path)?.children ?? []) : fullTree
 }
 
 const NO_DOCS: DocListEntry[] = []
@@ -446,6 +611,7 @@ const SpaceSection = memo(function SpaceSection({
   const navigate = useNavigate()
   const router = useRouter()
   const archived = isSpaceArchived(space)
+  const archivedShown = useShowArchived(space.id)
 
   const spaceRoute = `/spaces/${space.id}`
   const relation = useRouteRelation(spaceRoute)
@@ -551,9 +717,27 @@ const SpaceSection = memo(function SpaceSection({
     }
   }, [expanded, revealed, queryClient, space.id])
 
+  // A document opened from outside the tree opens this Space to show it,
+  // even if the person folded it while here.
+  // Only a new reveal opens the Space, as it renders.
+  const revealSeq = useRevealedIn(space.id)?.seq
+  const [handledReveal, setHandledReveal] = useState(revealSeq)
+  if (revealSeq !== handledReveal) {
+    setHandledReveal(revealSeq)
+    if (revealSeq !== undefined && followRoute && !expanded && !anotherCopyOpen()) {
+      setRevealed(spaceContentsLoaded(queryClient, space.id))
+      setExpandedState(true)
+    }
+  }
+
   const handleNavigate = useCallback(() => {
+    // The tree opened this, so the tree holds still for it.
+    markTreeNavigation()
+    // Opening something from the tree closes a folder's list; See All opens
+    // it again after this.
+    browseFolder(space.id, null)
     if (isMobile) setOpen(false)
-  }, [isMobile, setOpen])
+  }, [isMobile, setOpen, space.id])
 
   const handleRename = async (newName: string) => {
     try {
@@ -716,6 +900,10 @@ const SpaceSection = memo(function SpaceSection({
                   }
                   docSort={getDocSort(space)}
                   onChangeDocSort={handleChangeDocSort}
+                  showArchived={{
+                    on: archivedShown,
+                    onToggle: () => setShowArchived(space.id, !archivedShown),
+                  }}
                   onRename={handleRename}
                   onChangeIcon={async (icon: string) => {
                     try {
@@ -885,10 +1073,7 @@ function ThreadsSidebarEntry({
 }) {
   const isActive = useRouteRelation(`/spaces/${spaceId}/threads`) !== null
   return (
-    <div className="mt-2">
-      <p className="px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
-        Conversations
-      </p>
+    <div className="mt-0.5">
       <Link
         to="/spaces/$spaceId/threads/$"
         params={{ spaceId, _splat: "" }}
@@ -920,68 +1105,33 @@ function RecordsSidebarSection({
   onNavigate: () => void
 }) {
   // Only fires for expanded spaces (this component mounts inside the
-  // collapsible).
+  // collapsible). Collections are listed on the Records page and in its
+  // header, so the tree keeps one row however many there are.
   const { data: collections } = useRecordCollections(spaceId)
+  const isActive = useRouteRelation(`/spaces/${spaceId}/records`) !== null
   if (!collections || collections.length === 0) return null
 
   return (
-    <div className="mt-2">
-      <p className="px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
-        Records
-      </p>
-      <nav className="space-y-0.5">
-        {collections.map((collection) => (
-          <CollectionLink
-            key={collection.id}
-            spaceId={spaceId}
-            collectionId={collection.id}
-            name={collection.name}
-            count={collection.count}
-            onNavigate={onNavigate}
-          />
-        ))}
-      </nav>
+    <div className="mt-0.5">
+      <Link
+        to="/spaces/$spaceId/records/$"
+        // Straight to the collection last open here, or the first.
+        params={{ spaceId, _splat: collectionToOpen(spaceId, collections) ?? "" }}
+        onClick={onNavigate}
+        className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-180 sm:min-h-0 ${
+          isActive
+            ? "bg-sidebar-accent font-medium text-sidebar-primary"
+            : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
+        }`}
+      >
+        <Database
+          className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
+        />
+        <span className="min-w-0 flex-1 truncate">Records</span>
+      </Link>
     </div>
   )
 }
-
-const CollectionLink = memo(function CollectionLink({
-  spaceId,
-  collectionId,
-  name,
-  count,
-  onNavigate,
-}: {
-  spaceId: string
-  collectionId: string
-  name: string
-  count: number
-  onNavigate: () => void
-}) {
-  const isActive = useIsCurrentRoute(
-    `/spaces/${spaceId}/records/${collectionId}`
-  )
-  return (
-    <Link
-      to="/spaces/$spaceId/records/$"
-      params={{ spaceId, _splat: collectionId }}
-      onClick={onNavigate}
-      className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-180 sm:min-h-0 ${
-        isActive
-          ? "bg-sidebar-accent font-medium text-sidebar-primary"
-          : "text-sidebar-item-foreground hover:bg-sidebar-hover hover:text-sidebar-foreground"
-      }`}
-    >
-      <Database
-        className={`size-4 shrink-0 ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/30"}`}
-      />
-      <TruncatedText text={name} />
-      <span className="ml-auto shrink-0 text-[11px] text-sidebar-foreground/35 tabular-nums">
-        {count}
-      </span>
-    </Link>
-  )
-})
 
 function WidgetDeleteDialog({
   open,
@@ -1210,9 +1360,12 @@ function WidgetTreeItem({
   reorder?: DocReorder
   rowActions?: ReactNode
 }) {
-  const isActive = useIsCurrentRoute(
+  // With a list beside the page, that list marks the open document.
+  const isCurrent = useIsCurrentRoute(
     `${documentRoutePrefix(spaceId)}${node.path}`
   )
+  const { listBeside } = useContext(TreeFrame)
+  const isActive = isCurrent && listBeside === null
   const archived = !!node.archived
   const { dragProps, dropIndicator, isDragging } = treeDragPresentation(
     node,
@@ -1223,6 +1376,8 @@ function WidgetTreeItem({
     <>
       <div
         data-tree-row
+        data-tree-path={node.path}
+        data-current-row={isCurrent ? "" : undefined}
         className={`group/widget relative flex items-center rounded-md transition-[background-color,opacity] duration-180 ${
           isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
         } ${isDragging ? "opacity-50" : ""}`}
@@ -1245,7 +1400,8 @@ function WidgetTreeItem({
           />
           <TruncatedText text={node.label} />
         </Link>
-        <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/widget:opacity-100">
+        <RowMeta node={node} />
+        <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/widget:opacity-100 sm:max-w-0 sm:overflow-hidden sm:group-hover/widget:max-w-24 sm:focus-within:max-w-24 sm:has-[[data-popup-open]]:max-w-24">
           {rowActions}
           <WidgetTreeActions
             key={node.path}
@@ -1529,41 +1685,35 @@ function SpaceTreeSection({
   const pendingSaveRef = useRef<string[] | null>(null)
   const saveChainRef = useRef<Promise<void>>(Promise.resolve())
 
-  // Temporary documents are supporting work: they leave the main tree for
-  // their own section until they are kept or archive on their date. Both the
-  // trees and the row lookups are built once per catalog read.
-  const {
-    active: tree,
-    temporary: temporaryTree,
-    archived: archivedTree,
-  } = spaceDocumentTrees({
+  // Every document stays in its folder; a temporary one carries a clock.
+  // Both the trees and the row lookups are built once per catalog read.
+  const { active: fullTree, archived: archivedTree } = spaceDocumentTrees({
     documents,
     docs,
     sort: effectiveSort,
     order: effectiveOrder,
-    separateTemporary: true,
+    live: true,
   })
+  const layout = useSidebarLayout()
   const index = spaceDocumentIndex({ documents, docs })
-  const { temporaryCount, temporaryPaths, archivedCount, archivedPaths } = useMemo(() => {
-    const temporary = documents.filter(
-      (item) => !documentListItemArchived(item) && isTemporaryDocument(item)
-    )
+  const { archivedCount, archivedPaths } = useMemo(() => {
     const archivedDocumentPaths = documents.flatMap((item) =>
       item.kind === "document" && documentListItemArchived(item)
         ? [item.path]
         : []
     )
     return {
-      temporaryCount: temporary.length,
-      temporaryPaths: new Set(
-        temporary.flatMap((item) =>
-          item.kind === "document" ? [item.path] : []
-        )
-      ),
       archivedCount: documents.filter(documentListItemArchived).length,
       archivedPaths: new Set(archivedDocumentPaths),
     }
   }, [documents])
+  // Folders only: the open folder lists its documents beside the page.
+  const tree = compactFolders(
+    layout === "folders" ? foldersOnly(fullTree) : fullTree
+  )
+  const hasLooseDocuments =
+    layout === "folders" &&
+    fullTree.some((node) => !(node.isFolder && node.kind === "folder"))
 
   const canDrop = useStableCallback(
     (target: TreeNode) =>
@@ -1670,17 +1820,6 @@ function SpaceTreeSection({
       ),
   })
   const [archivedOpen, setArchivedOpen] = useState(hasArchivedCurrent)
-  const hasTemporaryCurrent = useRouterState({
-    select: (state) =>
-      temporaryPaths.has(
-        routeDocumentPath(state.location.pathname, spaceId) ?? ""
-      ),
-  })
-  const [temporaryOpen, setTemporaryOpen] = useState(hasTemporaryCurrent)
-
-  useEffect(() => {
-    if (hasTemporaryCurrent) setTemporaryOpen(true)
-  }, [hasTemporaryCurrent])
 
   useEffect(() => {
     if (hasArchivedCurrent) {
@@ -1688,9 +1827,12 @@ function SpaceTreeSection({
     }
   }, [hasArchivedCurrent])
 
+  // Archived documents stay out of the tree unless the Space's menu shows
+  // them, or one of them is open.
+  const showArchived = useShowArchived(spaceId) || hasArchivedCurrent
   const hasContent =
     !isLoading &&
-    (tree.length > 0 || temporaryTree.length > 0 || archivedTree.length > 0)
+    (tree.length > 0 || hasLooseDocuments || (showArchived && archivedTree.length > 0))
   const rowProps = {
     spaceId,
     index,
@@ -1704,12 +1846,30 @@ function SpaceTreeSection({
   const currentPath = useRouterState({
     select: (state) => routeDocumentPath(state.location.pathname, spaceId),
   })
+  const currentPlace = useCurrentPlace(spaceId)
+  const listBeside = useListBeside(spaceId)
+  // Only Folders Only marks the listed folder; otherwise the tree ignores
+  // the list, so opening or closing it changes nothing here.
+  const frameList = layout === "folders" ? listBeside : null
+  // The compiler keeps this stable while its parts are the same.
+  const revealTarget = useRevealedIn(spaceId)
+  const revealedHere = revealTarget
+    ? { path: revealTarget.path, seq: revealTarget.seq }
+    : null
+  const frame = { listBeside: frameList, fullTree, revealed: revealedHere }
+  // The top of a Space reads like a folder: its first rows, then See All.
+  const {
+    shown: topRows,
+    hidden: topHidden,
+    currentHidden: topCurrentHidden,
+  } = folderRows(tree, currentPlace, revealTarget?.path ?? null)
   const revealCurrent =
     !currentPath ||
     !pins.some((pin) => pin.path === currentPath)
 
   return (
-    <RevealCurrent.Provider value={revealCurrent}>
+    <TreeFrame.Provider value={frame}>
+    <RevealCurrent.Provider value={revealCurrent && frameList === null}>
       {pins.length > 0 && (
         <div className="mb-2">
           <p className="px-3 py-1 text-[10px] font-semibold tracking-wider text-sidebar-foreground/40 uppercase">
@@ -1766,9 +1926,18 @@ function SpaceTreeSection({
         </div>
       ) : hasContent ? (
         <div className="space-y-0.5">
-          {tree.length > 0 && (
+          {/* See All lists the loose docs too, when the Space has one. */}
+          {hasLooseDocuments && topHidden === 0 && (
+            <FolderPlaceLink
+              spaceId={spaceId}
+              path=""
+              items={fullTree}
+              onNavigate={onNavigate}
+            />
+          )}
+          {topRows.length > 0 && (
             <nav aria-label="Active documents" className="space-y-0.5">
-              {tree.map((node) => (
+              {topRows.map((node) => (
                 <TreeItem
                   key={`${node.kind}:${node.isFolder ? "f" : "l"}:${node.path}`}
                   node={node}
@@ -1777,29 +1946,20 @@ function SpaceTreeSection({
                   reorder={space.permissions?.edit !== false ? reorder : undefined}
                 />
               ))}
+              {topHidden > 0 && (
+                <FolderPlaceLink
+                  spaceId={spaceId}
+                  path=""
+                  items={fullTree}
+                  onNavigate={onNavigate}
+                  label="See All"
+                  holdsCurrent={topCurrentHidden}
+                />
+              )}
             </nav>
           )}
 
-          {temporaryTree.length > 0 && (
-            <TreeSection
-              label="Temporary"
-              icon={Clock3}
-              count={temporaryCount}
-              open={temporaryOpen}
-              onOpenChange={transitionOpenChange(setTemporaryOpen)}
-            >
-              {temporaryTree.map((node) => (
-                <TreeItem
-                  key={`${node.kind}:${node.isFolder ? "f" : "l"}:${node.path}`}
-                  node={node}
-                  {...rowProps}
-                  folderArchived={false}
-                />
-              ))}
-            </TreeSection>
-          )}
-
-          {archivedTree.length > 0 && (
+          {showArchived && archivedTree.length > 0 && (
             <TreeSection
               label="Archived"
               icon={Archive}
@@ -1825,6 +1985,7 @@ function SpaceTreeSection({
         </p>
       ) : null}
     </RevealCurrent.Provider>
+    </TreeFrame.Provider>
   )
 }
 
@@ -1900,6 +2061,12 @@ function TreeSection({
  * among the Space's pins, so it doesn't take two places in the sidebar.
  */
 const RevealCurrent = createContext(true)
+
+/** A temporary document's clock, at the end of its row. */
+function RowMeta({ node }: { node: TreeNode }) {
+  if (!node.temporary) return null
+  return <TemporaryMark archiveOn={node.temporary.archiveOn} />
+}
 
 // ── Tree Item dispatcher (doc/folder vs widget leaf) ────────
 
@@ -1991,12 +2158,17 @@ function UnavailableDocumentTreeItem({
   )
   // An entry without a working view reads as a plain file, whatever its format.
   const StateIcon = node.kind === "conflict" ? AlertTriangle : File
-  const isActive = useIsCurrentRoute(
+  // With a list beside the page, that list marks the open document.
+  const isCurrent = useIsCurrentRoute(
     `${documentRoutePrefix(spaceId)}${node.path}`
   )
+  const { listBeside } = useContext(TreeFrame)
+  const isActive = isCurrent && listBeside === null
   return (
     <div
       data-tree-row
+      data-tree-path={node.path}
+      data-current-row={isCurrent ? "" : undefined}
       className={`group/doc relative flex items-center rounded-md transition-colors ${
         isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
       } ${isDragging ? "opacity-50" : ""}`}
@@ -2021,8 +2193,9 @@ function UnavailableDocumentTreeItem({
           {node.label}
         </TruncatedText>
       </Link>
+      <RowMeta node={node} />
       {rowActions && (
-        <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
+        <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100 sm:max-w-0 sm:overflow-hidden sm:group-hover/doc:max-w-24 sm:focus-within:max-w-24 sm:has-[[data-popup-open]]:max-w-24">
           {rowActions}
         </div>
       )}
@@ -2055,7 +2228,9 @@ function DocTreeItem({
   // A folder auto-expands when the current route lives under it — the active
   // item may be a doc OR a widget nested inside this folder.
   const relation = useRouteRelation(documentFullPath)
-  const isActive = relation === "self"
+  const { listBeside, revealed: revealTarget } = useContext(TreeFrame)
+  // With a list beside the page, that list marks the open document.
+  const isActive = relation === "self" && listBeside === null
   const containsCurrent = relation === "inside"
   // An HTML doc open below this folder, read when a folder action needs it.
   const openWidgetUnderNode = () => {
@@ -2077,10 +2252,20 @@ function DocTreeItem({
   const archived = node.isFolder ? folderArchived : exactDocumentArchived
   const folderKey = `${spaceId}:${node.path}`
   const revealCurrent = useContext(RevealCurrent)
+  const layout = useSidebarLayout()
+  const currentPlace = useCurrentPlace(spaceId)
+  const folderItems = useFolderItems(node.isFolder ? node.path : "\0")
+  // Folders Only: a folder opens with its list beside the page.
+  const folderPage = layout === "folders" && node.isFolder && !hasDocumentAtFolder
+  // The folder whose list is beside the page is the place marked.
+  const folderPageOpen = node.isFolder && listBeside === node.path
   // A Doc that holds files or sub-Docs opens without unfolding them, as a
   // page does; they unfold when one of them is open, or from the chevron.
+  // With a list beside the page, folders open only on the way to it.
   const routeOpens =
-    (containsCurrent && revealCurrent) || (isActive && !hasDocumentAtFolder)
+    listBeside !== null
+      ? listBeside !== node.path && pathIsAtOrBelow(listBeside, node.path)
+      : (containsCurrent && revealCurrent) || (isActive && !hasDocumentAtFolder)
   const [open, setOpenStored] = useState(
     () =>
       routeOpens ||
@@ -2100,6 +2285,23 @@ function DocTreeItem({
   const commonOperations =
     isFile || node.format?.id === "worktable.quickdraw" || filesOn
   const noun = isFile ? "File" : "Doc"
+
+  // A document opened from outside the tree opens the folders down to it,
+  // even ones the person folded.
+  // Only a new reveal opens folders, as they render.
+  const revealSeq = revealTarget?.seq
+  const [handledReveal, setHandledReveal] = useState(revealSeq)
+  if (revealSeq !== handledReveal) {
+    setHandledReveal(revealSeq)
+    if (
+      revealTarget !== null &&
+      node.isFolder &&
+      revealTarget.path !== node.path &&
+      pathIsAtOrBelow(revealTarget.path, node.path)
+    ) {
+      setOpenStored(true)
+    }
+  }
 
   useEffect(() => {
     if (
@@ -2304,6 +2506,15 @@ function DocTreeItem({
     reorder
   )
 
+  // Archived folders list everything; live ones their newest few.
+  const {
+    shown: shownChildren,
+    hidden: hiddenChildren,
+    currentHidden,
+  } = folderArchived
+    ? { shown: node.children, hidden: 0, currentHidden: false }
+    : folderRows(node.children, currentPlace, revealTarget?.path ?? null)
+
   if (node.isFolder) {
     return (
       <>
@@ -2311,8 +2522,12 @@ function DocTreeItem({
           <div
             ref={folderRowRef}
             data-tree-row
+            data-tree-path={node.path}
+            data-current-row={
+              relation === "self" || folderPageOpen ? "" : undefined
+            }
             className={`group/folder relative flex items-center rounded-md transition-colors duration-180 ${
-              isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
+              isActive || folderPageOpen ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
             } ${isDragging ? "opacity-50" : ""}`}
             {...dragProps}
           >
@@ -2353,6 +2568,49 @@ function DocTreeItem({
                   <TruncatedText text={node.label} />
                 </SpecializedDocumentLink>
               </div>
+            ) : folderPage ? (
+              // Its name opens its list; its icon turns into a chevron on
+              // hover to fold the folders inside.
+              <div className="flex min-h-10 min-w-0 flex-1 items-center sm:min-h-0">
+                {node.children.length > 0 ? (
+                  <CollapsibleTrigger
+                    className="group/fold relative flex h-full shrink-0 items-center py-2 pr-1 pl-3"
+                    render={
+                      <button
+                        type="button"
+                        aria-label={open ? `Collapse ${node.label}` : `Expand ${node.label}`}
+                      />
+                    }
+                  >
+                    <Folder
+                      className={`size-4 shrink-0 transition-opacity sm:group-hover/folder:opacity-0 group-focus-visible/fold:opacity-0 ${folderPageOpen ? "text-sidebar-primary" : "text-primary/60"}`}
+                    />
+                    <ChevronRight
+                      aria-hidden
+                      className={`absolute left-3 size-4 text-sidebar-foreground/60 opacity-0 transition-[opacity,transform] sm:group-hover/folder:opacity-100 group-focus-visible/fold:opacity-100 ${open ? "rotate-90" : ""}`}
+                    />
+                  </CollapsibleTrigger>
+                ) : (
+                  <span className="flex shrink-0 items-center py-2 pr-1 pl-3">
+                    <Folder
+                      className={`size-4 shrink-0 ${folderPageOpen ? "text-sidebar-primary" : "text-primary/60"}`}
+                    />
+                  </span>
+                )}
+                <FolderOpenLink
+                  spaceId={spaceId}
+                  path={node.path}
+                  items={folderItems}
+                  onNavigate={onNavigate}
+                  className={`flex min-w-0 flex-1 items-center py-2 pr-3 pl-1 text-sm ${
+                    folderPageOpen
+                      ? "font-medium text-sidebar-primary"
+                      : "text-sidebar-item-foreground"
+                  }`}
+                >
+                  <TruncatedText text={node.label} />
+                </FolderOpenLink>
+              </div>
             ) : (
               <CollapsibleTrigger
                 className="flex min-h-10 min-w-0 flex-1 items-center gap-2 px-3 py-2 text-sm text-sidebar-item-foreground sm:min-h-0"
@@ -2366,7 +2624,8 @@ function DocTreeItem({
                 <TruncatedText text={node.label} />
               </CollapsibleTrigger>
             )}
-            <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/folder:opacity-100">
+            <RowMeta node={node} />
+            <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/folder:opacity-100 sm:max-w-0 sm:overflow-hidden sm:group-hover/folder:max-w-24 sm:focus-within:max-w-24 sm:has-[[data-popup-open]]:max-w-24">
               <RowNewActions
                 spaceId={spaceId}
                 folder={node.path}
@@ -2433,7 +2692,7 @@ function DocTreeItem({
           </div>
           <CollapsibleContent className="collapsible-instant">
             <div className="ml-4 pl-2">
-              {node.children.map((child) => (
+              {shownChildren.map((child) => (
                 <TreeItem
                   key={`${child.kind}:${child.isFolder ? "f" : "l"}:${child.path}`}
                   node={child}
@@ -2448,6 +2707,16 @@ function DocTreeItem({
                   canEdit={canEdit}
                 />
               ))}
+              {hiddenChildren > 0 && (
+                <FolderPlaceLink
+                  spaceId={spaceId}
+                  path={node.path}
+                  items={folderItems}
+                  onNavigate={onNavigate}
+                  label="See All"
+                  holdsCurrent={currentHidden}
+                />
+              )}
             </div>
           </CollapsibleContent>
         </Collapsible>
@@ -2480,6 +2749,8 @@ function DocTreeItem({
     <>
       <div
         data-tree-row
+        data-tree-path={node.path}
+        data-current-row={relation === "self" ? "" : undefined}
         className={`group/doc relative flex items-center rounded-md transition-[background-color,opacity] duration-180 ${
           isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-hover"
         } ${isDragging ? "opacity-50" : ""}`}
@@ -2505,7 +2776,8 @@ function DocTreeItem({
             {node.label}
           </TruncatedText>
         </Link>
-        <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
+        <RowMeta node={node} />
+        <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100 sm:max-w-0 sm:overflow-hidden sm:group-hover/doc:max-w-24 sm:focus-within:max-w-24 sm:has-[[data-popup-open]]:max-w-24">
           {rowActions}
           <DocContextMenuButton
             documentName={node.label}
@@ -2662,6 +2934,89 @@ export function AppSidebar() {
     setSectionOpen((state) => ({ ...state, [key]: next }))
   }
 
+  // ── Showing what opened from elsewhere ──
+  // The route is watched here rather than selected, so navigating does not
+  // re-render the sidebar; a reveal re-renders it once.
+  const router = useRouter()
+  useEffect(() => {
+    noteRouteChange(router.state.location.pathname)
+    return router.subscribe("onResolved", (event) =>
+      noteRouteChange(event.toLocation.pathname)
+    )
+  }, [router])
+  const reveal = useRevealed()
+  const revealSeq = reveal?.seq
+  // Its Space's section opens for it as it renders, without being kept open.
+  const [handledReveal, setHandledReveal] = useState(revealSeq)
+  if (revealSeq !== handledReveal) {
+    setHandledReveal(revealSeq)
+    const space = reveal
+      ? activeSpaces.find((entry) => entry.id === reveal.spaceId)
+      : undefined
+    if (space) {
+      const groupId = groupOf(space.id)
+      const key = isPinned(space)
+        ? "pinned"
+        : groupId && groups.some((group) => group.id === groupId)
+          ? `group:${groupId}`
+          : "spaces"
+      if (!isSectionOpen(key)) {
+        setSectionOpen((state) => ({ ...state, [key]: true }))
+      }
+    }
+  }
+  const rootRef = useRef<HTMLDivElement>(null)
+  // Scrolling the sidebar by hand wins over bringing a row into view.
+  const handScrolledAt = useRef(-Infinity)
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const mark = () => {
+      handScrolledAt.current = performance.now()
+    }
+    root.addEventListener("wheel", mark, { passive: true, capture: true })
+    root.addEventListener("touchmove", mark, { passive: true, capture: true })
+    return () => {
+      root.removeEventListener("wheel", mark, { capture: true })
+      root.removeEventListener("touchmove", mark, { capture: true })
+    }
+  }, [])
+  // Once its Space and folders have opened, the row comes into view, if it
+  // is not already: centred, with a short glide.
+  useEffect(() => {
+    if (revealSeq === undefined) return
+    let frames = 0
+    let raf = 0
+    const attempt = () => {
+      const root = rootRef.current
+      const viewport = root?.querySelector<HTMLElement>(
+        '[data-slot="scroll-area-viewport"]'
+      )
+      const row = viewport?.querySelector<HTMLElement>("[data-current-row]")
+      if (!viewport || !row) {
+        // A Space shows its tree once its contents are in.
+        if (++frames < 120) raf = requestAnimationFrame(attempt)
+        return
+      }
+      if (performance.now() - handScrolledAt.current < 1200) return
+      const view = viewport.getBoundingClientRect()
+      const box = row.getBoundingClientRect()
+      if (box.top >= view.top + 8 && box.bottom <= view.bottom - 8) return
+      viewport.scrollTo({
+        top: Math.max(
+          0,
+          viewport.scrollTop + box.top - view.top - (view.height - box.height) / 2
+        ),
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+      })
+    }
+    // After the frame that opens its Space and folders.
+    raf = requestAnimationFrame(attempt)
+    return () => cancelAnimationFrame(raf)
+  }, [revealSeq])
+
   const handleRemoveGroup = (group: PersonalGroup) => {
     if (!navigation) return
     const index = navigation.groups.findIndex(({ id }) => id === group.id)
@@ -2747,6 +3102,7 @@ export function AppSidebar() {
     // select-none: the sidebar is navigation chrome — a page-wide Cmd+A must
     // select the doc content, never the sidebar tree.
     <div
+      ref={rootRef}
       data-worktable-sidebar-root
       className="flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground select-none"
       style={{

@@ -200,11 +200,12 @@ test("temporary documents stay aside until kept, and pinned documents lead the S
   await expect(
     page.getByRole("button", { name: /^Temporary\. Archives / })
   ).toBeVisible()
-  await expect(
-    page
-      .getByRole("navigation", { name: "Temporary documents" })
-      .getByRole("link", { name: "Untitled" })
-  ).toBeVisible()
+  // A temporary doc stays in its place in the tree, marked with its date.
+  const untitledRow = page
+    .getByRole("navigation", { name: "Active documents" })
+    .locator("[data-tree-row]", { has: page.getByRole("link", { name: "Untitled" }) })
+  await expect(untitledRow).toBeVisible()
+  await expect(untitledRow.getByLabel(/^Archives /)).toBeVisible()
 
   // It archives a week from now; Home counts today and the six days after.
   const sooner = await page.request.post(

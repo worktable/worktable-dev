@@ -4,6 +4,7 @@ import {
   Outlet,
   useChildMatches,
   useRouter,
+  useRouterState,
 } from "@tanstack/react-router"
 import { lazy, Suspense, useCallback, useState } from "react"
 import { Archive, RotateCcw } from "lucide-react"
@@ -20,6 +21,10 @@ import {
   loadSpaceOverview,
   spaceOverviewComponent,
 } from "@/components/spaces/space-overview-loader"
+import { routeFolder, useListBeside } from "@/lib/list-beside"
+// Small, and part of the page frame, so it opens without a load to wait on.
+import { FolderList } from "@/components/spaces/folder-list"
+import { useFolderColumnFits } from "@/hooks/use-folder-column"
 
 const isGettingStarted = (space: SpaceView) => gettingStartedSpace([space]) !== null
 
@@ -128,6 +133,17 @@ function SpaceDetailPage() {
   const hasChildRoute = useChildMatches({
     select: (matches) => matches.length > 0,
   })
+  // A document or folder page keeps one frame, with or without a folder's
+  // list beside it, so opening or closing the list never remounts the page.
+  const routeFolderPath = useRouterState({
+    select: (state) => routeFolder(state.location.pathname, spaceId),
+  })
+  const inFolder = routeFolderPath !== null
+  const listBeside = useListBeside(spaceId)
+  const fits = useFolderColumnFits()
+  // The list keeps showing its folder while it slides closed.
+  const [shownList, setShownList] = useState(listBeside)
+  if (listBeside !== null && listBeside !== shownList) setShownList(listBeside)
 
   const archiveInfo = space ? getSpaceArchiveInfo(space.settings) : undefined
   // On a team, restoring a Space follows access management.
@@ -158,7 +174,30 @@ function SpaceDetailPage() {
             restoring={restoring}
           />
         )}
-        <Outlet />
+        {inFolder ? (
+          // A row at every width: pages that fill the screen (HTML Docs,
+          // drawings, PDFs) take their height from it.
+          <div className="flex min-h-full">
+            {fits && (
+              <div
+                // Slides like the main sidebar; overflow-clip keeps the list
+                // sticky in the page's scroll while it is clipped.
+                className="shrink-0 overflow-clip transition-[width] duration-300 ease-in-out motion-reduce:transition-none"
+                style={{ width: listBeside !== null ? "18rem" : 0 }}
+                inert={listBeside === null}
+              >
+                {shownList !== null && (
+                  <FolderList spaceId={spaceId} folder={shownList} variant="column" />
+                )}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <Outlet />
+            </div>
+          </div>
+        ) : (
+          <Outlet />
+        )}
       </>
     )
   }

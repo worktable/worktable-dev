@@ -44,6 +44,7 @@ import {
 } from "../document-path.ts"
 import { BUILTIN_DOCUMENT_FORMATS, pathIsHidden } from "../document-format-registry.ts"
 import { listDocuments, resolveDocumentNavigation } from "../document-query.ts"
+import { onEmbeddedFilesChanged, peekEmbeddedFiles } from "../link-graph.ts"
 import {
   applyLifetimeOnCreate,
   ArchiveOnSchema,
@@ -1436,6 +1437,11 @@ documentsRouter.post(
  * /api/spaces/:spaceId/documents sends them and the sidebar bundle carries
  * them. Null when the Space can't be read.
  */
+// When what Docs show changes, open lists read the Space's documents again.
+onEmbeddedFilesChanged((spaceId) => {
+  wsManager.broadcast(spaceId, { type: "embedded_files_update", spaceId })
+})
+
 export async function listSpaceDocuments(
   spaceId: string,
   includeArchived: boolean
@@ -1444,12 +1450,23 @@ export async function listSpaceDocuments(
   if (error || !space) return { error: error ?? "Not found" } as const
   const documents = await listDocuments({ spaceId, includeArchived })
   const revisions = await documentContentRevisions(spaceId)
+  // Files a Doc shows belong to it; the app's lists leave them out.
+  const shown = filesEnabled() ? peekEmbeddedFiles(spaceId) : null
   return {
     documents: documents.map(
-      (item): WithContentRevision<DocumentListItem> => {
+      (item): WithContentRevision<DocumentListItem> & { embedded?: true } => {
         const revision =
           item.kind === "document" ? revisions.get(item.path) : undefined
-        return revision ? { ...item, revision } : item
+        const embedded =
+          shown !== null &&
+          item.kind === "document" &&
+          item.format.id === "worktable.file" &&
+          shown.has(item.path)
+        return {
+          ...item,
+          ...(revision ? { revision } : {}),
+          ...(embedded ? { embedded: true as const } : {}),
+        }
       }
     ),
   } as const

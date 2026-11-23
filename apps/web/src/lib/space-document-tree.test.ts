@@ -154,3 +154,46 @@ describe("file names in the sidebar", () => {
     })
   })
 })
+
+describe("the sidebar's live tree", () => {
+  it("keeps temporary docs in their folder, newest first, without the images Docs show", () => {
+    const file = { id: "worktable.file", sourceVersion: 1 } as const
+    const { active, temporary } = spaceDocumentTrees({
+      documents: [
+        document("research/2026-11-04-home/notes", {
+          lifetime: "temporary",
+          archiveOn: "2026-12-04T00:00:00.000Z",
+          updatedAt: "2026-11-04T10:00:00.000Z",
+        }),
+        document("research/2026-11-04-home/shot.png", {
+          format: file,
+          embedded: true,
+        } as Partial<Extract<DocumentListItem, { kind: "document" }>>),
+        document("research/2026-11-04-home/loose.png", { format: file }),
+        document("research/2026-11-15-demo/deck", {
+          updatedAt: "2026-11-15T10:00:00.000Z",
+        }),
+        document("research/billing", {
+          title: "Team billing",
+          updatedAt: "2026-11-10T10:00:00.000Z",
+        }),
+      ],
+      docs: [],
+      sort: "custom",
+      live: true,
+    })
+
+    expect(temporary).toEqual([])
+    const research = active[0]
+    expect(research.children.map((node) => [node.label, node.dated])).toEqual([
+      ["Demo", "2026-11-15"],
+      ["Team billing", undefined],
+      ["Home", "2026-11-04"],
+    ])
+    const home = research.children[2]
+    expect(home.children.map((node) => node.name)).toEqual(["notes", "loose.png"])
+    expect(home.children[0].temporary).toEqual({
+      archiveOn: "2026-12-04T00:00:00.000Z",
+    })
+  })
+})

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { Link, useRouterState } from "@tanstack/react-router"
-import { ChevronRight, Clock3, Folder } from "lucide-react"
+import { ChevronRight, Clock3, Folder, FolderOpen } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +15,8 @@ import {
 import { DocumentNodeIcon } from "@/components/document-node-icon"
 import { usePageMeta } from "@/hooks/use-page-meta"
 import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
+import { breadcrumbSpaceId } from "@/lib/breadcrumbs"
+import { useListBeside } from "@/lib/list-beside"
 import type {
   Breadcrumb as BreadcrumbItem,
   BreadcrumbTarget,
@@ -32,6 +34,8 @@ export function Breadcrumb() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const pageMeta = usePageMeta()
   const crumbs = useBreadcrumbs()
+  // The folder whose list sits beside the page is marked as an open row is.
+  const listed = useListBeside(breadcrumbSpaceId(pathname) ?? "")
   if (crumbs.length === 0) return null
 
   const updatedAtLabel = pageMeta?.updatedAtLabel
@@ -67,7 +71,15 @@ export function Breadcrumb() {
               </span>
             )
           ) : (
-            <AncestorCrumb crumb={crumb} />
+            <AncestorCrumb
+              crumb={crumb}
+              listed={
+                listed !== null &&
+                (crumb.kind === "folder"
+                  ? crumb.node.path === listed
+                  : crumb.role === "space" && listed === "")
+              }
+            />
           )}
         </span>
       ))}
@@ -75,11 +87,39 @@ export function Breadcrumb() {
   )
 }
 
-function AncestorCrumb({ crumb }: { crumb: BreadcrumbItem }) {
+/**
+ * A crumb's name, with an open folder before it while its list sits beside
+ * the page. The folder grows in as the list slides open, so the crumbs
+ * after it ease aside instead of jumping.
+ */
+function CrumbName({ label, listed }: { label: string; listed: boolean }) {
+  return (
+    <>
+      <span
+        aria-hidden
+        className={`inline-flex shrink-0 overflow-hidden transition-[width,margin,opacity] duration-300 ease-in-out motion-reduce:transition-none ${
+          listed ? "mr-1 w-3.5 opacity-100" : "mr-0 w-0 opacity-0"
+        }`}
+      >
+        <FolderOpen className="size-3.5 shrink-0 text-primary/70" />
+      </span>
+      <span className="truncate">{label}</span>
+    </>
+  )
+}
+
+function AncestorCrumb({
+  crumb,
+  listed = false,
+}: {
+  crumb: BreadcrumbItem
+  listed?: boolean
+}) {
+  const marked = `inline-flex items-center ${listed ? "font-medium text-foreground" : ""}`
   if (crumb.kind === "link") {
     return (
-      <CrumbLink target={crumb.target} className={crumbActionClass}>
-        {crumb.label}
+      <CrumbLink target={crumb.target} className={`${crumbActionClass} ${marked}`}>
+        <CrumbName label={crumb.label} listed={listed} />
       </CrumbLink>
     )
   }
@@ -88,9 +128,9 @@ function AncestorCrumb({ crumb }: { crumb: BreadcrumbItem }) {
       <DropdownMenu>
         <DropdownMenuTrigger
           render={<button type="button" />}
-          className={`${crumbActionClass} data-popup-open:text-foreground`}
+          className={`${crumbActionClass} data-popup-open:text-foreground ${marked}`}
         >
-          {crumb.label}
+          <CrumbName label={crumb.label} listed={listed} />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-auto max-w-72 min-w-44">
           <FolderMenuEntries

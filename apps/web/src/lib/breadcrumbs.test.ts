@@ -91,6 +91,8 @@ describe("buildBreadcrumbs", () => {
       )
     ).toEqual([
       ["Platform", "/spaces/$spaceId"],
+      // Records opens a menu of the Space's collections.
+      ["Records"],
       ["Incidents", "/spaces/$spaceId/records/$"],
       ["Elevated 5xx"],
     ])

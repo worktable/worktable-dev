@@ -60,7 +60,7 @@ import { isCanonicalId } from "@worktable/types/constants"
 import { useScrollFadeX } from "@/hooks/use-scroll-fade-x"
 import { useRecordFieldColumns } from "@/hooks/use-record-field-columns"
 import { useSetPageMeta } from "@/hooks/use-page-meta"
-import { queryKeys, useSpace, useRecordCollectionHealth, useRecordCollections, useRecordGroups, useRecordPages } from "@/lib/queries"
+import { queryKeys, recordCollectionsQueryOptions, useSpace, useRecordCollectionHealth, useRecordCollections, useRecordGroups, useRecordPages } from "@/lib/queries"
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
 import { readRecord } from "@/lib/records-api"
 import { useRecordMutations } from "@/lib/records-queries"
@@ -74,6 +74,8 @@ import { NewRecordDialog } from "@/components/records/new-record-dialog"
 import { RecordPeek, type RecordPeekActions, type RecordPeekNavigation } from "@/components/records/record-peek"
 import { SchemaEditorDialog } from "@/components/records/schema-editor"
 import { TipCard, TipHint } from "@/components/help/help"
+import { CollectionSwitcher } from "@/components/records/collection-switcher"
+import { collectionToOpen, rememberCollection } from "@/lib/last-collection"
 
 /** URL-carried table state (shareable); column prefs stay in localStorage. */
 interface RecordsSearch {
@@ -148,8 +150,24 @@ export const Route = createFileRoute("/spaces/$spaceId/records/$")({
   // Opening a collection from a bare link applies the table state last used
   // here before the grid reads, so it opens with one request. A link that
   // names a record is not bare: this machine's filters could hide it.
-  beforeLoad: ({ cause, params, search }) => {
-    if (cause !== "enter" || typeof window === "undefined") return
+  beforeLoad: async ({ cause, context, params, search }) => {
+    if (typeof window === "undefined") return
+    // Records alone opens the collection last open here, or the first.
+    if (!params._splat) {
+      const collections = await context.queryClient.ensureQueryData(
+        recordCollectionsQueryOptions(params.spaceId)
+      )
+      const opens = collectionToOpen(params.spaceId, collections)
+      if (opens) {
+        throw redirect({
+          to: "/spaces/$spaceId/records/$",
+          params: { spaceId: params.spaceId, _splat: opens },
+          replace: true,
+        })
+      }
+      return
+    }
+    if (cause !== "enter") return
     if (search.filters || search.groupBy || search.sort || search.record) return
     const restored = restoredTableSearch(params.spaceId, params._splat ?? "")
     if (restored) {
@@ -183,6 +201,8 @@ function restoredTableSearch(
 function RecordsPage() {
   const { spaceId, _splat } = Route.useParams()
   const collectionId = _splat ?? ""
+  // Records opens here next time.
+  useEffect(() => rememberCollection(spaceId, collectionId), [spaceId, collectionId])
   const { data: spaceDetail } = useSpace(spaceId)
   const canEdit = Boolean(spaceDetail && spaceDetail.space.permissions?.edit !== false)
   // Belt and braces on top of validateSearch: the id reaches a REST path, so
@@ -739,6 +759,11 @@ function RecordsPage() {
           <TipCard tip="recordsMeet" className="mb-3 max-w-xl shrink-0" />
           {/* Toolbar */}
           <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2">
+            <CollectionSwitcher
+              spaceId={spaceId}
+              collectionId={collectionId}
+              name={collection?.name ?? schema?.name ?? collectionId}
+            />
             <div className="relative min-w-40 flex-1 sm:max-w-64">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/60" />
               <Input

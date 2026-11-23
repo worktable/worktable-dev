@@ -284,8 +284,9 @@ test("a known document opens read-only until its path is checked, and shows an o
   })
   await page.goto(appUrl("/spaces/link-regression/documents/source"))
   const sourceLink = page.getByRole("link", { name: "the target" })
+  // The target's row in the Space's tree; Recent lists it too once opened.
   const targetLink = page.locator(
-    'a[href="/spaces/link-regression/documents/target"]'
+    '[data-space-id="link-regression"] a[href="/spaces/link-regression/documents/target"]'
   )
   await expect(sourceLink).toBeVisible({ timeout: 30_000 })
   // Open the target once, so this tab knows its revision and content.

@@ -37,6 +37,7 @@ infrastructure and personal context out of release notes.
 
 - **Older agent connections:** An agent connected with an earlier default access now reads Docs and gets the Library's skills. Before, it saw no skills, and Settings showed it without read access.
 - **Security updates:** Libraries with published security fixes are updated, among them the web server, pasting into the editor, reading image sizes, the agent connector and the checks on agents' tool calls.
+- **Desktop security updates:** The Mac app's libraries with published security fixes are updated, among them its secure connections and the code that unpacks updates.
 - **Full Worktable:** A Worktable at its storage limit refuses writes that don't fit from the moment it starts, not only once it has counted its storage a few seconds later.
 - **Export and import:** When a Worktable is too large to export with all its history, a package is too large to import, or the disk is full, Settings says so and what to do next, instead of "Export failed." with a technical reason.
 - **Export:** A Worktable at its 2 GiB limit always exports with all its history: packages can now be up to 2.25 GiB, room for the history, the offline viewer and a drawing saved a little past the limit. Before, a full Worktable of photos or PDFs could fail to export.

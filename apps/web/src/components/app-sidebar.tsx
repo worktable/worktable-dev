@@ -2951,13 +2951,15 @@ export function AppSidebar() {
   const reveal = useRevealed()
   const revealSeq = reveal?.seq
   // Its Space's section opens for it as it renders, without being kept
-  // open. A reveal that comes before the Spaces waits for them.
+  // open. A reveal waits until its Space is in the list, as a Space made a
+  // moment ago arrives after the document opens.
   const [handledReveal, setHandledReveal] = useState<number | undefined>(undefined)
-  if (revealSeq !== handledReveal && (reveal === null || spaces !== undefined)) {
+  const revealSpace = reveal
+    ? spaces?.find((entry) => entry.id === reveal.spaceId)
+    : undefined
+  if (revealSeq !== handledReveal && (reveal === null || revealSpace)) {
     setHandledReveal(revealSeq)
-    const space = reveal
-      ? spaces?.find((entry) => entry.id === reveal.spaceId)
-      : undefined
+    const space = revealSpace
     if (space) {
       const groupId = groupOf(space.id)
       // Archived Spaces end the Spaces section, whatever their group was.

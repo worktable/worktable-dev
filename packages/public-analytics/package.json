@@ -17,7 +17,7 @@
   "dependencies": {
     "@worktable/hosted-contract": "workspace:*",
     "@worktable/types": "workspace:*",
-    "posthog-js": "^1.438.13",
+    "posthog-js": "^1.450.0",
     "react": "^19.2.4"
   },
   "devDependencies": {

@@ -33,6 +33,20 @@ updates:
       - dependency-name: "@quickdrawjs/core"
       # Plugin compatibility target.
       - dependency-name: openclaw
+      # Start 1.169 needs Vite 8, and Router has to match the version Start
+      # pins. Both move by hand with the Vite 8 major.
+      - dependency-name: "@tanstack/react-start"
+      - dependency-name: "@tanstack/react-router"
+      # React 19.3 adds about 16 KB gzip to every page's entry bundle, so a
+      # React minor moves by hand, measured against the bundle budgets.
+      - dependency-name: react
+        update-types: [version-update:semver-minor]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-minor]
+      - dependency-name: "@types/react"
+        update-types: [version-update:semver-minor]
+      - dependency-name: "@types/react-dom"
+        update-types: [version-update:semver-minor]
       # Change the tool schemas tools/list serves, which stay frozen while
       # directory reviews are pending.
       - dependency-name: zod

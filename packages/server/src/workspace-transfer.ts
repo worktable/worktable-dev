@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto"
-import { constants as fsConstants } from "node:fs"
+import { type BigIntStats, constants as fsConstants, type Stats } from "node:fs"
 import {
   chmod,
   lstat,
@@ -100,8 +100,8 @@ function isWithin(root: string, candidate: string): boolean {
 }
 
 function sameEntry(
-  left: Awaited<ReturnType<typeof stat>>,
-  right: Awaited<ReturnType<typeof stat>>
+  left: Stats | BigIntStats,
+  right: Stats | BigIntStats
 ): boolean {
   return left.dev === right.dev && left.ino === right.ino
 }
@@ -217,7 +217,7 @@ async function readWorkspaceFile(
 async function assertWorkspaceDirectory(
   absolute: string,
   path: string,
-  expected: Awaited<ReturnType<typeof stat>>,
+  expected: Stats,
   canonicalRoot: string
 ): Promise<void> {
   const canonical = await realpath(absolute)
@@ -274,7 +274,7 @@ export async function createWorkspaceExport(): Promise<WorkspaceExportBundle> {
   const visit = async (
     directory: string,
     path: string,
-    expected: Awaited<ReturnType<typeof stat>>
+    expected: Stats
   ): Promise<void> => {
     await assertWorkspaceDirectory(directory, path, expected, canonicalRoot)
     const entries = await readdir(directory, { withFileTypes: true })
@@ -610,7 +610,8 @@ export async function importWorkspaceExport(
       `${JSON.stringify(newManifest, null, 2)}\n`,
       { mode: 0o600 }
     )
-    const { convertStagedWorkspaceStorageV2 } = await import("./document-storage-migration-v2.ts")
+    const { convertStagedWorkspaceStorageV2 } =
+      await import("./document-storage-migration-v2.ts")
     await convertStagedWorkspaceStorageV2(staging)
     newManifest.version = 2
     if (classification.outcome === "empty") {

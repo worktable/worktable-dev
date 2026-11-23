@@ -45,7 +45,7 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           # The stable OpenClaw host requires at least Node 24.22.1.
-          node-version: "24.22.1"
+          node-version: 24.22.3
 
       - name: Select plugin distribution inputs
         id: scope

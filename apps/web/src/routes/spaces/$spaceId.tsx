@@ -22,8 +22,7 @@ import {
   spaceOverviewComponent,
 } from "@/components/spaces/space-overview-loader"
 import { routeFolder, useListBeside } from "@/lib/list-beside"
-// Small, and part of the page frame, so it opens without a load to wait on.
-import { FolderList } from "@/components/spaces/folder-list"
+import { useFolderListParts } from "@/lib/folder-list-loader"
 import { useFolderColumnFits } from "@/hooks/use-folder-column"
 
 const isGettingStarted = (space: SpaceView) => gettingStartedSpace([space]) !== null
@@ -144,6 +143,7 @@ function SpaceDetailPage() {
   // The list keeps showing its folder while it slides closed.
   const [shownList, setShownList] = useState(listBeside)
   if (listBeside !== null && listBeside !== shownList) setShownList(listBeside)
+  const lists = useFolderListParts()
 
   const archiveInfo = space ? getSpaceArchiveInfo(space.settings) : undefined
   // On a team, restoring a Space follows access management.
@@ -187,8 +187,8 @@ function SpaceDetailPage() {
                 style={{ width: listBeside !== null ? "18rem" : 0 }}
                 inert={listBeside === null}
               >
-                {shownList !== null && (
-                  <FolderList spaceId={spaceId} folder={shownList} variant="column" />
+                {shownList !== null && lists && (
+                  <lists.FolderList spaceId={spaceId} folder={shownList} variant="column" />
                 )}
               </div>
             )}

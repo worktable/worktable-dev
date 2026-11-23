@@ -51,6 +51,9 @@ import {
 } from "@worktable/ui/components/collapsible"
 import { ScrollFadeArea } from "@/components/scroll-fade-area"
 import { TemporaryMark } from "@/components/sidebar/temporary-mark"
+// The folder list travels in the sidebar's code; pages take it from here
+// through lib/folder-list-loader.
+export { FolderList, FolderRoutePage } from "@/components/spaces/folder-list"
 import {
   compactFolders,
   folderRows,

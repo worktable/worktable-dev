@@ -4,7 +4,7 @@ import {
   setSidebarLayout,
   useSidebarLayout,
   type SidebarLayout,
-} from "@/lib/sidebar-live"
+} from "@/lib/list-beside"
 
 type ThemeValue = "system" | "light" | "dark"
 

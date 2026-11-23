@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { FolderRoutePage } from "@/components/spaces/folder-list"
+import { FolderRoute } from "@/components/spaces/folder-route"
 
 export const Route = createFileRoute("/spaces/$spaceId/folders/$")({
   ssr: false,
-  component: FolderRoutePage,
+  component: FolderRoute,
 })

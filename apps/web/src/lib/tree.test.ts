@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import fc from "fast-check";
-import { buildTree, flattenTreeOrder, humanizeSegment } from "./tree";
+import { buildTree, flattenTreeOrder, humanizeSegment, newestFirst } from "./tree";
 import type { TreeNode } from "./tree";
 import { searchResultDocumentView } from "./document-views";
 import type { SearchResult } from "@worktable/types";
@@ -333,3 +333,18 @@ describe("buildTree sorting", () => {
     expect(flattenTreeOrder(rebuilt)).toEqual(order);
   });
 });
+
+describe("newestFirst", () => {
+  it("puts the latest work first, folders and docs together, a dated name by its date", () => {
+    const tree = buildTree([
+      { path: "plans/old-plan", updatedAt: "2026-09-01T00:00:00.000Z" },
+      { path: "plans/2026-11-20-launch/notes", updatedAt: "2026-10-01T00:00:00.000Z" },
+      { path: "plans/new-plan", updatedAt: "2026-11-10T00:00:00.000Z" },
+    ])
+    expect(newestFirst(tree[0]!.children).map((node) => node.name)).toEqual([
+      "2026-11-20-launch",
+      "new-plan",
+      "old-plan",
+    ])
+  })
+})

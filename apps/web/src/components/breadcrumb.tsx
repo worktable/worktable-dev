@@ -22,7 +22,7 @@ import type {
   BreadcrumbTarget,
 } from "@/lib/breadcrumbs"
 import { documentPathIsAtOrBelow, documentPathKey } from "@/lib/document-views"
-import type { TreeNode } from "@/lib/tree"
+import { newestFirst, type TreeNode } from "@/lib/tree"
 
 /** Marks the open document and the folders leading to it in folder menus. */
 const currentEntryClass = "font-medium text-primary-text"
@@ -201,7 +201,8 @@ function FolderMenuEntries({
   currentPath: string
 }) {
   const ownDocument = folder.kind !== "folder"
-  const entries = folder.children
+  // Newest first, so what is being worked on is at the top.
+  const entries = newestFirst(folder.children)
   return (
     <>
       {ownDocument && (

@@ -89,6 +89,16 @@ export function nodeTime(node: TreeNode): number {
   return node.dated ? Date.parse(`${node.dated}T23:59:59`) : (node.updatedAt ?? 0);
 }
 
+/**
+ * Newest first, folders and documents together: the order menus that jump
+ * to a document use, so the work in progress is at the top.
+ */
+export function newestFirst(nodes: readonly TreeNode[]): TreeNode[] {
+  return [...nodes].sort(
+    (a, b) => nodeTime(b) - nodeTime(a) || a.name.localeCompare(b.name)
+  );
+}
+
 /** Turn a slug segment ("planning-onsite") into a readable label ("Planning Onsite"). */
 export function humanizeSegment(segment: string): string {
   const words = segment.replace(/[-_]+/g, " ").trim();

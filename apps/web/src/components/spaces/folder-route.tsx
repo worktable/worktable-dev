@@ -1,4 +1,4 @@
-import { useFolderListParts } from "@/lib/folder-list-loader"
+import { useFolderListParts } from "@/lib/list-beside"
 
 /** A folder's own page, drawn once the sidebar's code is in. */
 export function FolderRoute() {

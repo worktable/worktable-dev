@@ -1,5 +1,7 @@
 import { useRouterState } from "@tanstack/react-router"
-import { useSyncExternalStore } from "react"
+import { useEffect, useSyncExternalStore } from "react"
+import type { FolderList, FolderRoutePage } from "@/components/spaces/folder-list"
+import { mediaQueryStore } from "@/hooks/use-mobile"
 
 // What the page frame and the header need to know about the sidebar: which
 // layout it uses, which folder is listed beside the page. Kept apart from
@@ -150,4 +152,52 @@ export function useListBeside(spaceId: string): string | null {
     return browsed
   }
   return layout === "folders" ? folder : null
+}
+
+// ── Whether the list fits beside the page ───────────────────
+
+// The width at which a folder's list fits beside a page (Tailwind's lg).
+const wide = mediaQueryStore("(min-width: 1024px)")
+
+/** Whether Folders Only shows a folder's list beside the page. */
+export function useFolderColumnFits(): boolean {
+  return useSyncExternalStore(wide.subscribe, wide.getSnapshot, () => false)
+}
+
+// ── The folder list's code ─────────────────────────────────
+
+/**
+ * The folder list ships inside the sidebar's code, which every page loads
+ * once its first screen settles, so it adds no file of its own. Pages take
+ * it from there when it has arrived, without suspending, so the list opens
+ * the moment it's asked for.
+ */
+interface FolderListParts {
+  FolderList: typeof FolderList
+  FolderRoutePage: typeof FolderRoutePage
+}
+
+let parts: FolderListParts | null = null
+let loading: Promise<void> | null = null
+const partsListeners = new Set<() => void>()
+
+function load(): Promise<void> {
+  loading ??= import("@/components/app-sidebar").then((module) => {
+    parts = { FolderList: module.FolderList, FolderRoutePage: module.FolderRoutePage }
+    for (const listener of partsListeners) listener()
+  })
+  return loading
+}
+
+function subscribeParts(listener: () => void): () => void {
+  partsListeners.add(listener)
+  return () => partsListeners.delete(listener)
+}
+
+/** The folder list's components, once the sidebar's code is in. */
+export function useFolderListParts(): FolderListParts | null {
+  useEffect(() => {
+    void load()
+  }, [])
+  return useSyncExternalStore(subscribeParts, () => parts, () => null)
 }

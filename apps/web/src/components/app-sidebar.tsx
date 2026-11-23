@@ -72,7 +72,7 @@ import {
   useShowArchived,
   useSidebarLayout,
 } from "@/lib/sidebar-live"
-import { useFolderColumnFits } from "@/hooks/use-folder-column"
+import { useFolderColumnFits } from "@/lib/list-beside"
 import { collectionToOpen } from "@/lib/last-collection"
 import { WorktableHeader } from "@/components/sidebar/worktable-header"
 import { SpaceIcon } from "@/components/spaces/space-icon"

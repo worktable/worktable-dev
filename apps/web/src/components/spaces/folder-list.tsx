@@ -5,7 +5,7 @@ import { TruncatedText } from "@worktable/ui/components/truncated-text"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentNodeIcon } from "@/components/document-node-icon"
 import { TemporaryMark } from "@/components/sidebar/temporary-mark"
-import { useFolderColumnFits } from "@/hooks/use-folder-column"
+import { useFolderColumnFits } from "@/lib/list-beside"
 import {
   Collapsible,
   CollapsibleContent,

@@ -21,9 +21,12 @@ import {
   loadSpaceOverview,
   spaceOverviewComponent,
 } from "@/components/spaces/space-overview-loader"
-import { routeFolder, useListBeside } from "@/lib/list-beside"
-import { useFolderListParts } from "@/lib/folder-list-loader"
-import { useFolderColumnFits } from "@/hooks/use-folder-column"
+import {
+  routeFolder,
+  useFolderColumnFits,
+  useFolderListParts,
+  useListBeside,
+} from "@/lib/list-beside"
 
 const isGettingStarted = (space: SpaceView) => gettingStartedSpace([space]) !== null
 

@@ -300,6 +300,7 @@ test("a picture on an HTML page opens full screen, and on to the page's other pi
   await page.goto(url("gallery"))
   const frame = page.frameLocator(frameSelector)
   await frame.getByRole("img", { name: "Harbor" }).click({ timeout: 30_000 })
+  const viewer = page.locator("[data-viewer]")
   const harbor = page.getByRole("dialog", { name: "Harbor" })
   await expect(harbor).toBeVisible()
   // The badge, the link and the page's own button are left out.
@@ -307,7 +308,7 @@ test("a picture on an HTML page opens full screen, and on to the page's other pi
   await harbor.getByRole("button", { name: "Next image" }).click()
   await expect(page.getByRole("dialog", { name: "Hills" })).toBeVisible()
   await page.keyboard.press("Escape")
-  await expect(page.getByRole("dialog")).toBeHidden()
+  await expect(viewer).toHaveCount(0)
 
   // Pictures the page uses for something else keep their click.
   await frame.getByRole("img", { name: "Card" }).click()
@@ -319,5 +320,5 @@ test("a picture on an HTML page opens full screen, and on to the page's other pi
         .evaluate(() => location.hash)
     )
     .toBe("#linked")
-  await expect(page.getByRole("dialog")).toHaveCount(0)
+  await expect(viewer).toHaveCount(0)
 })

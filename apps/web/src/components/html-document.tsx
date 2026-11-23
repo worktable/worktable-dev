@@ -352,6 +352,16 @@ function WidgetDetailPage({
     [annotationsOpen, openAnnotationCount, toggleAnnotations]
   )
 
+  // Native fullscreen (desktop) vs. a CSS overlay fallback where
+  // requestFullscreen is unavailable (iOS Safari on iframes).
+  const [nativeFullscreen, setNativeFullscreen] = useState(false)
+  const [overlayFullscreen, setOverlayFullscreen] = useState(false)
+  const fullscreenActive = nativeFullscreen || overlayFullscreen
+  const leaveFullscreen = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen()
+    setOverlayFullscreen(false)
+  }, [])
+
   // Comments on elements of the page: the mode, the draft and the marks.
   const elementComments = useElementComments({
     frameRef: iframeRef,
@@ -724,11 +734,6 @@ function WidgetDetailPage({
   const [renameOpen, setRenameOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
-  // Native fullscreen (desktop) vs. a CSS overlay fallback where
-  // requestFullscreen is unavailable (iOS Safari on iframes).
-  const [nativeFullscreen, setNativeFullscreen] = useState(false)
-  const [overlayFullscreen, setOverlayFullscreen] = useState(false)
-  const fullscreenActive = nativeFullscreen || overlayFullscreen
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -752,10 +757,6 @@ function WidgetDetailPage({
     return () => window.removeEventListener("keydown", onKey)
   }, [overlayFullscreen])
 
-  const leaveFullscreen = useCallback(() => {
-    if (document.fullscreenElement) void document.exitFullscreen()
-    setOverlayFullscreen(false)
-  }, [])
 
   const toggleFullscreen = useCallback(() => {
     const el = wrapperRef.current

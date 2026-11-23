@@ -824,9 +824,8 @@ window.addEventListener('keydown',function(event){
   },true);
   window.addEventListener('pointerout',function(event){if(event.target===marked)unmark()},true);
   window.addEventListener('click',function(event){
-    let trusted=false;
-    try{trusted=typeof eventIsTrustedGetter==='function'&&nativeApply(eventIsTrustedGetter,event,[])===true}catch{}
-    if(!trusted||commenting||event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+    // isTrusted is the event's own, and page code can't change it.
+    if(event.isTrusted!==true||commenting||event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
     const image=event.target;
     if(!opens(image))return;
     event.preventDefault();

@@ -2,7 +2,11 @@ import { useEffect } from "react"
 import { useRouterState } from "@tanstack/react-router"
 import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
 import { useWorkspace } from "@/lib/queries"
-import { isRecentOpenRole, recordRecentOpen } from "@/lib/recent-opens"
+import {
+  isRecentOpenRole,
+  noteRecentRoute,
+  recordRecentOpen,
+} from "@/lib/recent-opens"
 
 /**
  * Notes each Doc, file, Record, thread and skill a person opens, under the
@@ -16,6 +20,10 @@ export function RecentOpensRecorder() {
   const role = page?.role
   const title = page?.label
   const formatId = page?.node?.format?.id
+  // Every page counts as leaving the last, even one Recent doesn't list.
+  useEffect(() => {
+    noteRecentRoute(path)
+  }, [path])
   useEffect(() => {
     if (!worktableId || !title || !role || !isRecentOpenRole(role)) return
     recordRecentOpen(worktableId, {

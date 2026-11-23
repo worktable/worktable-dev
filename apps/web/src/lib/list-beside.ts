@@ -1,11 +1,12 @@
 import { useRouterState } from "@tanstack/react-router"
 import { useEffect, useSyncExternalStore } from "react"
 import type { FolderList, FolderRoutePage } from "@/components/spaces/folder-list"
+import type { RecentList, RecentPage } from "@/components/sidebar/recent"
 import { mediaQueryStore } from "@/hooks/use-mobile"
 import { documentPathKey } from "@/lib/document-views"
 
 // What the page frame and the header need to know about the sidebar: which
-// layout it uses, which folder is listed beside the page. Kept apart from
+// layout it uses, which folder (or Recent) is listed beside the page. Kept apart from
 // the sidebar's tree helpers so the header loads only this.
 
 /** Whether `path` is the node's path or inside it. */
@@ -114,15 +115,39 @@ function safeDecode(path: string): string {
  * See All opens a folder's list beside the page. The list stays while the
  * person moves through that folder, and goes once they open something
  * elsewhere from the sidebar or close it. Folders Only always shows it.
+ * Recent's See All lists what was opened there instead, on any page, until
+ * the person closes it or opens something from the sidebar. One list shows
+ * at a time.
  */
 let browsing: { spaceId: string; path: string } | null = null
+let recentListed = false
 const browseListeners = new Set<() => void>()
 
+function notifyBrowse(): void {
+  for (const listener of browseListeners) listener()
+}
+
+/** Opens a folder's list, or with null closes it; either closes Recent's. */
 export function browseFolder(spaceId: string, path: string | null): void {
   const next = path === null ? null : { spaceId, path }
-  if (browsing?.spaceId === next?.spaceId && browsing?.path === next?.path) return
+  const same = browsing?.spaceId === next?.spaceId && browsing?.path === next?.path
+  if (same && !recentListed) return
   browsing = next
-  for (const listener of browseListeners) listener()
+  recentListed = false
+  notifyBrowse()
+}
+
+/** Opens or closes Recent's list beside the page. */
+export function listRecent(open: boolean): void {
+  if (recentListed === open && (!open || browsing === null)) return
+  recentListed = open
+  if (open) browsing = null
+  notifyBrowse()
+}
+
+/** Whether Recent's list sits beside the page. */
+export function useRecentListed(): boolean {
+  return useSyncExternalStore(subscribeBrowse, () => recentListed, () => false)
 }
 
 function subscribeBrowse(listener: () => void): () => void {
@@ -147,10 +172,11 @@ export function useBrowsedFolder(spaceId: string): string | null {
 export function useListBeside(spaceId: string): string | null {
   const layout = useSidebarLayout()
   const browsed = useBrowsedFolder(spaceId)
+  const recent = useRecentListed()
   const folder = useRouterState({
     select: (state) => routeFolder(state.location.pathname, spaceId),
   })
-  if (folder === null) return null
+  if (folder === null || recent) return null
   // A list holds its folders' folders too: opening a document in one of
   // them keeps the list where it is.
   if (browsed !== null && (browsed === "" || pathIsAtOrBelow(folder, browsed))) {
@@ -180,6 +206,8 @@ export function useFolderColumnFits(): boolean {
 interface FolderListParts {
   FolderList: typeof FolderList
   FolderRoutePage: typeof FolderRoutePage
+  RecentList: typeof RecentList
+  RecentPage: typeof RecentPage
 }
 
 let parts: FolderListParts | null = null
@@ -189,7 +217,12 @@ const partsListeners = new Set<() => void>()
 function load(): Promise<void> {
   loading ??= import("@/components/app-sidebar").then(
     (module) => {
-      parts = { FolderList: module.FolderList, FolderRoutePage: module.FolderRoutePage }
+      parts = {
+        FolderList: module.FolderList,
+        FolderRoutePage: module.FolderRoutePage,
+        RecentList: module.RecentList,
+        RecentPage: module.RecentPage,
+      }
       for (const listener of partsListeners) listener()
     },
     () => {
@@ -206,9 +239,9 @@ function subscribeParts(listener: () => void): () => void {
 }
 
 /** The folder list's components, once the sidebar's code is in. */
-export function useFolderListParts(): FolderListParts | null {
+export function useFolderListParts(wanted = true): FolderListParts | null {
   useEffect(() => {
-    void load()
-  }, [])
+    if (wanted) void load()
+  }, [wanted])
   return useSyncExternalStore(subscribeParts, () => parts, () => null)
 }

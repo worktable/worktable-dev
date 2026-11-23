@@ -282,8 +282,11 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await page.goto(new URL("/spaces/welcome", harness.webUrl).href, {
     waitUntil: "domcontentloaded",
   })
-  // Space Home also links docs from Latest and Activity; use the sidebar tree.
-  const tree = page.getByRole("navigation", { name: "Active documents" })
+  // Space Home also links docs from Latest and Activity, and the sidebar's
+  // Recent lists what this test opens; use the sidebar tree.
+  const treeOf = (tab: typeof page) =>
+    tab.getByRole("navigation", { name: "Active documents", exact: true })
+  const tree = treeOf(page)
   await expect(
     tree.getByRole("link", { name: "What Agents Can Make", exact: true })
   ).toBeVisible({ timeout: 30_000 })
@@ -525,7 +528,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   )
   await frame.getByRole("button", { name: "Open move note" }).click()
   await resolutionStarted
-  await page
+  await tree
     .getByRole("link", { name: "What Agents Can Make", exact: true })
     .click()
   await expect(page).toHaveURL(
@@ -577,7 +580,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     { waitUntil: "domcontentloaded" }
   )
   await expect(
-    racePage.getByRole("link", { name: "What Agents Can Make", exact: true })
+    treeOf(racePage).getByRole("link", { name: "What Agents Can Make", exact: true })
   ).toBeVisible({ timeout: 30_000 })
   // The tab shares what the first one left open, so Plans may be open.
   const racePlans = racePage
@@ -587,10 +590,10 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   if ((await racePlans.getAttribute("aria-expanded")) === "false")
     await racePlans.click()
   await expect(
-    racePage.getByRole("link", { name: "Live Status", exact: true })
+    treeOf(racePage).getByRole("link", { name: "Live Status", exact: true })
   ).toBeVisible()
 
-  await racePage.getByRole("link", { name: "Live Status", exact: true }).click()
+  await treeOf(racePage).getByRole("link", { name: "Live Status", exact: true }).click()
   await expect(racePage).toHaveURL(
     /\/spaces\/welcome\/documents\/plans\/live-status-renamed$/
   )
@@ -599,7 +602,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
       .frameLocator('iframe[title="Live Status"]')
       .getByRole("heading", { name: "Ready now" })
   ).toBeVisible()
-  await racePage
+  await treeOf(racePage)
     .getByRole("link", { name: "What Agents Can Make", exact: true })
     .click()
   await expect(racePage).toHaveURL(
@@ -611,7 +614,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     racePage.getByRole("heading", { name: "What Agents Can Make", exact: true })
   ).toBeVisible()
   await expect(
-    racePage.getByRole("link", { name: "Live Status", exact: true })
+    treeOf(racePage).getByRole("link", { name: "Live Status", exact: true })
   ).toBeVisible()
 
   const racedPath = "**/api/spaces/welcome/documents/page?*"
@@ -641,7 +644,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     await route.fulfill({ response: successfulOldRead })
     releaseMovedRead()
   })
-  await racePage
+  await treeOf(racePage)
     .getByRole("link", { name: "Live Status", exact: true })
     .evaluate((element) => (element as HTMLElement).click())
   // The injected move is fixture setup. Start the UI assertion only after the
@@ -659,7 +662,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   expect(movedDuringRead).toBe(true)
   await racePage.unroute(racedPath)
 
-  const moveNoteLink = racePage.getByRole("link", {
+  const moveNoteLink = treeOf(racePage).getByRole("link", {
     name: "Move Note",
     exact: true,
   })
@@ -670,7 +673,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(
     racePage.getByRole("heading", { name: "Move Note", exact: true })
   ).toBeVisible()
-  await racePage
+  await treeOf(racePage)
     .getByRole("link", { name: "What Agents Can Make", exact: true })
     .click()
   await expect(racePage).toHaveURL(
@@ -734,7 +737,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     new URL("/spaces/welcome/documents/plans", harness.webUrl).href,
     { waitUntil: "domcontentloaded" }
   )
-  const dualRoleLink = racePage.getByRole("link", {
+  const dualRoleLink = treeOf(racePage).getByRole("link", {
     name: "Live Status",
     exact: true,
   })
@@ -778,7 +781,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
     .getByRole("button", { name: "Expand Live Status", exact: true })
     .click()
   await expect(
-    racePage.getByRole("link", { name: "Move Note", exact: true })
+    treeOf(racePage).getByRole("link", { name: "Move Note", exact: true })
   ).toBeVisible()
 
   const activeDocuments = racePage.getByRole("navigation", {
@@ -879,7 +882,7 @@ test("nested HTML docs recover from move conflicts, archive with folders, and re
   await expect(
     archivedDocuments.getByRole("link", { name: "Move Note", exact: true })
   ).toHaveCount(0)
-  await page
+  await tree
     .getByRole("link", { name: "What Agents Can Make", exact: true })
     .click()
   await expect(page).toHaveURL(

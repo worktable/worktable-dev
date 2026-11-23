@@ -517,6 +517,8 @@ function CrumbIcon({
       ? House
       : crumb.role === "activity"
         ? History
+        : crumb.role === "recent"
+        ? Clock3
         : crumb.role === "library"
         ? LibraryIcon
         : crumb.role === "collection"

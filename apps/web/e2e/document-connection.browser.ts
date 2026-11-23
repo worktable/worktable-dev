@@ -173,14 +173,14 @@ test("a failed first open cannot admit a document from cached metadata", async (
   await expect(offline(page)).toHaveCount(1)
   // Visit another path, then return from the tab's cache with checks unavailable.
   await page
-    .locator("aside")
+    .getByRole("navigation", { name: "Active documents", exact: true })
     .getByRole("link", { name: "Notes", exact: true })
     .click()
   await expect(page.locator('.bn-editor[contenteditable="true"]')).toBeVisible({
     timeout: 60_000,
   })
   await page
-    .locator("aside")
+    .getByRole("navigation", { name: "Active documents", exact: true })
     .getByRole("link", { name: "Connection report", exact: true })
     .click()
   await expect(page.locator("[data-document-state]")).toContainText(

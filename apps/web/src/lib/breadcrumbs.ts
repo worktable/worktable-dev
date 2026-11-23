@@ -17,6 +17,7 @@ export type BreadcrumbTarget =
 export type BreadcrumbRole =
   | "home"
   | "activity"
+  | "recent"
   | "library"
   | "skill"
   | "space"
@@ -127,6 +128,9 @@ export function buildBreadcrumbs({
   if (pathname === "/") return [{ kind: "text", role: "home", label: "Home" }]
   if (pathname === "/activity") {
     return [{ kind: "text", role: "activity", label: "Activity" }]
+  }
+  if (pathname === "/recent") {
+    return [{ kind: "text", role: "recent", label: "Recent" }]
   }
   const libraryMatch = pathname.match(
     /^\/library(?:\/([^/]+))?(?:\/([^/]+))?\/?$/

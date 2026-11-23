@@ -54,12 +54,15 @@ import { TemporaryMark } from "@/components/sidebar/temporary-mark"
 // The folder list travels in the sidebar's code; pages take it from here
 // through lib/folder-list-loader.
 export { FolderList, FolderRoutePage } from "@/components/spaces/folder-list"
+export { RecentList, RecentPage } from "@/components/sidebar/recent"
+import { RecentSidebarSection } from "@/components/sidebar/recent"
 import {
   compactFolders,
   folderRows,
   foldersOnly,
   pathIsAtOrBelow,
   browseFolder,
+  listRecent,
   markTreeNavigation,
   noteRouteChange,
   openingDocument,
@@ -2905,7 +2908,9 @@ export function AppSidebar() {
     }
   }, [archivedSpaces, currentSpaceId])
 
+  // Opening a page from the sidebar's own links closes a list beside the page.
   const handleNavigateHome = () => {
+    listRecent(false)
     if (isMobile) setOpen(false)
   }
 
@@ -3156,9 +3161,7 @@ export function AppSidebar() {
             to="/threads/$"
             params={{ _splat: "" }}
             search={{ location: "all" }}
-            onClick={() => {
-              if (isMobile) setOpen(false)
-            }}
+            onClick={handleNavigateHome}
             className={`mx-1 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
               section === "threads"
                 ? "bg-sidebar-accent font-medium text-sidebar-primary"
@@ -3171,9 +3174,7 @@ export function AppSidebar() {
 
           <Link
             to="/activity"
-            onClick={() => {
-              if (isMobile) setOpen(false)
-            }}
+            onClick={handleNavigateHome}
             className={`mx-1 ${skillLibraries ? "" : "mb-3"} flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
               section === "activity"
                 ? "bg-sidebar-accent font-medium text-sidebar-primary"
@@ -3188,9 +3189,7 @@ export function AppSidebar() {
             <Link
               to="/library/$"
               params={{ _splat: "" }}
-              onClick={() => {
-                if (isMobile) setOpen(false)
-              }}
+              onClick={handleNavigateHome}
               className={`mx-1 mb-3 flex items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors duration-180 ${
                 section === "library"
                   ? "bg-sidebar-accent font-medium text-sidebar-primary"
@@ -3212,6 +3211,14 @@ export function AppSidebar() {
               }}
             />
           )}
+
+          <RecentSidebarSection
+            open={isSectionOpen("recent")}
+            onToggle={() => toggleSection("recent")}
+            onNavigate={() => {
+              if (isMobile) setOpen(false)
+            }}
+          />
 
           {pinnedSpaces.length > 0 &&
             renderSection("pinned", "Pinned", pinnedSpaces, undefined, {

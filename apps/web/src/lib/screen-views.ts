@@ -69,6 +69,9 @@ const SCREENS: Record<Exclude<keyof FileRoutesById, "__root__">, AppScreen | nul
   // Preview only, until analytics names the screen.
   "/library/$": null,
   "/login": null,
+  // Recent's list sits beside the page on a wide screen; until analytics
+  // names it, its narrow-screen page goes unnamed.
+  "/recent": null,
   "/spaces/$spaceId": "space",
   "/spaces/$spaceId/docs/$": "doc",
   "/spaces/$spaceId/documents/$": "document",

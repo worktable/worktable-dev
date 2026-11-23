@@ -45,13 +45,18 @@ import {
 } from "@worktable/ui/components/dropdown-menu"
 import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
+import { RecentOpenIcon } from "@/components/sidebar/recent-open-icon"
 import { SpaceIcon } from "@/components/spaces/space-icon"
 import { useSkillLibrariesEnabled } from "@/hooks/use-deployment-info"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { libraryKey } from "@/lib/library"
 import { getSpaceArchiveInfo } from "@/lib/spaces"
 import { searchQueryOptions, useSpaces, useWorkspace } from "@/lib/queries"
-import { readRecentOpens, type RecentOpen } from "@/lib/recent-opens"
+import {
+  readRecentOpens,
+  recentOpenSpace,
+  type RecentOpen,
+} from "@/lib/recent-opens"
 import { countMessageOpening } from "@/lib/message-openings"
 import { matchPlaces } from "@/lib/search-places"
 import { openSettings } from "@/lib/settings-open"
@@ -258,24 +263,10 @@ function recentRow(
   const [, spaceId, section, rest] =
     open.path.match(/^\/spaces\/([^/]+)(?:\/([^/]+)\/(.*))?$/) ?? []
   const spaceName = spaceId ? spaces.get(spaceId)?.name : undefined
-  const name = rest?.split("/").pop()
   return {
     key: `recent:${open.path}`,
     title: open.title,
-    icon:
-      open.role === "document" ? (
-        <DocumentFormatIcon
-          formatId={open.formatId}
-          name={name}
-          className={ICON}
-        />
-      ) : open.role === "thread" ? (
-        <MessageCircle className={ICON} />
-      ) : open.role === "skill" ? (
-        <LibraryIcon className={ICON} />
-      ) : (
-        <Database className={ICON} />
-      ),
+    icon: <RecentOpenIcon open={open} className={ICON} />,
     // A path this app showed; the router takes it as it is.
     target: { to: open.path },
     ...(spaceName
@@ -288,6 +279,9 @@ function recentRow(
       : {}),
   }
 }
+
+/** Recent pages search offers before anything is typed. */
+const SEARCH_RECENT_ROWS = 12
 
 /** What a search remembers between openings while the app is open. */
 export interface SearchState {
@@ -495,11 +489,13 @@ function PaletteBody({
   const rows = useMemo<Row[]>(() => {
     if (!typed) {
       // Only pages in Spaces this person can still open.
-      const reachable = recent.filter((open) => {
-        const spaceId = open.path.match(/^\/(?:threads\/)?spaces\/([^/]+)/)?.[1]
-        // A Space's pages show once its list confirms access.
-        return !spaceId || spacesById.has(spaceId)
-      })
+      const reachable = recent
+        .filter((open) => {
+          const spaceId = recentOpenSpace(open)
+          // A Space's pages show once its list confirms access.
+          return !spaceId || spacesById.has(spaceId)
+        })
+        .slice(0, SEARCH_RECENT_ROWS)
       return reachable.map((open, index) => ({
         ...recentRow(open, spacesById),
         ...(index === 0 ? { heading: "Recent" } : {}),

@@ -2785,7 +2785,7 @@
     },
     {
       "name": "react-dom",
-      "version": "19.2.4",
+      "version": "19.2.9",
       "license": "MIT",
       "notices": [
         {
@@ -2833,7 +2833,7 @@
     },
     {
       "name": "react",
-      "version": "19.2.4",
+      "version": "19.2.9",
       "license": "MIT",
       "notices": [
         {

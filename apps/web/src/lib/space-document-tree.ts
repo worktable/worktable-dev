@@ -161,6 +161,7 @@ export function buildSpaceDocumentTrees({
   order,
   separateTemporary = false,
   live = false,
+  withEmbedded = false,
 }: {
   documents: DocumentListItem[]
   docs: DocListEntry[]
@@ -172,6 +173,8 @@ export function buildSpaceDocumentTrees({
    * images Docs show.
    */
   live?: boolean
+  /** Keep the files Docs show, as a folder's whole list does. */
+  withEmbedded?: boolean
 }): SpaceDocumentTrees {
   const resolve = documentTreeInputResolver(docs)
   const fileLabels = fileDisplayLabels(documents)
@@ -180,9 +183,10 @@ export function buildSpaceDocumentTrees({
     const label = fileLabels.get(input.path)
     return label === undefined ? input : { ...input, title: label }
   }
-  const listed = live
-    ? documents.filter((item) => !isEmbeddedFile(item))
-    : documents
+  const listed =
+    live && !withEmbedded
+      ? documents.filter((item) => !isEmbeddedFile(item))
+      : documents
   const options = { folderPaths: documentFolderPaths(listed) }
   const treeSort = { mode: sort, order, newestFirst: live }
   const build = (items: DocumentListItem[]) =>
@@ -323,6 +327,7 @@ export function spaceDocumentTrees(
     input.sort,
     input.separateTemporary ? "separate" : "together",
     input.live ? "live" : "full",
+    input.withEmbedded ? "embedded" : "",
     ...(input.order ?? []),
   ].join("\n")
   return cachedBuild(treeCache, input, variant, () =>

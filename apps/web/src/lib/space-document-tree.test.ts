@@ -197,3 +197,22 @@ describe("the sidebar's live tree", () => {
     })
   })
 })
+
+describe("a folder's whole list", () => {
+  it("keeps the files its Docs show, which the sidebar leaves out", () => {
+    const file = { id: "worktable.file", sourceVersion: 1 } as const
+    const documents = [
+      document("notes/brief"),
+      document("notes/shot.png", {
+        format: file,
+        embedded: true,
+      } as Partial<Extract<DocumentListItem, { kind: "document" }>>),
+    ]
+    const paths = (withEmbedded: boolean) =>
+      spaceDocumentTrees({ documents, docs: [], sort: "custom", live: true, withEmbedded })
+        .active[0]
+        .children.map((node) => node.name)
+    expect(paths(false)).toEqual(["brief"])
+    expect(paths(true).sort()).toEqual(["brief", "shot.png"])
+  })
+})

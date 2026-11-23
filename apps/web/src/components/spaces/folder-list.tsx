@@ -57,6 +57,8 @@ function useFolder(spaceId: string, folder: string) {
     sort: space ? getDocSort(space) : "custom",
     order: space ? getDocOrder(space) : undefined,
     live: true,
+    // See All lists the whole folder, the files its Docs show included.
+    withEmbedded: true,
   })
   return useMemo(() => {
     const childrenOf = (path: string) =>

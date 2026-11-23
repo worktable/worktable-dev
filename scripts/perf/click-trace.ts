@@ -1412,23 +1412,30 @@ async function revealDocument(session: Session, doc: DocTarget) {
     .then(() => true)
     .catch(() => false)
   if (!marked) return revealDocumentByName(session, doc)
+  // Paths are each Space's own: look only in the target Space's tree, in
+  // whichever copy of it (pinned or listed) is open.
+  const tree = root
+    .locator(`[data-space-id="${doc.spaceId}"]`)
+    .filter({ visible: true })
+    .first()
+  await tree.locator("[data-tree-path]").first().waitFor()
   const folders = doc.path
     .split("/")
     .slice(0, -1)
     .map((_, index, parts) => parts.slice(0, index + 1).join("/"))
   // Folders that hold one folder share a row with it, so some have none.
-  await openFolders(root, folders)
-  const inTree = root.locator(`a[href="${documentHref(doc)}"]`).first()
+  await openFolders(tree, folders)
+  const inTree = tree.locator(`a[href="${documentHref(doc)}"]`).first()
   if (!(await inTree.isVisible())) {
     // The deepest open level whose See All lists the document's branch.
     let listed: string | undefined
     for (const folder of ["", ...folders]) {
-      if (await root.locator(`[data-see-all="${folder}"]`).first().isVisible())
+      if (await tree.locator(`[data-see-all="${folder}"]`).first().isVisible())
         listed = folder
     }
     if (listed === undefined)
       throw new Error(`no row or See All leads to ${doc.path}`)
-    await press(session, root.locator(`[data-see-all="${listed}"]`).first())
+    await press(session, tree.locator(`[data-see-all="${listed}"]`).first())
     const list = session.page.locator(
       'aside[aria-label="Folder"], main nav'
     )

@@ -2,6 +2,7 @@ import { useRouterState } from "@tanstack/react-router"
 import { useEffect, useSyncExternalStore } from "react"
 import type { FolderList, FolderRoutePage } from "@/components/spaces/folder-list"
 import { mediaQueryStore } from "@/hooks/use-mobile"
+import { documentPathKey } from "@/lib/document-views"
 
 // What the page frame and the header need to know about the sidebar: which
 // layout it uses, which folder is listed beside the page. Kept apart from
@@ -9,7 +10,11 @@ import { mediaQueryStore } from "@/hooks/use-mobile"
 
 /** Whether `path` is the node's path or inside it. */
 export function pathIsAtOrBelow(path: string | null, node: string): boolean {
-  return path !== null && (path === node || path.startsWith(`${node}/`))
+  if (path === null) return false
+  // Paths that differ only in case or Unicode form name the same document.
+  const at = documentPathKey(path)
+  const under = documentPathKey(node)
+  return at === under || at.startsWith(`${under}/`)
 }
 
 // ── Sidebar layout: the tree, or folders only ───────────────
@@ -182,10 +187,16 @@ let loading: Promise<void> | null = null
 const partsListeners = new Set<() => void>()
 
 function load(): Promise<void> {
-  loading ??= import("@/components/app-sidebar").then((module) => {
-    parts = { FolderList: module.FolderList, FolderRoutePage: module.FolderRoutePage }
-    for (const listener of partsListeners) listener()
-  })
+  loading ??= import("@/components/app-sidebar").then(
+    (module) => {
+      parts = { FolderList: module.FolderList, FolderRoutePage: module.FolderRoutePage }
+      for (const listener of partsListeners) listener()
+    },
+    () => {
+      // The next page to ask tries again.
+      loading = null
+    }
+  )
   return loading
 }
 

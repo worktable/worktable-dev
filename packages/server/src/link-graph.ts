@@ -381,6 +381,23 @@ function markSpace(spaceId: string, docPath?: string): void {
   if (!space) return;
   space.dirty = true;
   if (docPath !== undefined) space.forced.add(docPath);
+  // A save can add or drop a file a Doc shows; read the change soon, so open
+  // lists hear of it without waiting for another read to ask.
+  if (space.graph && embeddedListeners.size > 0) scheduleWarm(spaceId);
+}
+
+const WARM_AFTER_MS = 1_000;
+const warmTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Rebuild a Space's graph once a burst of saves has settled. */
+function scheduleWarm(spaceId: string): void {
+  clearTimeout(warmTimers.get(spaceId));
+  const timer = setTimeout(() => {
+    warmTimers.delete(spaceId);
+    warmLinkGraph(spaceId);
+  }, WARM_AFTER_MS);
+  (timer as { unref?: () => void }).unref?.();
+  warmTimers.set(spaceId, timer);
 }
 
 /** Re-check every Space at its next read; unchanged Docs are not re-read. */
@@ -413,6 +430,8 @@ onWorkspaceChange((event) => {
     case "workspaceReset":
       resetEpoch += 1;
       spaces.clear();
+      for (const timer of warmTimers.values()) clearTimeout(timer);
+      warmTimers.clear();
       break;
   }
 });

@@ -149,5 +149,21 @@ describe("GET /api/spaces/:id/documents", () => {
     expect(changed).toContain("alpha")
     // Shown, not merely linked or loose.
     expect(await embedded()).toEqual(["notes/shown.png"])
+
+    // A save that drops the picture is heard without another read.
+    const heard = new Promise<string>((resolve) => {
+      const done = onEmbeddedFilesChanged((spaceId) => {
+        done()
+        resolve(spaceId)
+      })
+    })
+    await writeDoc("alpha", "notes/first", "# First\n\nNo picture now.\n")
+    expect(
+      await Promise.race([
+        heard,
+        new Promise((resolve) => setTimeout(() => resolve("timeout"), 5_000)),
+      ])
+    ).toBe("alpha")
+    expect(await embedded()).toEqual([])
   })
 })

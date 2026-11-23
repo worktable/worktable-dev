@@ -73,7 +73,7 @@ import {
   useSidebarLayout,
 } from "@/lib/sidebar-live"
 import { useFolderColumnFits } from "@/lib/list-beside"
-import { collectionToOpen } from "@/lib/last-collection"
+import { useCollectionToOpen } from "@/lib/last-collection"
 import { WorktableHeader } from "@/components/sidebar/worktable-header"
 import { SpaceIcon } from "@/components/spaces/space-icon"
 import { ProfileMenu } from "@/components/sidebar/profile-menu"
@@ -940,7 +940,7 @@ const SpaceSection = memo(function SpaceSection({
         </div>
 
         <CollapsibleContent className="collapsible-instant">
-          <div className="ml-4 pl-2">
+          <div className="ml-4 pl-2" data-space-id={space.id}>
             <SpaceContent
               space={space}
               revealed={revealed}
@@ -1112,6 +1112,7 @@ function RecordsSidebarSection({
   // header, so the tree keeps one row however many there are.
   const { data: collections } = useRecordCollections(spaceId)
   const isActive = useRouteRelation(`/spaces/${spaceId}/records`) !== null
+  const opens = useCollectionToOpen(spaceId, collections ?? [])
   if (!collections || collections.length === 0) return null
 
   return (
@@ -1119,7 +1120,7 @@ function RecordsSidebarSection({
       <Link
         to="/spaces/$spaceId/records/$"
         // Straight to the collection last open here, or the first.
-        params={{ spaceId, _splat: collectionToOpen(spaceId, collections) ?? "" }}
+        params={{ spaceId, _splat: opens ?? "" }}
         onClick={onNavigate}
         className={`flex min-h-10 min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-180 sm:min-h-0 ${
           isActive
@@ -2949,20 +2950,24 @@ export function AppSidebar() {
   }, [router])
   const reveal = useRevealed()
   const revealSeq = reveal?.seq
-  // Its Space's section opens for it as it renders, without being kept open.
-  const [handledReveal, setHandledReveal] = useState(revealSeq)
-  if (revealSeq !== handledReveal) {
+  // Its Space's section opens for it as it renders, without being kept
+  // open. A reveal that comes before the Spaces waits for them.
+  const [handledReveal, setHandledReveal] = useState<number | undefined>(undefined)
+  if (revealSeq !== handledReveal && (reveal === null || spaces !== undefined)) {
     setHandledReveal(revealSeq)
     const space = reveal
-      ? activeSpaces.find((entry) => entry.id === reveal.spaceId)
+      ? spaces?.find((entry) => entry.id === reveal.spaceId)
       : undefined
     if (space) {
       const groupId = groupOf(space.id)
-      const key = isPinned(space)
-        ? "pinned"
-        : groupId && groups.some((group) => group.id === groupId)
-          ? `group:${groupId}`
-          : "spaces"
+      // Archived Spaces end the Spaces section, whatever their group was.
+      const key = isSpaceArchived(space as SpaceFile)
+        ? "spaces"
+        : isPinned(space)
+          ? "pinned"
+          : groupId && groups.some((group) => group.id === groupId)
+            ? `group:${groupId}`
+            : "spaces"
       if (!isSectionOpen(key)) {
         setSectionOpen((state) => ({ ...state, [key]: true }))
       }

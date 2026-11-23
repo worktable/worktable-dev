@@ -246,7 +246,7 @@ function SidebarGroup() {
                 role="radio"
                 aria-checked={selected}
                 onClick={() => setSidebarLayout(option.value)}
-                className="flex flex-col items-center gap-2 outline-none"
+                className="flex flex-col items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 <span
                   className={cn(

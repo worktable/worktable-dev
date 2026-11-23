@@ -175,9 +175,10 @@ function SpaceDetailPage() {
           />
         )}
         {inFolder ? (
-          // A row at every width: pages that fill the screen (HTML Docs,
-          // drawings, PDFs) take their height from it.
-          <div className="flex min-h-full">
+          // Exactly the page's height, at every width, as the page was before
+          // the list: Docs scroll in their own pane, and pages that fill the
+          // screen (HTML Docs, drawings, PDFs) take their height from it.
+          <div className="flex h-full">
             {fits && (
               <div
                 // Slides like the main sidebar; overflow-clip keeps the list

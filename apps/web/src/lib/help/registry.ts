@@ -386,7 +386,7 @@ export const TIPS = {
     id: "pending-meet",
     version: 2,
     reason: "first-meeting",
-    display: "hint",
+    display: "card",
     text: "Anything that needs you lands here, like a request sent to you or a message that didn't get through.",
     comesBack: 0,
     priority: 15,

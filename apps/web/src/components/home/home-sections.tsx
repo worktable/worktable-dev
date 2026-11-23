@@ -5,7 +5,7 @@ import {
   MessageSquareText,
 } from "lucide-react"
 import { useState } from "react"
-import { HelpIcon, TipHint } from "@/components/help/help"
+import { HelpIcon, TipCard } from "@/components/help/help"
 import type { PendingItem } from "@worktable/types"
 import { cn } from "@worktable/ui/lib/utils"
 import { ThreadLink } from "@/components/home/activity-feed"
@@ -171,15 +171,12 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
   // Home points to Getting Started until the person is done or unpins it.
   const shortcut = useGettingStartedShortcut(spaces)
   const gettingStarted = !spaceId && shortcut?.progress.next ? shortcut : null
-  // Home's Pending header, for the tip the first time something lands here.
-  const [heading, setHeading] = useState<HTMLElement | null>(null)
   if (items.length === 0 && !failed && !gettingStarted) return null
   const shown = showAll ? items : items.slice(0, PENDING_ROWS)
   return (
     <section aria-labelledby="pending-heading" className="min-w-0">
       <div className="mb-2.5 flex items-center gap-1.5">
         <h2
-          ref={setHeading}
           id="pending-heading"
           className="text-sm font-semibold text-foreground"
         >
@@ -187,14 +184,12 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
         </h2>
         <HelpIcon entry="pending" label="About Pending" />
       </div>
+      {/* The first time something lands on Home. */}
       {!spaceId && (
-        <TipHint
+        <TipCard
           tip="pendingMeet"
-          anchor={heading}
           active={items.length > 0}
-          // Above the heading, so it never covers what landed.
-          side="top"
-          align="start"
+          className="mb-3 max-w-xl"
         />
       )}
       {failed && !gettingStarted ? (

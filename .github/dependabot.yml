@@ -33,6 +33,10 @@ updates:
       - dependency-name: "@quickdrawjs/core"
       # Plugin compatibility target.
       - dependency-name: openclaw
+      # Start 1.169 needs Vite 8, and Router has to match the version Start
+      # pins. Both move by hand with the Vite 8 major.
+      - dependency-name: "@tanstack/react-start"
+      - dependency-name: "@tanstack/react-router"
       # Change the tool schemas tools/list serves, which stay frozen while
       # directory reviews are pending.
       - dependency-name: zod

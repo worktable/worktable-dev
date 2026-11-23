@@ -1404,7 +1404,7 @@ function WidgetTreeItem({
           <TruncatedText text={node.label} />
         </Link>
         <RowMeta node={node} />
-        <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/widget:opacity-100 sm:max-w-0 sm:overflow-hidden sm:group-hover/widget:max-w-24 sm:focus-within:max-w-24 sm:has-[[data-popup-open]]:max-w-24">
+        <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/widget:opacity-100">
           {rowActions}
           <WidgetTreeActions
             key={node.path}
@@ -2198,7 +2198,7 @@ function UnavailableDocumentTreeItem({
       </Link>
       <RowMeta node={node} />
       {rowActions && (
-        <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100 sm:max-w-0 sm:overflow-hidden sm:group-hover/doc:max-w-24 sm:focus-within:max-w-24 sm:has-[[data-popup-open]]:max-w-24">
+        <div className="shrink-0 pr-1 opacity-100 transition-opacity focus-within:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
           {rowActions}
         </div>
       )}
@@ -2628,7 +2628,7 @@ function DocTreeItem({
               </CollapsibleTrigger>
             )}
             <RowMeta node={node} />
-            <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/folder:opacity-100 sm:max-w-0 sm:overflow-hidden sm:group-hover/folder:max-w-24 sm:focus-within:max-w-24 sm:has-[[data-popup-open]]:max-w-24">
+            <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/folder:opacity-100">
               <RowNewActions
                 spaceId={spaceId}
                 folder={node.path}
@@ -2780,7 +2780,7 @@ function DocTreeItem({
           </TruncatedText>
         </Link>
         <RowMeta node={node} />
-        <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100 sm:max-w-0 sm:overflow-hidden sm:group-hover/doc:max-w-24 sm:focus-within:max-w-24 sm:has-[[data-popup-open]]:max-w-24">
+        <div className="flex shrink-0 items-center pr-1 opacity-100 transition-opacity focus-within:opacity-100 has-[[data-popup-open]]:opacity-100 sm:opacity-0 sm:group-hover/doc:opacity-100">
           {rowActions}
           <DocContextMenuButton
             documentName={node.label}

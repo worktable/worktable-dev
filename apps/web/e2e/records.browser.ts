@@ -472,7 +472,9 @@ test("empty and failed table searches preserve columns and recover without stale
     await pending
     await route.continue()
   })
-  await page.locator('a[href="/spaces/inline-editing/records/other"]').click()
+  // Switch collections from the switcher on the table.
+  await page.getByRole("button", { name: "Tasks", exact: true }).click()
+  await page.getByRole("menuitem", { name: /^Other\b/ }).click()
   try {
     await expect(table.getByText("Follow up", { exact: true })).toHaveCount(0)
     await expect(table.getByRole("button", { name: "External Note", exact: true })).toHaveCount(0)

@@ -171,7 +171,7 @@ const APPEARANCE: SettingsSection = {
   id: "appearance",
   group: "You",
   label: "Appearance",
-  description: "Theme.",
+  description: "Theme and sidebar.",
   icon: Palette,
   component: AppearanceSection,
 }

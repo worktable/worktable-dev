@@ -27,8 +27,8 @@ export function fileSourceUrl(
   return `${BASE_URL}/api/spaces/${encodeURIComponent(spaceId)}/documents/file?path=${encodeURIComponent(path)}${version ? `&v=${encodeURIComponent(version)}` : ""}${options.download ? "&download=1" : ""}${options.at ? `&at=${encodeURIComponent(options.at)}` : ""}`
 }
 
-// The reverse, read back from a URL fileSourceUrl wrote: the image viewer
-// uses it for a shown image's file, and Docs for the PDF a card stands for.
+// The reverse, read back from a URL fileSourceUrl wrote: Docs read it for
+// the file an image shows and for the PDF a card stands for.
 /** A Space's file, as a URL from fileSourceUrl names it. */
 export interface SourceFile {
   spaceId: string

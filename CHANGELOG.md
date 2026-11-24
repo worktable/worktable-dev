@@ -11,6 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **Images in HTML Docs open full screen:** Click a picture on an HTML Doc to see it in the image viewer, as in other Docs: zoom, pan, and move through the page's pictures. A picture the page links or uses as a button keeps its own click.
 - **Recent in the sidebar:** The sidebar lists what you opened last on this device, with **See All** to list the rest beside the page. Opening something from Recent leaves the list in the same order.
 - **PDFs:** A PDF opens on its page and reads in place: scroll, select and copy text, find, jump to a page and zoom, with a picture of each page and the file's outline beside it. A password-protected PDF asks for its password, and a link ending in `#page=12` opens at that page.
 - **Pinned pictures:** On Home and Space Home, a pinned image, PDF or drawing shows a picture of it instead of its icon.

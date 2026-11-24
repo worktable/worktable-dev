@@ -2,6 +2,7 @@ import { lazy, useCallback, useEffect, useState, type RefObject } from "react"
 import { Maximize2 } from "lucide-react"
 import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import { DocIconButton } from "@/components/document/doc-icon-button"
+import { fileSourceUrl, sourceFileOf } from "@/lib/file-embeds"
 import { VIEWABLE_IMAGES, viewableImage } from "@/lib/viewable-images"
 import type { ViewerImage } from "./image-viewer"
 
@@ -12,10 +13,23 @@ const ImageViewer = lazy(() =>
 )
 
 function viewerImage(image: HTMLImageElement): ViewerImage {
+  const src = image.currentSrc || image.src
+  const file = sourceFileOf(src)
   return {
-    src: image.currentSrc || image.src,
+    src,
     alt: image.alt,
     size: { width: image.naturalWidth, height: image.naturalHeight },
+    ...(file && {
+      file: {
+        spaceId: file.spaceId,
+        path: file.path,
+        // At the version shown.
+        download: fileSourceUrl(file.spaceId, file.path, file.version, {
+          download: true,
+          ...(file.at ? { at: file.at } : {}),
+        }),
+      },
+    }),
   }
 }
 

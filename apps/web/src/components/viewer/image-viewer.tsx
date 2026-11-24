@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router"
 import { ChevronLeft, ChevronRight, Download } from "lucide-react"
 import { Button } from "@worktable/ui/components/button"
 import { documentRoute } from "@/lib/document-views"
-import { fileSourceUrl, sourceFileOf } from "@/lib/file-embeds"
 import { IMAGE_PLACEMENT, type ViewSize } from "@/lib/zoom-view"
 import { ViewerDialog } from "./viewer-dialog"
 import { ZoomCanvas, type ZoomContent } from "./zoom-canvas"
@@ -16,6 +15,12 @@ export interface ViewerImage {
   alt: string
   /** Its own size, from the page that loaded it. */
   size: ViewSize
+  /**
+   * The Space's file it is, for Download and Open, as the page that loaded
+   * it knows. The viewer reads no addresses itself, so an HTML Doc's page,
+   * which has none, doesn't load the code that would.
+   */
+  file?: { spaceId: string; path: string; download: string }
 }
 
 /**
@@ -120,7 +125,7 @@ function ImageBody({
   onOpenFile: () => void
   navigation: ReactNode
 }) {
-  const file = useMemo(() => sourceFileOf(image.src), [image.src])
+  const file = image.file
   const name = file
     ? file.path.slice(file.path.lastIndexOf("/") + 1)
     : image.alt.trim() || undefined
@@ -144,12 +149,7 @@ function ImageBody({
               variant="ghost"
               size="icon-sm"
               onClick={() => {
-                window.location.href = fileSourceUrl(
-                  file.spaceId,
-                  file.path,
-                  file.version,
-                  { download: true, ...(file.at ? { at: file.at } : {}) }
-                )
+                window.location.href = file.download
               }}
               title="Download"
               aria-label="Download"

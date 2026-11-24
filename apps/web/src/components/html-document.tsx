@@ -59,6 +59,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   lazy,
+  Suspense,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -67,7 +68,6 @@ import {
   useRef,
   useState,
 } from "react"
-import { DeferredMount } from "@worktable/ui/components/deferred-mount"
 import type { ViewerImage } from "@/components/viewer/image-viewer"
 import { frameImages } from "@/lib/frame-images"
 import { toast } from "@worktable/ui/components/sonner"
@@ -1282,8 +1282,9 @@ function WidgetDetailPage({
         widgetName={title}
         onConfirm={handleDelete}
       />
-      <DeferredMount active={imageViewerOpen}>
-        {imageViewer && (
+      {/* Mounted from the first open, so it closes with its animation. */}
+      {imageViewer && (
+        <Suspense fallback={null}>
           <ImageViewer
             open={imageViewerOpen}
             onOpenChange={setImageViewerOpen}
@@ -1294,8 +1295,8 @@ function WidgetDetailPage({
             }
             linksToFile={false}
           />
-        )}
-      </DeferredMount>
+        </Suspense>
+      )}
     </div>
   )
 }

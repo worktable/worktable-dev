@@ -11,6 +11,7 @@ import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useActivity } from "@/lib/activity"
 import { clockTime, groupByDay } from "@/lib/activity-format"
+import { humanizeSegment } from "@/lib/tree"
 import { useActorName } from "@/lib/use-actor-name"
 import { useSpaces } from "@/lib/queries"
 import { useQuery } from "@tanstack/react-query"
@@ -66,6 +67,14 @@ const activityLinkClass =
 function TargetLink({ entry }: { entry: ActivityEntry }) {
   const target = entry.target
   const className = activityLinkClass
+  if (target.kind === "doc" && (target.folder || target.missing)) {
+    // A folder, or a Doc that is gone: its name, with nothing to open.
+    return (
+      <span className="font-medium text-foreground">
+        {target.title ?? lastSegment(target.path)}
+      </span>
+    )
+  }
   if (target.kind === "doc" && entry.spaceId) {
     return (
       <Link
@@ -138,6 +147,63 @@ export function ThreadLink({
   )
 }
 
+/** A folder, or a Doc with no title to go by, named as the sidebar names it. */
+function lastSegment(path: string): string {
+  return humanizeSegment(path.split("/").at(-1) ?? path)
+}
+
+/** The folder a path sits in; empty at the top of a Space. */
+function folderOf(path: string): string {
+  return path.split("/").slice(0, -1).join("/")
+}
+
+function docs(count: number): string {
+  return count === 1 ? "a doc" : `${count} docs`
+}
+
+/** "moved X to Plans", "renamed X", or "moved X out of Notes" at the top. */
+function Moved({
+  entry,
+  who,
+  what,
+}: {
+  entry: ActivityEntry
+  who: ReactNode
+  what: ReactNode
+}) {
+  const target = entry.target
+  if (target.kind !== "doc") return null
+  const from = entry.from ?? target.path
+  const [was, now] = [folderOf(from), folderOf(entry.to ?? target.path)]
+  const subject = target.folder ? <>the folder {what}</> : what
+  const under =
+    !target.folder && (entry.count ?? 1) > 1
+      ? ` and ${docs((entry.count ?? 1) - 1)} under it`
+      : ""
+  if (was === now) {
+    return target.folder ? (
+      <>
+        {who} renamed the folder {lastSegment(from)} to {what}
+      </>
+    ) : (
+      <>
+        {who} renamed {what}
+      </>
+    )
+  }
+  return now ? (
+    <>
+      {who} moved {subject}
+      {under} to {lastSegment(now)}
+    </>
+  ) : (
+    <>
+      {who} moved {subject}
+      {under} out of {lastSegment(was)}
+    </>
+  )
+}
+
 function records(count: number | undefined): string {
   const n = count ?? 1
   return n === 1 ? "a record" : `${n} records`
@@ -189,6 +255,24 @@ function Sentence({ entry }: { entry: ActivityEntry }) {
           {who} restored {what}
         </>
       )
+    case "doc.moved":
+      return <Moved entry={entry} who={who} what={what} />
+    case "doc.deleted": {
+      const count = entry.count ?? 1
+      if (entry.target.kind === "doc" && entry.target.folder) {
+        return (
+          <>
+            {who} deleted {docs(count)} in the folder {what}
+          </>
+        )
+      }
+      return (
+        <>
+          {who} deleted {what}
+          {count > 1 ? ` and ${docs(count - 1)} under it` : ""}
+        </>
+      )
+    }
     case "doc.kept":
       return (
         <>

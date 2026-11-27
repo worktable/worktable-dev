@@ -592,6 +592,20 @@ export async function listDocuments(options: {
   return (await listDocumentsWithAliases(options)).documents
 }
 
+/** What the Doc at `path` is called, archived or not; undefined when no Doc is there. */
+export async function documentTitleAt(
+  spaceId: string,
+  path: string
+): Promise<string | undefined> {
+  const documents = await listDocuments({ spaceId, includeArchived: true }).catch(
+    () => []
+  )
+  const found = documents.find(
+    (item) => item.kind === "document" && item.path === path
+  )
+  return found?.kind === "document" ? found.title : undefined
+}
+
 /** listDocuments, with the document aliases of the same snapshot. */
 export async function listDocumentsWithAliases(options: {
   spaceId: string

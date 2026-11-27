@@ -32,7 +32,7 @@ import {
   type DocumentCatalog,
 } from "./document-catalog.ts"
 import { fileNoHistory } from "./file-limits.ts"
-import { readDocumentCatalogSnapshot } from "./document-query.ts"
+import { documentTitleAt, readDocumentCatalogSnapshot } from "./document-query.ts"
 import {
   advanceDocumentCreateRecoveryV2,
   finishDocumentCreateRecoveryV2,
@@ -2656,6 +2656,16 @@ export async function moveRegisteredDocument(options: {
     type: "documentCorpus",
     spaceId: options.spaceId,
   })
+  // A folder move noted itself, with what moved under the Doc.
+  if (!withFolder && result.from !== to) {
+    recordActivity({
+      spaceId: options.spaceId,
+      action: "doc.moved",
+      target: { kind: "doc", path: to },
+      from: result.from,
+      to,
+    })
+  }
   // A folder move rewrote its links already; an exact one does it here,
   // outside the lock, because rewriting writes the Docs that hold them.
   if (!withFolder) {
@@ -3018,6 +3028,8 @@ async function deleteRegisteredDocumentExactly(options: {
 }): Promise<{ documentId: DocumentId; path: string }> {
   assertSpaceAccess(options.spaceId, "edit");
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
+  // Read before it goes: Activity names a deleted Doc by its title.
+  const title = await documentTitleAt(options.spaceId, options.path)
   // A Doc open for editing has a live room. The delete lets its editors go
   // and retires its collaboration state, so no one keeps editing, or is
   // served, the deleted Doc; a refused delete leaves the room as it was.
@@ -3072,6 +3084,11 @@ async function deleteRegisteredDocumentExactly(options: {
   await notifyWorkspaceChangeAndWait({
     type: "documentCorpus",
     spaceId: options.spaceId,
+  })
+  recordActivity({
+    spaceId: options.spaceId,
+    action: "doc.deleted",
+    target: { kind: "doc", path: result.path, ...(title ? { title } : {}) },
   })
   return result
 }

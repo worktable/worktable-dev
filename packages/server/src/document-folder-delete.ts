@@ -1,5 +1,6 @@
 import { resolve } from "node:path"
 import { CanonicalIdSchema } from "@worktable/types"
+import { recordActivity } from "./activity-log.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import { DOCUMENT_DELETE_ADAPTER_IDS } from "./document-delete-adapter.ts"
 import {
@@ -21,6 +22,7 @@ import {
   documentPathKeyIsAtOrBelow,
   documentPathKeyIsBelow,
 } from "./document-path.ts"
+import { documentTitleAt } from "./document-query.ts"
 import { documentStorageProfiles } from "./document-storage-profile.ts"
 import { removeEmptiedFolders } from "./document-folder-move.ts"
 import { withDocGenerationLocks } from "./doc-generation-lock.ts"
@@ -208,6 +210,8 @@ export async function deleteDocumentFolder(
   options: { keep?: readonly string[] } = {}
 ): Promise<DeleteDocumentFolderResult> {
   const keep = new Set(options.keep ?? [])
+  // Read before anything goes: Activity names a deleted Doc by its title.
+  const title = await documentTitleAt(spaceId, path)
   let planned: PlannedDocumentFolderDelete[] | DeleteDocumentFolderResult
   try {
     planned = await planDocumentFolderDelete(spaceId, path, keep)
@@ -301,7 +305,22 @@ export async function deleteDocumentFolder(
         )
       )
     }
-    return { ok: true, path, paths: outcome.deleted.map((entry) => entry.path) }
+    const paths = outcome.deleted.map((entry) => entry.path)
+    if (paths.length > 0) {
+      // A Doc deleted with what is under it, or a plain folder of Docs.
+      const isDoc = paths.includes(path)
+      recordActivity({
+        spaceId,
+        action: "doc.deleted",
+        target: {
+          kind: "doc",
+          path,
+          ...(isDoc ? (title ? { title } : {}) : { folder: true }),
+        },
+        count: paths.length,
+      })
+    }
+    return { ok: true, path, paths }
   }
   const underNamespaceLocks = () =>
     withDocPathLock(spaceId, () =>

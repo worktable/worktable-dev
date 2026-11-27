@@ -23,6 +23,8 @@ export const ActivityActionSchema = z.enum([
   "doc.edited",
   "doc.archived",
   "doc.restored",
+  "doc.moved",
+  "doc.deleted",
   "doc.kept",
   "doc.madeTemporary",
   "doc.pinned",
@@ -52,6 +54,10 @@ export const ActivityTargetSchema = z.discriminatedUnion("kind", [
     documentId: z.string().optional(),
     title: z.string().optional(),
     formatId: z.string().optional(),
+    /** The path names a folder of Docs, not one Doc. */
+    folder: z.boolean().optional(),
+    /** Set when read, never stored: nothing is at this path now. */
+    missing: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal("thread"),
@@ -79,6 +85,12 @@ export const ActivityEventSchema = z.object({
   category: z.enum(["comment", "instruction"]).optional(),
   /** Number of items the event covers, such as records added. */
   count: z.number().int().positive().optional(),
+  /**
+   * A move: where it moved from and to. The target's own path follows later
+   * moves, so the line can still open what moved.
+   */
+  from: z.string().optional(),
+  to: z.string().optional(),
 })
 
 export type ActivityActor = z.infer<typeof ActivityActorSchema>

@@ -1,6 +1,7 @@
 import { readdir, rmdir } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { CanonicalIdSchema } from "@worktable/types"
+import { recordActivity } from "./activity-log.ts"
 import { noteDocumentActivity } from "./document-activity.ts"
 import { buildDocumentCatalog, type DocumentCatalog } from "./document-catalog.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
@@ -445,11 +446,24 @@ export async function moveDocumentFolder(
         )
       )
     }
+    const renamed = outcome.renamed.map(({ from, to }) => ({ from, to }))
+    if (renamed.length > 0) {
+      // A Doc moved with what is under it, or a plain folder of Docs.
+      const isDoc = renamed.some((entry) => entry.from === fromPrefix)
+      recordActivity({
+        spaceId,
+        action: "doc.moved",
+        target: { kind: "doc", path: toPrefix, ...(isDoc ? {} : { folder: true }) },
+        from: fromPrefix,
+        to: toPrefix,
+        count: renamed.length,
+      })
+    }
     return {
       ok: true,
       from: fromPrefix,
       to: toPrefix,
-      renamed: outcome.renamed.map(({ from, to }) => ({ from, to })),
+      renamed,
     } satisfies MoveDocumentFolderResult
   }
   const underDocumentLock = () =>

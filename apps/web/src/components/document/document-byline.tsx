@@ -342,6 +342,7 @@ const IN_DOC: Partial<Record<ActivityEntry["action"], string>> = {
   "doc.edited": "edited",
   "doc.archived": "archived it",
   "doc.restored": "restored it",
+  "doc.moved": "moved it",
   "doc.kept": "kept it",
   "doc.madeTemporary": "made it temporary",
   "doc.pinned": "pinned it",

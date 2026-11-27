@@ -186,7 +186,9 @@ function PendingRow({
             type="button"
             aria-label="Done"
             onClick={() => onDone(item.id)}
-            className="flex size-7 cursor-pointer items-center justify-center rounded-md border border-card-border bg-card text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            // The pad around it makes a finger's target of 44px, so a near
+            // miss does not open the row.
+            className="relative flex size-7 cursor-pointer items-center justify-center rounded-md border border-card-border bg-card text-muted-foreground outline-none before:absolute before:-inset-[9px] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Check className="size-3.5" />
           </button>
@@ -202,7 +204,7 @@ const lowerFirst = (text: string) =>
 /** Shown when something is waiting on the reader, or when that is unknown. */
 export function PendingSection({ spaceId }: { spaceId?: string }) {
   const pending = usePending(spaceId)
-  const markDone = useMarkPendingDone()
+  const markDone = useMarkPendingDone(spaceId)
   const done = (id: string) =>
     markDone.mutate(id, {
       onError: () => toast.error("Couldn’t save. Try again."),

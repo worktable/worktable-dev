@@ -159,7 +159,15 @@ async function commentRequests(
 export type PendingDoneResult =
   | { refused: "not-found" | "not-allowed" }
   /** The comment as it now is, for whoever has its Doc open. */
-  | { refused?: undefined; comment?: { spaceId: string; annotation: Annotation } }
+  | {
+      refused?: undefined
+      comment?: {
+        spaceId: string
+        annotationId: string
+        /** Absent when only the common API can show the comment. */
+        annotation: Annotation | null
+      }
+    }
 
 /**
  * The reader marks something that waits on them as done without answering
@@ -167,12 +175,14 @@ export type PendingDoneResult =
  */
 export async function markPendingDone(
   identity: TokenIdentity,
-  id: string
+  id: string,
+  /** The Space whose list showed it; an archived Space lists only there. */
+  spaceId?: string
 ): Promise<PendingDoneResult> {
   // Only a person lets a request go this way: an agent's requests carry
   // deliveries and holds that end with its reply.
   if (identity.principal.type !== "human") return { refused: "not-allowed" }
-  const item = (await listPending(identity)).items.find(
+  const item = (await listPending(identity, spaceId)).items.find(
     (candidate) => candidate.id === id
   )
   if (!item) return { refused: "not-found" }
@@ -199,7 +209,13 @@ export async function markPendingDone(
       item.annotationId,
       reader.id
     )
-    return { comment: { spaceId: item.spaceId, annotation } }
+    return {
+      comment: {
+        spaceId: item.spaceId,
+        annotationId: item.annotationId,
+        annotation,
+      },
+    }
   }
   // The other kinds end by acting on them where they are.
   return { refused: "not-allowed" }

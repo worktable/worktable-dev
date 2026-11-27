@@ -65,11 +65,18 @@ pendingRouter.get("/", async (c) =>
 // POST /api/pending/done: the reader lets go of something that waits on them
 // without answering it.
 pendingRouter.post("/done", async (c) => {
-  const body = (await c.req.json().catch(() => null)) as { id?: unknown } | null
+  const body = (await c.req.json().catch(() => null)) as {
+    id?: unknown
+    spaceId?: unknown
+  } | null
   if (typeof body?.id !== "string" || !body.id) {
     return c.json({ error: "id is required", code: "VALIDATION_ERROR" }, 400)
   }
-  const done = await markPendingDone(c.get("identity"), body.id)
+  const done = await markPendingDone(
+    c.get("identity"),
+    body.id,
+    typeof body.spaceId === "string" && body.spaceId ? body.spaceId : undefined
+  )
   if (done.refused === "not-found") {
     return c.json({ error: "Nothing waits under that id", code: "NOT_FOUND" }, 404)
   }
@@ -78,11 +85,11 @@ pendingRouter.post("/done", async (c) => {
   }
   // A thread tells its viewers itself; a comment's Doc may be open elsewhere.
   if (done.comment) {
-    const { spaceId, annotation } = done.comment
+    const { spaceId, annotationId, annotation } = done.comment
     wsManager.broadcast(spaceId, {
       type: "annotation_update",
       spaceId,
-      data: { annotationId: annotation.id, annotation, event: "updated" },
+      data: { annotationId, ...(annotation ? { annotation } : {}), event: "updated" },
     })
   }
   return c.json({ ok: true })

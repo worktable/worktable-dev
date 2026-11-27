@@ -614,7 +614,7 @@ export async function replyAnnotation(spaceId: string, annotationId: string, bod
  * comment itself is unchanged, so it says nothing new to anyone else. `path`
  * is its Doc or HTML Doc, which is where it is looked for.
  */
-export async function dismissAnnotationRequests(spaceId: string, path: string, annotationId: string, participantId: string): Promise<Annotation> {
+export async function dismissAnnotationRequests(spaceId: string, path: string, annotationId: string, participantId: string): Promise<Annotation | null> {
   assertSpaceAccess(spaceId, commentAccess());
   if (await usesDocumentDataV2()) {
     return dismissDocumentAnnotationRequestsV2({ spaceId, path, annotationId, participantId })

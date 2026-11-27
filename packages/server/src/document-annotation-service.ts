@@ -687,13 +687,14 @@ export async function replyDocumentAnnotation(options: {
 /**
  * A recipient lets go of what a comment asked them, without replying. The
  * comment is found on its own document, so nothing else in the Space is read.
+ * Returns it in the original shape, or null when only the common API shows it.
  */
 export async function dismissDocumentAnnotationRequestsV2(options: {
   spaceId: string
   path: string
   annotationId: string
   participantId: string
-}): Promise<Annotation> {
+}): Promise<Annotation | null> {
   await requireV2AnnotationWrites()
   return useDurableDocument(options.spaceId, options.path, async (document) => {
     const owner = await ownerForDocument(options.spaceId, document)
@@ -717,10 +718,8 @@ export async function dismissDocumentAnnotationRequestsV2(options: {
     owner.annotations[index] = annotation
     await writeOwner(options.spaceId, owner)
     noteChanged(options.spaceId, owner, annotation)
-    const projected = legacyAnnotation(owner, annotation)
-    if (!projected)
-      throw new Error("Annotation selector requires the common API")
-    return projected
+    // A comment the original shape cannot show is let go all the same.
+    return legacyAnnotation(owner, annotation)
   })
 }
 

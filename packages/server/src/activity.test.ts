@@ -501,13 +501,26 @@ describe("workspace activity", () => {
     )
     expect(refused.status).toBe(403)
 
+    // An archived Space lists what waits only on its own page, and that is
+    // where it is marked done from.
+    await setSpaceArchived("company", true)
+    const elsewhere = await app().fetch(
+      new Request("http://localhost/api/pending/done", {
+        method: "POST",
+        body: JSON.stringify({ id: waiting[0]!.id }),
+        headers: { "Content-Type": "application/json" },
+      })
+    )
+    expect(elsewhere.status).toBe(404)
     for (const item of waiting) {
       await request("/api/pending/done", {
         method: "POST",
-        body: { id: item.id },
+        body: { id: item.id, spaceId: "company" },
       })
     }
-    expect((await request<PendingResult>("/api/pending")).items).toEqual([])
+    expect(
+      (await request<PendingResult>("/api/pending?spaceId=company")).items
+    ).toEqual([])
     // Whoever asked sees it was let go: nothing answered it.
     const stored = await readThread(location, asked.threadId)
     expect(stored.messages[0]?.responseRequest?.status).toBe("withdrawn")

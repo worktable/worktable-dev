@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
+import { createRecord, readRecordChanges, updateRecord } from "./record-store.ts"
 import {
   emptyQuickdrawDocument,
   QUICKDRAW_FORMAT,
@@ -928,5 +929,28 @@ describe("storage limit", () => {
       }
       setStorageLimitForTests(null)
     }
+  })
+  it("keeps no Record change that would pass the total limit, and still writes the Record", async () => {
+    await createRecord("notes", "queue", {
+      id: "reply",
+      data: { status: "aaaa" },
+    })
+    const changes = async () =>
+      (await readRecordChanges("notes", "queue", "reply")).data ?? []
+    expect(await changes()).toHaveLength(1)
+    // Room for less than one change's line. Writing a value of the same size
+    // adds nothing to the Record's file, so the write itself still fits.
+    await limitsAbove(64)
+    const written = await updateRecord("notes", "queue", "reply", {
+      data: { status: "bbbb" },
+    })
+    expect(written.data?.data["status"]).toBe("bbbb")
+    expect(await changes()).toHaveLength(1)
+    // With room again, changes are kept again.
+    await limitsAbove(64 * KB)
+    await updateRecord("notes", "queue", "reply", { data: { status: "cccc" } })
+    expect((await changes())[0]?.fields).toEqual({
+      status: { before: "bbbb", after: "cccc" },
+    })
   })
 })

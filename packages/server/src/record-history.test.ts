@@ -2,13 +2,18 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import type { RecordChange } from "@worktable/types"
 import { Hono } from "hono"
 import { existsSync } from "node:fs"
-import { appendFile, mkdtemp, rm } from "node:fs/promises"
+import { appendFile, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { drainActivity, runAsActivityActor } from "./activity-log.ts"
 import { setAppDirOverride } from "./app-storage.ts"
 import { ownerIdentity } from "./auth.ts"
-import { pruneRecordHistories, recordHistoryPath } from "./record-history.ts"
+import {
+  MAX_HISTORY_BYTES,
+  MAX_VALUE_BYTES,
+  pruneRecordHistories,
+  recordHistoryPath,
+} from "./record-history.ts"
 import {
   batchRecordActivity,
   createRecord,
@@ -192,6 +197,58 @@ describe("record history", () => {
     expect(existsSync(path)).toBe(true)
     await request("DELETE", `${queue}/reply-1`)
     expect(existsSync(path)).toBe(false)
+  })
+
+  it("stays bounded: a value too large is not kept, and a history loses its oldest changes first", async () => {
+    await runAsActivityActor(agent, () =>
+      createRecord("outreach", "queue", {
+        id: "big",
+        data: { title: "Big", final_text: "short" },
+        createdBy: agent.id,
+      })
+    )
+    const write = (final_text: string, status?: string) =>
+      runAsActivityActor(agent, () =>
+        updateRecord("outreach", "queue", "big", {
+          data: { final_text, ...(status ? { status } : {}) },
+          updatedBy: agent.id,
+        })
+      )
+    // Past the size a value is kept at, the change says only that.
+    await write("x".repeat(MAX_VALUE_BYTES + 1), "pending")
+    expect((await history("big"))[0]?.fields).toEqual({
+      final_text: { before: "short", afterTooLarge: true },
+      status: { after: "pending" },
+    })
+
+    // Values just under that size fill a history in a few changes. It stays
+    // within its size, keeps the newest, and still reads whole.
+    const nearly = (letter: string) => letter.repeat(MAX_VALUE_BYTES - 16)
+    for (const letter of "abcdefghijkl") await write(nearly(letter))
+    const path = recordHistoryPath("outreach", "queue", "big")!
+    expect((await stat(path)).size).toBeLessThanOrEqual(MAX_HISTORY_BYTES)
+    const kept = await history("big")
+    expect(kept.length).toBeGreaterThan(1)
+    expect(kept.length).toBeLessThan(14)
+    expect(kept[0]?.fields?.final_text?.after).toBe(nearly("l"))
+
+    // A read returns a page, and says how many there are.
+    const page = await request<{ changes: RecordChange[]; total: number }>(
+      "GET",
+      `${queue}/big/history?limit=2`
+    )
+    expect(page.json.changes).toHaveLength(2)
+    expect(page.json.total).toBe(kept.length)
+
+    // A history something outside Worktable left far larger still reads,
+    // from its newest end.
+    const junk = `\n${JSON.stringify({ junk: "y".repeat(1024) })}`
+    await writeFile(path, junk.repeat(4096))
+    await write("after the junk")
+    expect((await history("big"))[0]?.fields?.final_text?.after).toBe(
+      "after the junk"
+    )
+    expect((await stat(path)).size).toBeLessThanOrEqual(MAX_HISTORY_BYTES)
   })
 
   it("marks the records one call changed, and holds history to the retention policy", async () => {

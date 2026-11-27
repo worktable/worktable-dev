@@ -116,10 +116,15 @@ export const RecordFileSchema = z.looseObject({
   data: z.record(z.string(), z.unknown()).default({}),
 });
 
-/** A value as it was and as it became; a side left out means the key was absent. */
+/**
+ * A value as it was and as it became; a side left out means the key was
+ * absent, unless the side is marked as too large to have been kept.
+ */
 export const RecordValueChangeSchema = z.object({
   before: z.unknown().optional(),
   after: z.unknown().optional(),
+  beforeTooLarge: z.boolean().optional(),
+  afterTooLarge: z.boolean().optional(),
 });
 
 /**

@@ -18,6 +18,13 @@
 // line, so a line a crash cut short ends there: it is skipped when read and
 // never joins the change after it.
 //
+// History is bounded however it is written. A value over MAX_VALUE_BYTES is
+// not kept: its change says only that it was too large. A change stays
+// within MAX_CHANGE_BYTES and a Record's history within MAX_HISTORY_BYTES,
+// its oldest changes going first, so reading one never loads more than that.
+// Each change is admitted under the storage limit as history; one that would
+// pass the limit is not kept.
+//
 // History is kept as long as Doc versions are (settings-store.ts retention):
 // `pruneRecordHistories` runs with the retention sweep. The newest change of
 // a Record always stays, so a Record can always say who last changed it and
@@ -28,7 +35,7 @@
 
 import { randomBytes } from "node:crypto"
 import { existsSync } from "node:fs"
-import { appendFile, mkdir, readFile, readdir, rm } from "node:fs/promises"
+import { appendFile, mkdir, open, readdir, rm, stat } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { isDeepStrictEqual } from "node:util"
 import {
@@ -47,12 +54,19 @@ import {
   getServerSettings,
   type RetentionPolicy,
 } from "./settings-store.ts"
+import { admitStorageWrite, StorageLimitError } from "./storage-limit.ts"
 import { noteStorageChange } from "./storage-usage.ts"
 import { getSpacesDir, getVersionsDir } from "./workspace.ts"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 /** Under a count policy, how long the history of a Record that is gone stays. */
 const GONE_RECORD_DAYS = 30
+/** A value larger than this, as JSON, is not kept. */
+export const MAX_VALUE_BYTES = 64 * 1024
+/** One change stays within this; past it, its largest values go first. */
+export const MAX_CHANGE_BYTES = 256 * 1024
+/** A Record's history stays within this; past it, its oldest changes go. */
+export const MAX_HISTORY_BYTES = 1024 * 1024
 
 function isCanonicalId(id: string): boolean {
   return CanonicalIdSchema.safeParse(id).success
@@ -99,11 +113,45 @@ function changedValues(
     const has = Object.hasOwn(after, key)
     if (had && has && isDeepStrictEqual(before[key], after[key])) continue
     changed[key] = {
-      ...(had ? { before: before[key] } : {}),
-      ...(has ? { after: after[key] } : {}),
+      ...(had ? kept("before", before[key]) : {}),
+      ...(has ? kept("after", after[key]) : {}),
     }
   }
   return Object.keys(changed).length > 0 ? changed : undefined
+}
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value) ?? "")
+}
+
+/** One side of a change, or only the mark that it was too large to keep. */
+function kept(side: "before" | "after", value: unknown): RecordValueChange {
+  if (jsonBytes(value) > MAX_VALUE_BYTES) {
+    return side === "before" ? { beforeTooLarge: true } : { afterTooLarge: true }
+  }
+  return side === "before" ? { before: value } : { after: value }
+}
+
+/** Hold one change to MAX_CHANGE_BYTES by dropping its largest values. */
+function bounded(change: RecordChange): RecordChange {
+  while (Buffer.byteLength(line(change)) > MAX_CHANGE_BYTES) {
+    let largest: { values: RecordValueChange; side: "before" | "after"; bytes: number } | null = null
+    for (const values of [
+      ...Object.values(change.fields ?? {}),
+      ...Object.values(change.metadata ?? {}),
+    ]) {
+      for (const side of ["before", "after"] as const) {
+        if (!Object.hasOwn(values, side)) continue
+        const bytes = jsonBytes(values[side])
+        if (!largest || bytes > largest.bytes) largest = { values, side, bytes }
+      }
+    }
+    if (!largest) break
+    delete largest.values[largest.side]
+    if (largest.side === "before") largest.values.beforeTooLarge = true
+    else largest.values.afterTooLarge = true
+  }
+  return change
 }
 
 /** A change made through an HTML Doc is stamped `widget:<path>`. */
@@ -123,13 +171,47 @@ function parseChanges(text: string): RecordChange[] {
   })
 }
 
-async function readChanges(path: string): Promise<RecordChange[]> {
+/** The most a read of one history loads: a full history and one change past it. */
+const READ_MAX_BYTES = MAX_HISTORY_BYTES + MAX_CHANGE_BYTES
+
+/**
+ * A history's text, or its newest READ_MAX_BYTES when something outside
+ * Worktable left it larger; null when there is none. A cut starts mid-line,
+ * and that line is skipped as any unreadable line is.
+ */
+async function readHistoryText(path: string): Promise<string | null> {
+  let handle
   try {
-    return parseChanges(await readFile(path, "utf8"))
+    handle = await open(path, "r")
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
     throw error
   }
+  try {
+    const { size } = await handle.stat()
+    const length = Math.min(size, READ_MAX_BYTES)
+    const buffer = Buffer.alloc(length)
+    await handle.read(buffer, 0, length, size - length)
+    return buffer.toString("utf8")
+  } finally {
+    await handle.close()
+  }
+}
+
+async function readChanges(path: string): Promise<RecordChange[]> {
+  return parseChanges((await readHistoryText(path)) ?? "")
+}
+
+/** The newest changes that fit a Record's history, the newest always among them. */
+function withinHistory(changes: readonly RecordChange[]): RecordChange[] {
+  let bytes = 0
+  let from = changes.length
+  while (from > 0) {
+    bytes += Buffer.byteLength(line(changes[from - 1]!))
+    if (bytes > MAX_HISTORY_BYTES && from < changes.length) break
+    from -= 1
+  }
+  return changes.slice(from)
 }
 
 /** One change as it is appended: the line break first (see the header). */
@@ -173,7 +255,7 @@ export async function noteRecordChange(
     note.kind === "changed"
       ? changedValues(before?.metadata ?? {}, after.metadata)
       : undefined
-  const change: RecordChange = {
+  const change: RecordChange = bounded({
     id: `rch_${randomBytes(9).toString("base64url")}`,
     at: after.updatedAt,
     by,
@@ -183,11 +265,27 @@ export async function noteRecordChange(
     ...(fields ? { fields } : {}),
     ...(metadata ? { metadata } : {}),
     ...(note.reason ? { reason: note.reason } : {}),
+  })
+  const text = line(change)
+  // History counts toward the storage limit as history. A change that would
+  // pass it is not kept: the Record is written already, and history must
+  // never be what fills the disk. This never waits, so locks may be held.
+  let room
+  try {
+    room = admitStorageWrite(Buffer.byteLength(text), { files: 0 })
+  } catch (error) {
+    if (!(error instanceof StorageLimitError)) throw error
+    console.warn("[record-history] storage is full; a change was not kept")
+    return
   }
   try {
     await withHistoryLock(path, async () => {
       await mkdir(dirname(path), { recursive: true })
-      await appendFile(path, line(change))
+      await appendFile(path, text)
+      // Past its size, a history loses its oldest changes.
+      if ((await stat(path)).size > MAX_HISTORY_BYTES) {
+        await atomicWriteText(path, serialize(withinHistory(await readChanges(path))))
+      }
       // Keeping the newest few per item prunes as it writes, as Docs do. The
       // read takes time: a policy relaxed meanwhile must not lose changes to
       // the stricter one.
@@ -206,6 +304,8 @@ export async function noteRecordChange(
     })
   } catch (error) {
     console.error("[record-history] could not keep a change:", logError(error))
+  } finally {
+    room.release()
   }
 }
 
@@ -291,7 +391,7 @@ export async function pruneRecordHistories(
         if (!path) continue
         try {
           await withHistoryLock(path, async () => {
-            const text = await readFile(path, "utf8").catch(() => null)
+            const text = await readHistoryText(path).catch(() => null)
             // The wait for the lock and the read both take time: a policy
             // relaxed meanwhile must not lose changes to the stricter one.
             if (text === null || !stillCurrent()) return

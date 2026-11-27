@@ -1072,7 +1072,9 @@ function WidgetDetailPage({
               onLoad={() => setLoadedFrameSrc(frameSrc)}
               title={title}
               src={frameSrc}
-              sandbox="allow-scripts allow-modals"
+              // Forms reach the page's own submit handlers; the frame's
+              // form-action 'none' still stops them from sending anywhere.
+              sandbox="allow-scripts allow-modals allow-forms"
               referrerPolicy="no-referrer"
               data-worktable-widget-frame="true"
               className="h-full w-full flex-1 border-0 bg-background"

@@ -41,7 +41,6 @@ const EXTERNAL_JS_URL_RE = /\bimport\s*\(\s*["']https?:\/\//i
 const EXTERNAL_CSS_RE = /<link\b[^>]*rel\s*=\s*["']stylesheet["'][^>]*>/i
 const EXTERNAL_SCRIPT_RE = /<script\b[^>]*\bsrc\s*=/i
 const INLINE_EVENT_HANDLER_RE = /\son[a-z]+\s*=/i
-const FORM_TAG_RE = /<form\b/i
 const BROWSER_STORAGE_RE = /\b(?:localStorage|sessionStorage|indexedDB)\b/i
 const RAW_FETCH_RE = /\bfetch\s*\(/i
 const DIRECT_WORKTABLE_API_FETCH_RE = /\bfetch\s*\(\s*['"]\/api\//i
@@ -167,7 +166,7 @@ Outbound fetch requires network permission. Without permission, the sandbox bloc
 
 openDocument accepts a Space-root document path such as plans/brief and must be called from a button or link click. Worktable follows moved-path aliases and opens the canonical document. Docs with registered viewers use their specialized view; other supported formats open a read-only download fallback. Missing or conflicting documents reject without leaving the current HTML Doc.
 
-addEventListener is supported for interaction. Buttons default to form submission unless type="button" is set. Forms cannot navigate the sandbox safely; submit handlers can persist through Records or state. Inline event handlers are accepted with a warning.
+addEventListener is supported for interaction. A form's submit event reaches the page's own handler: call event.preventDefault() there and save through Records or state. A form never sends anywhere, and a button inside a form submits it unless it has type="button". Inline event handlers are accepted with a warning.
 
 Narrative Doc writes validate Mermaid automatically. HTML cannot reliably expose Mermaid embedded in arbitrary markup or JavaScript. worktable_mermaid validates raw Mermaid source; with preview: true it also returns an SVG that can be embedded.`
 
@@ -397,14 +396,6 @@ export function validateWidgetHtml(
       severity: "error",
       code: "external_asset",
       message: "External http/https assets are not allowed in widgets.",
-    })
-  }
-  if (FORM_TAG_RE.test(html)) {
-    issues.push({
-      severity: "warning",
-      code: "form_submit_sandbox",
-      message:
-        "Forms are rendered in a sandbox. Worktable will prevent unsafe page submission; prefer JS submit handlers or button actions.",
     })
   }
   if (BROWSER_STORAGE_RE.test(html)) {
@@ -670,7 +661,8 @@ window.fetch=function(input,init){
 window.addEventListener('submit',function(event){
   if(event.defaultPrevented) return;
   event.preventDefault();
-  emitDiagnostic('warning','form_submit_intercepted','A form submit was kept inside the widget instead of navigating away.','Attach a submit handler that saves through worktable.records/state, or use button type="button" for app actions.');
+  // The page still works, so this is for its author, not its reader.
+  emitDiagnostic('info','form_submit_intercepted','A form submit was kept inside the page instead of navigating away.','Handle the submit event of the form and save through worktable.records or worktable.state.');
 });
 function normalizeStateSetArgs(key,value){
   if(typeof key==='string') return {mode:'key',key,value};

@@ -34,9 +34,9 @@ A shared document shows its latest saved content. Mermaid diagrams render
 without their links. Readers can switch it between light and dark from its
 header.
 
-A shared HTML Doc runs for readers as it does for you: its buttons, scripts
-and layout work. It runs in a locked frame with no network access, forms or
-pop-ups. Readers can't change Records, their interface choices stay in their
+A shared HTML Doc runs for readers as it does for you: its buttons, forms,
+scripts and layout work. It runs in a locked frame with no network access or
+pop-ups, and a form sends nothing anywhere. Readers can't change Records, their interface choices stay in their
 tab, and links to private Worktable content don't open. Readers see the
 Records a page reads only when its link shows them; see
 [Live data](#live-data).

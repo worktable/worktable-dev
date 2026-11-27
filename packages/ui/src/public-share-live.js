@@ -183,9 +183,10 @@
 
   const iframe = document.createElement("iframe")
   iframe.title = typeof frame.title === "string" ? frame.title : ""
-  // Scripts only: no popups, so the tool can't open a window of its own, and
-  // no same-origin access, so it has no storage or cookies.
-  iframe.setAttribute("sandbox", "allow-scripts")
+  // Scripts and forms: no popups, so the tool can't open a window of its own,
+  // and no same-origin access, so it has no storage or cookies. A form
+  // reaches the tool's submit handler; its form-action 'none' sends it nowhere.
+  iframe.setAttribute("sandbox", "allow-scripts allow-forms")
   iframe.referrerPolicy = "no-referrer"
   iframe.src = frameUrl.href
 

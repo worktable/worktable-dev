@@ -87,7 +87,7 @@ function contentHeaders(shareOrigin: string, live = false): Headers {
     "Origin-Agent-Cluster": "?1",
     "Content-Security-Policy": [
       live
-        ? "sandbox allow-scripts"
+        ? "sandbox allow-scripts allow-forms"
         : "sandbox allow-popups allow-popups-to-escape-sandbox",
       "default-src 'none'",
       live ? "script-src 'unsafe-inline'" : "script-src 'none'",

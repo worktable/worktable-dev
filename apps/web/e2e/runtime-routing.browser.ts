@@ -21,18 +21,20 @@ test.beforeAll(async () => {
   await create("/spaces/mounted-tools/widgets", {
     id: "report", name: "Mounted report",
     permissions: { records: { tasks: { read: true, create: true } }, state: { read: true, write: true } },
-    html: `<!doctype html><main><p id="summary">Loading report</p><p id="choice"></p><button id="add">Add task</button></main><script>
+    html: `<!doctype html><main><p id="summary">Loading report</p><p id="choice"></p><form id="add"><input name="name" value="Added task"><button>Add task</button></form></main><script>
       async function render() {
         const rows = await worktable.records.query('tasks');
         const state = await worktable.state.get();
         document.querySelector('#summary').textContent = rows.length + ' tasks';
         document.querySelector('#choice').textContent = state.view || 'All';
       }
-      document.querySelector('#add').onclick = async () => {
-        await worktable.records.create('tasks', {name:'Added task'});
+      // A form reaches the page's own submit handler.
+      document.querySelector('#add').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        await worktable.records.create('tasks', {name: new FormData(event.target).get('name')});
         await worktable.state.set('view', 'Open');
         await render();
-      };
+      });
       render();
     </script>`,
   })

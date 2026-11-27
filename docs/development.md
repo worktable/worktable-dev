@@ -127,7 +127,8 @@ runs, and the weekly schedule run full verification. The required `verify` resul
 checks the selected jobs and their evidence for the same source and run.
 Pull requests merge through the merge queue, which runs the required checks
 once more on the change on top of current `main`, so a pull request does not
-need rebasing when `main` moves.
+need rebasing when `main` moves. To retry a failed Verify run, re-run all
+its jobs: the required `verify` result accepts only evidence from one attempt.
 See [CI](../.github/workflows/ci.yml) for lane selection and job details.
 
 ## Generated files

@@ -368,7 +368,14 @@ jobs:
         run: |-
           profile=changed
           if [ "$SCOPE" = full ]; then profile=full; fi
-          bun scripts/testing/aggregate-ci.ts aggregate --root "$RUNNER_TEMP/ci-fragments" --expected "$SELECTED_SUITES" --source "$GITHUB_SHA" --tree "$(git rev-parse 'HEAD^{tree}')" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --profile "$profile" --output test-results/canonical/"$profile"
+          if ! bun scripts/testing/aggregate-ci.ts aggregate --root "$RUNNER_TEMP/ci-fragments" --expected "$SELECTED_SUITES" --source "$GITHUB_SHA" --tree "$(git rev-parse 'HEAD^{tree}')" --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --profile "$profile" --output test-results/canonical/"$profile"; then
+            # Evidence is bound to one attempt. Re-running only the failed
+            # jobs leaves the other lanes' evidence in the earlier attempt.
+            if [ "$GITHUB_RUN_ATTEMPT" -gt 1 ]; then
+              echo "::error::Attempt $GITHUB_RUN_ATTEMPT is missing lanes that passed in an earlier attempt. Verify needs every lane's evidence from one attempt: re-run all jobs, not only the failed ones."
+            fi
+            exit 1
+          fi
       - name: Upload consolidated evidence
         if: always() && needs.plan.outputs.required == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

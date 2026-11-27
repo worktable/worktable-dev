@@ -35,17 +35,27 @@ const BOTTOM = 112
 const PILL = 48
 const EDGE = 8
 
+/** The top of the Doc's scrolling pane, below the app's header. */
+function paneTop(root: HTMLElement | null): number {
+  for (let node = root?.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node)
+    if (overflowY === "auto" || overflowY === "scroll")
+      return Math.max(node.getBoundingClientRect().top, 0)
+  }
+  return 0
+}
+
 /**
  * Where the touch button goes: under the selection, the side its Copy menu
- * leaves free. When the selection ends too low, at the top of the screen.
+ * leaves free. When the selection ends too low, at the top of the Doc.
  */
-function touchTop(bounds: DOMRect, last: DOMRect): number {
+function touchTop(bounds: DOMRect, last: DOMRect, top: number): number {
   const height = window.innerHeight
   const menuBelow = bounds.top < MENU
   const below = last.bottom + HANDLE + (menuBelow ? MENU : 0)
   if (below + PILL <= height - BOTTOM) return below
   // The menu sits just above the selection, or isn't above it at all.
-  if (menuBelow || bounds.top - MENU >= EDGE + PILL + EDGE) return EDGE
+  if (menuBelow || bounds.top - MENU >= top + PILL + EDGE) return top
   // A selection from near the top to near the bottom: just above Chrome's bar.
   return height - BOTTOM - PILL
 }
@@ -111,7 +121,8 @@ export function SelectionComment({
         window.innerWidth - half
       )
       if (coarsePointer()) {
-        setShown({ top: touchTop(bounds, line), left, touch: true })
+        const top = touchTop(bounds, line, paneTop(rootRef.current) + EDGE)
+        setShown({ top, left, touch: true })
         return
       }
       setShown({

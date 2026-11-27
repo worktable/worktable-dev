@@ -3,10 +3,58 @@ title: Remote access
 description: Reach a local or self-hosted workspace from another device or agent.
 ---
 
-By default Worktable is only available on its own machine. Reachable mode lets
-other devices and remote agents use a self-hosted workspace.
+By default Worktable is only available on its own machine.
 
-## Turn it on
+[Worktable Link](#worktable-link) is the preferred way to reach a local
+Worktable remotely. ChatGPT, Claude and other AI apps connect through your
+Cloud account, and share links work, with no tunnel or public address to keep
+up.
+
+Reachable mode opens Worktable itself to other devices: Desktop on another
+computer, teammates, and coding agents on other machines. You supply the HTTPS
+address.
+
+## Worktable Link
+
+Worktable Link connects a local or self-hosted installation to supported AI
+apps and public sharing through your Cloud account. Check **Settings → Remote**
+for availability. A remote self-hosted installation needs an HTTPS address.
+
+1. Choose **Sign in** in **Settings → Remote** and complete browser sign-in.
+2. Choose the Cloud Worktable whose plan covers this device and turn on
+   **Worktable Link**. Every plan includes Link, the free Solo plan too. With
+   no Cloud Worktable yet, choose **Create a Cloud Worktable** first. Signing
+   in alone does not enable access.
+3. For ChatGPT or Claude, choose the app in **Settings → Agents → Connect
+   App**, choose **Set Up**, then add the official Worktable app. If the app
+   already works in another Worktable, use **Move Here** beside where it
+   works. For another AI app, open **Connect another app**, copy the device's
+   **MCP URL** into its connector setup and choose OAuth.
+4. Sign in with the same Cloud account and approve the connection.
+
+Keep the device online and Worktable running. Desktop keeps a linked Worktable
+running in the background until you quit. Link passes authorized requests
+through Cloud to the device. It does not copy or sync the workspace to Cloud,
+or expose the full local interface.
+
+- Each plan links a limited number of devices. Unlink one in Cloud to
+  connect another.
+- **Your Worktables** and the Worktable menu show each linked Worktable, its
+  device and whether it is online.
+- On a team installation, an operator turns on Link, and AI apps follow that
+  member's Space permissions.
+
+Turn off **Worktable Link** to pause AI access and public sharing. Turning it
+on again restores the same MCP URL, share links and approved connections.
+**Manage devices** pauses, resumes or disconnects individual apps. Linked apps
+also appear under **Connected Agents** in **Settings → Agents**.
+
+**Unlink** ends the device's access. Linking the same Worktable again restores
+its MCP URL and approved AI apps, so disconnect any app you don't want back
+first. Replacing the local workspace requires linking again. Signing out of
+Cloud does not unlink the device; pause or unlink it to stop access.
+
+## Reachable mode
 
 ```sh
 worktable setup --reachable
@@ -83,49 +131,9 @@ shared documents, URLs and command logs.
 and a disconnect action. **Advanced → Access tokens** lists manually created
 credentials. Disconnect or revoke anything that should no longer have access.
 
-Claude Desktop and ChatGPT use the **Desktop apps** section. The self-hosted
-address must be reachable from the Mac or service running the app.
+ChatGPT and Claude connect through [Worktable Link](#worktable-link).
 
 ## Return to loopback
 
 Run `worktable setup` again and choose loopback. Existing agent connections
 stay listed, so revoke any you no longer want.
-
-## Worktable Link
-
-Worktable Link connects a local or self-hosted installation to supported AI
-apps and public sharing through your Cloud account. Check **Settings → Remote**
-for availability. A remote self-hosted installation needs an HTTPS address.
-
-1. Choose **Sign in** in **Settings → Remote** and complete browser sign-in.
-2. Choose a payer-owned **Worktable subscription** and turn on
-   **Worktable Link**. Signing in alone does not enable access.
-3. For ChatGPT or Claude, choose the app in **Settings → Agents → Connect
-   App**, choose **Set Up**, then add the official Worktable app. If the app
-   already works in another Worktable, use **Move Here** beside where it
-   works. For
-   another AI app, open **Connect another app**, copy the device's
-   **MCP URL** into its connector setup and choose OAuth.
-4. Sign in with the same Cloud account and approve the connection.
-
-Keep the device online and Worktable running. Desktop keeps a linked Worktable
-running in the background until you quit. Link passes authorized requests
-through Cloud to the device. It does not copy or sync the workspace to Cloud,
-or expose the full local interface.
-
-- Each plan links a limited number of devices. Unlink one in Cloud to
-  connect another.
-- **Your Worktables** and the Worktable menu show each linked Worktable, its
-  device and whether it is online.
-- On a team installation, an operator turns on Link, and AI apps follow that
-  member's Space permissions.
-
-Turn off **Worktable Link** to pause AI access and public sharing. Turning it
-on again restores the same MCP URL, share links and approved connections.
-**Manage devices** pauses, resumes or disconnects individual apps. Linked apps
-also appear under **Connected Agents** in **Settings → Agents**.
-
-**Unlink** ends the device's access. Linking the same Worktable again restores
-its MCP URL and approved AI apps, so disconnect any app you don't want back
-first. Replacing the local workspace requires linking again. Signing out of
-Cloud does not unlink the device; pause or unlink it to stop access.

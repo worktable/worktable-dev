@@ -47,12 +47,12 @@ infrastructure and personal context out of release notes.
 ### Fixed
 
 - **Forms in HTML Docs:** A form's Save button on an HTML Doc does what the page says, in Worktable and in previews. Before, pressing it did nothing, and pages agents built with an add or edit form never saved. A form still can't send anything outside the page.
-- **HTML Doc help pages:** The guides now say what HTML Docs do: only a person can turn on network access, a share link runs the page for its readers, and restoring a version brings back the page's permissions but leaves Records as they are. Restoring an HTML Doc says so too, and Share calls an HTML Doc a page rather than a tool.
 - **Calls agents often get wrong:** An agent's call is no longer refused when it names a Doc with `path` in the Doc tools, starts a path with a slash, asks a search by meaning for `maxResults`, or lists comments with `includeTargetContext`.
 - **Everything in Pending can be reached:** Pending lists everything waiting on you. Before, only the newest ten showed, so older requests could not be opened from Home.
 - **Pending opens at the place:** A comment sent to you opens its Doc on that comment, and a thread opens at the message that asked, not at its newest message.
 - **Replies in threads:** A reply that sits right under the message it answers no longer repeats that message above itself.
 - **Pending tip on Home:** The tip about Pending sits under its heading instead of covering the greeting.
+- **HTML Doc help pages:** The guides now say what HTML Docs do: only a person can turn on network access, a share link runs the page for its readers, and restoring a version brings back the page's permissions but leaves Records as they are. Restoring an HTML Doc says so too, and Share calls an HTML Doc a page rather than a tool.
 - **Older agent connections:** An agent connected with an earlier default access now reads Docs and gets the Library's skills. Before, it saw no skills, and Settings showed it without read access.
 - **Security updates:** Libraries with published security fixes are updated, among them the web server, pasting into the editor, reading image sizes, the agent connector and the checks on agents' tool calls.
 - **Desktop security updates:** The Mac app's libraries with published security fixes are updated, among them its secure connections and the code that unpacks updates.

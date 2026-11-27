@@ -179,6 +179,28 @@ export function columnLabel(column: { key: string; field?: RecordField | null })
   return name || fieldLabel(column.key)
 }
 
+/** A number as a cell shows it: grouped, to four decimal places. */
+export function formatRecordNumber(value: number): string {
+  return Number.isInteger(value) ? value.toLocaleString() : value.toLocaleString(undefined, { maximumFractionDigits: 4 })
+}
+
+/** A date as a cell shows it: to the day, or to the minute with its time. */
+export function formatRecordDate(value: string, withTime: boolean): string {
+  // Date-only strings must parse as LOCAL dates: new Date("2026-07-11") is
+  // UTC midnight, which renders as the previous day west of UTC.
+  const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
+    ...(withTime ? { hour: "numeric", minute: "2-digit" } : {}),
+  })
+}
+
 /** Stable select-option dot color: hash the option value onto the chart ramp.
  *  Chips themselves stay neutral (bronze is reserved for material accents,
  *  cobalt for actions); only the dot differentiates. */

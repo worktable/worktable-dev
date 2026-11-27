@@ -11,7 +11,12 @@ import { normalizeRecordFieldType } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { ArrowRight } from "lucide-react"
 import { queryKeys, useActorName } from "@/lib/queries"
-import { columnLabel, type RecordFieldColumn } from "@/lib/records"
+import {
+  columnLabel,
+  formatRecordDate,
+  formatRecordNumber,
+  type RecordFieldColumn,
+} from "@/lib/records"
 import { readRecordHistory } from "@/lib/records-api"
 import { RelativeTime } from "@/lib/time"
 import { humanizeSegment } from "@/lib/tree"
@@ -61,6 +66,48 @@ function documentPaths(
   return [...paths]
 }
 
+/**
+ * Whether two values that differ read the same the way a cell shows them: a
+ * number past its fourth decimal place, a time within the same minute.
+ */
+function readTheSame(type: string, before: unknown, after: unknown): boolean {
+  if (type === "number") {
+    return (
+      typeof before === "number" &&
+      typeof after === "number" &&
+      formatRecordNumber(before) === formatRecordNumber(after)
+    )
+  }
+  if (type === "date" || type === "datetime") {
+    const withTime = type === "datetime"
+    return (
+      formatRecordDate(String(before), withTime) ===
+      formatRecordDate(String(after), withTime)
+    )
+  }
+  return false
+}
+
+/** Text that opens the same for longer than this starts near where it differs. */
+const SHARED_OPENING = 40
+/** How much of the shared opening stays in front of the first difference. */
+const KEPT_OPENING = 24
+
+/**
+ * Two texts from where they first differ, so an edit far into a long text
+ * shows within the lines a row has. Each starts at a whole word.
+ */
+function fromFirstDifference(before: string, after: string): [string, string] {
+  const limit = Math.min(before.length, after.length)
+  let shared = 0
+  while (shared < limit && before[shared] === after[shared]) shared++
+  if (shared <= SHARED_OPENING) return [before, after]
+  let start = shared - KEPT_OPENING
+  while (start > 0 && !/\s/.test(before[start - 1])) start--
+  if (start === 0) return [before, after]
+  return [`…${before.slice(start)}`, `…${after.slice(start)}`]
+}
+
 /** One value as it was and as it became; a side with no value shows nothing. */
 function ValueChange({
   label,
@@ -80,23 +127,40 @@ function ValueChange({
   const has = change.afterTooLarge === true || filled(change.after)
   // A value too large to have been kept has nothing to show.
   const tooLarge = <span className="text-muted-foreground">Too large to show</span>
-  const value = (side: unknown) => (
-    <FieldValue
-      column={column}
-      value={side}
-      spaceId={spaceId}
-      expanded={expanded}
-      linksDisabled
-      rowHeight={LIST_TYPES.has(column.type) ? "full" : undefined}
-    />
-  )
+  // A kept change is two values that differ, so a row never shows them
+  // reading the same: where a cell's short form would, each shows as written.
+  const exact = had && has && readTheSame(column.type, change.before, change.after)
+  const [before, after] =
+    (column.type === "string" || column.type === "text") &&
+    typeof change.before === "string" &&
+    typeof change.after === "string"
+      ? fromFirstDifference(change.before, change.after)
+      : [change.before, change.after]
+  const value = (side: unknown) =>
+    exact ? (
+      <span className="font-mono text-[13px] tabular-nums">
+        {String(side)}
+        {column.field?.unit ? (
+          <span className="ml-1 text-muted-foreground">{column.field.unit}</span>
+        ) : null}
+      </span>
+    ) : (
+      <FieldValue
+        column={column}
+        value={side}
+        spaceId={spaceId}
+        expanded={expanded}
+        linksDisabled
+        rowHeight={LIST_TYPES.has(column.type) ? "full" : undefined}
+      />
+    )
   return (
     <div className="grid grid-cols-[minmax(5.5rem,0.34fr)_minmax(0,1fr)] items-start gap-3">
       <dt className="truncate text-muted-foreground">{label}</dt>
       <dd className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-foreground/90">
         {had && (
           <span className="min-w-0 text-muted-foreground line-through decoration-muted-foreground/60">
-            {change.beforeTooLarge ? tooLarge : value(change.before)}
+            {change.beforeTooLarge ? tooLarge : value(before)}
           </span>
         )}
         {has ? (
@@ -109,7 +173,7 @@ function ValueChange({
               />
             )}
             <span className="min-w-0">
-              {change.afterTooLarge ? tooLarge : value(change.after)}
+              {change.afterTooLarge ? tooLarge : value(after)}
             </span>
           </span>
         ) : (

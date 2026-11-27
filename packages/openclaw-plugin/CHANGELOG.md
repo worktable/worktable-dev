@@ -2,7 +2,7 @@
 
 ## 0.0.26
 
-- The agent answers comments sent to it, not only thread messages, on a Worktable that offers comments to runtimes (the preview agent tools; Worktable 0.1.53 or later). The comments waiting on one page come as one turn, in a conversation of their own for that page, and the answer is posted on each one the agent didn't answer itself. The same owner rule applies: a page with a comment from someone the agent doesn't take direction from runs no turn. An older Worktable is asked for thread messages only, as before.
+- The agent answers comments sent to it, not only thread messages, on Worktable 0.1.53 or later. The comments waiting on one page come as one turn, in a conversation of their own for that page, and the answer is posted on each one the agent didn't answer itself. The same owner rule applies: a page with a comment from someone the agent doesn't take direction from runs no turn. An older Worktable is asked for thread messages only, as before.
 - A turn the Gateway cuts short to restart is no longer answered with OpenClaw's "Gateway is restarting" notice. It waits for its next lease instead, and an answer OpenClaw recovers after the restart goes where the turn came from, threads and comments alike.
 
 ## 0.0.25

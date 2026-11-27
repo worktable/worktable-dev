@@ -71,12 +71,10 @@ app.route("/grok", grokBotRouter)
 app.onError(apiErrorResponse)
 
 /** Each comment's delivery state for its first request, as the comments list shows it. */
-async function listedDelivery(docPath: string) {
-  const response = await app.fetch(
-    new Request(`http://localhost/api/spaces/demo/annotations?docPath=${docPath}`)
-  )
-  const { annotations } = (await response.json()) as { annotations: Annotation[] }
-  return annotations.map((annotation) => (annotation.requests?.[0] as { delivery?: string } | undefined)?.delivery)
+/** Where each comment of a claimed page is in its runtime's delivery. */
+async function deliveryStates(page: { comments: Array<{ requestId: string }> }) {
+  const states = await commentDeliveryStates()
+  return page.comments.map((c) => states.get(c.requestId)?.state)
 }
 
 async function comment(docPath: string, to: string, body: string) {
@@ -132,7 +130,7 @@ interface ClaimedPage {
   messageId: string
   leaseId: string
   page: { spaceId: string; path: string }
-  comments: Array<{ body: string; from: { id: string; kind: string } }>
+  comments: Array<{ requestId: string; body: string; from: { id: string; kind: string } }>
 }
 
 const claim = (call: Awaited<ReturnType<typeof runtime>>["call"], waitSeconds = 0) =>
@@ -194,20 +192,18 @@ afterEach(async () => {
 describe("comments delivered to an agent's runtime", () => {
   it("hands out a page of comments at once, and answers each one exactly once", async () => {
     const agentId = (await resolveParticipant(robin, { name: "Robin" })).participant.id
-    const released = await runtime(robin, "released")
-    const preview = await runtime(robin, "preview")
+    const runner = await runtime(robin, "released")
     try {
       const first = await comment("deck", agentId, "Shorten slide one.")
       const second = await comment("deck", agentId, "Fix the title.")
       const elsewhere = await comment("notes", agentId, "Add a date.")
 
-      // Off the preview surface, and for a runtime that doesn't ask, nothing.
-      expect(await claim(released.call)).toBeNull()
+      // A runtime that doesn't ask for comments gets none.
       expect(await claimNextThreadDelivery(robin, 0, 2)).toBeNull()
 
       // Each page comes as its own batch, and a leased page isn't handed out again.
-      const batches = [(await claim(preview.call))!, (await claim(preview.call))!]
-      expect(await claim(preview.call)).toBeNull()
+      const batches = [(await claim(runner.call))!, (await claim(runner.call))!]
+      expect(await claim(runner.call)).toBeNull()
       expect(batches.map((b) => b.kind)).toEqual(["comments", "comments"])
       const page = batches.find((b) => b.page.path === "deck")!
       const other = batches.find((b) => b.page.path === "notes")!
@@ -223,7 +219,7 @@ describe("comments delivered to an agent's runtime", () => {
       expect(page.comments[0].from.id).toMatch(/^ptc_/)
       expect(pendingMarks(`cmt:${first.id}:${first.requests![0]!.id}`)?.deliveredAt).toBeDefined()
 
-      await preview.call("worktable_thread_delivery", {
+      await runner.call("worktable_thread_delivery", {
         action: "accept",
         messageId: page.messageId,
         leaseId: page.leaseId,
@@ -233,7 +229,7 @@ describe("comments delivered to an agent's runtime", () => {
       expect(states.get(second.requests![0]!.id)?.state).toBe("working")
 
       // The agent answers one comment itself during its turn.
-      await preview.call("worktable_annotations_write", {
+      await runner.call("worktable_annotations_write", {
         action: "reply",
         spaceId: "demo",
         annotationId: second.id,
@@ -246,8 +242,8 @@ describe("comments delivered to an agent's runtime", () => {
         leaseId: page.leaseId,
         body: "Done: shortened.",
       }
-      await preview.call("worktable_thread_delivery", reply)
-      await preview.call("worktable_thread_delivery", reply)
+      await runner.call("worktable_thread_delivery", reply)
+      await runner.call("worktable_thread_delivery", reply)
       const answeredFirst = await readAnnotation("demo", first.id)
       const answeredSecond = await readAnnotation("demo", second.id)
       expect(answeredFirst.thread.map((m) => [m.author.name, m.body])).toEqual([
@@ -261,7 +257,7 @@ describe("comments delivered to an agent's runtime", () => {
 
       // A failed turn puts the whole page back to wait.
       const notes = other
-      await preview.call("worktable_thread_delivery", {
+      await runner.call("worktable_thread_delivery", {
         action: "fail",
         messageId: notes.messageId,
         leaseId: notes.leaseId,
@@ -275,19 +271,19 @@ describe("comments delivered to an agent's runtime", () => {
       // batch to end and then come together. (The failed page skips its
       // retry backoff.)
       await skipBackoff()
-      const busy = (await claim(preview.call))!
+      const busy = (await claim(runner.call))!
       expect(busy.page.path).toBe("notes")
       await comment("notes", agentId, "Also add a summary.")
       await comment("notes", agentId, "And a link.")
-      expect(await claim(preview.call)).toBeNull()
+      expect(await claim(runner.call)).toBeNull()
       // A waiting runtime sleeps until the batch ends, not on held comments.
       const wakeAt = await nextThreadDeliveryEligibleAt(agentId, {
         allowWorktable: true,
         allowComments: true,
       })
       expect(wakeAt).toBeGreaterThan(Date.now() + 30_000)
-      const held = claim(preview.call, 10)
-      await preview.call("worktable_thread_delivery", {
+      const held = claim(runner.call, 10)
+      await runner.call("worktable_thread_delivery", {
         action: "reply",
         messageId: busy.messageId,
         leaseId: busy.leaseId,
@@ -303,13 +299,13 @@ describe("comments delivered to an agent's runtime", () => {
       for (const annotationId of new Set(
         joined.comments.map((c) => (c as unknown as { annotationId: string }).annotationId)
       ))
-        await preview.call("worktable_annotations_write", {
+        await runner.call("worktable_annotations_write", {
           action: "reply",
           spaceId: "demo",
           annotationId,
           body: "Answered directly.",
         })
-      await preview.call("worktable_thread_delivery", {
+      await runner.call("worktable_thread_delivery", {
         action: "reply",
         messageId: joined.messageId,
         leaseId: joined.leaseId,
@@ -322,15 +318,14 @@ describe("comments delivered to an agent's runtime", () => {
 
       // A comment that arrives while the runtime waits wakes it at once.
       await skipBackoff()
-      const waiting = claim(preview.call, 10)
+      const waiting = claim(runner.call, 10)
       const started = Date.now()
       await comment("deck", agentId, "One more thing.")
       const woken = await waiting
       expect(woken?.kind).toBe("comments")
       expect(Date.now() - started).toBeLessThan(3_000)
     } finally {
-      await released.close()
-      await preview.close()
+      await runner.close()
     }
   }, 60_000)
 
@@ -342,9 +337,9 @@ describe("comments delivered to an agent's runtime", () => {
       principal: { ...robin.principal, id: "token:atlas", displayName: "Atlas" },
     }
     const atlasId = (await resolveParticipant(atlas, { name: "Atlas" })).participant.id
-    const writer = await runtime(atlas, "preview")
-    const narrow = await runtime(robin, "preview", ["threads:*"])
-    const preview = await runtime(robin, "preview")
+    const writer = await runtime(atlas, "released")
+    const narrow = await runtime(robin, "released", ["threads:*"])
+    const runner = await runtime(robin, "released")
     try {
       // Another agent comments to Robin.
       for (const body of ["From Atlas: check the totals.", "From Atlas: and the dates."])
@@ -357,18 +352,18 @@ describe("comments delivered to an agent's runtime", () => {
         })
       // A credential that can't read comments gets none.
       expect(await claim(narrow.call)).toBeNull()
-      const page = (await claim(preview.call))!
+      const page = (await claim(runner.call))!
       expect(page.comments.map((c) => c.from)).toEqual([
         // Each agent author says who connected it: nobody on one-person Worktable.
         expect.objectContaining({ id: atlasId, kind: "agent", connectedBy: null }),
         expect.objectContaining({ id: atlasId, kind: "agent", connectedBy: null }),
       ])
-      await preview.call("worktable_thread_delivery", {
+      await runner.call("worktable_thread_delivery", {
         action: "accept",
         messageId: page.messageId,
         leaseId: page.leaseId,
       })
-      expect(await listedDelivery("deck")).toEqual(["working", "working"])
+      expect(await deliveryStates(page)).toEqual(["working", "working"])
       // The runtime goes quiet: once the lease expires, the page comes back whole.
       const path = join(appDir, "thread-deliveries", `${workspaceCacheKey()}.json`)
       const file = JSON.parse(await readFile(path, "utf8"))
@@ -378,14 +373,14 @@ describe("comments delivered to an agent's runtime", () => {
       await writeFile(path, JSON.stringify(file))
       // The agent answered one comment itself; a late report under the lost
       // lease isn't taken as answering the other.
-      await preview.call("worktable_annotations_write", {
+      await runner.call("worktable_annotations_write", {
         action: "reply",
         spaceId: "demo",
         annotationId: (page.comments[0] as unknown as { annotationId: string }).annotationId,
         body: "Totals checked.",
       })
       await expect(
-        preview.call("worktable_thread_delivery", {
+        runner.call("worktable_thread_delivery", {
           action: "reply",
           messageId: page.messageId,
           leaseId: page.leaseId,
@@ -401,21 +396,21 @@ describe("comments delivered to an agent's runtime", () => {
         body: "From Atlas: one more.",
         to: [agentId],
       })
-      const again = (await claim(preview.call))!
+      const again = (await claim(runner.call))!
       expect(again.leaseId).not.toBe(page.leaseId)
       expect(again.batchId).toBe(page.batchId)
       expect(again.comments.map((c) => c.body)).toEqual([page.comments[1]!.body])
-      await preview.call("worktable_thread_delivery", {
+      await runner.call("worktable_thread_delivery", {
         action: "reply",
         messageId: again.messageId,
         leaseId: again.leaseId,
         body: "Checked.",
       })
-      const next = (await claim(preview.call))!
+      const next = (await claim(runner.call))!
       expect(next.batchId).not.toBe(page.batchId)
       expect(next.comments.map((c) => c.body)).toEqual(["From Atlas: one more."])
-      // A runtime that gives up shows as not answering on its comment.
-      await preview.call("worktable_thread_delivery", {
+      // A runtime that gives up fails the page's delivery.
+      await runner.call("worktable_thread_delivery", {
         action: "fail",
         messageId: next.messageId,
         leaseId: next.leaseId,
@@ -423,7 +418,7 @@ describe("comments delivered to an agent's runtime", () => {
         code: "TURN_FAILED",
         message: "The agent could not finish",
       })
-      expect((await listedDelivery("deck")).filter(Boolean)).toEqual(["failed"])
+      expect(await deliveryStates(next)).toEqual(["failed"])
 
       // A person's comment rewritten after it asked isn't theirs any more:
       // it comes without its author, and the runtime's owner rule refuses it.
@@ -436,12 +431,12 @@ describe("comments delivered to an agent's runtime", () => {
         })
       )
       expect(edited.status).toBe(200)
-      const rewritten = (await claim(preview.call))!
+      const rewritten = (await claim(runner.call))!
       expect(rewritten.comments[0]!.from).toMatchObject({ kind: "system", id: "" })
     } finally {
       await writer.close()
       await narrow.close()
-      await preview.close()
+      await runner.close()
     }
   }, 30_000)
 
@@ -481,7 +476,7 @@ describe("comments delivered to an agent's runtime", () => {
 
     // The routine asks for comments once; from then on a comment rings it.
     const page = (await claimNextDelivery(grok, 0, 2, { comments: true }))!
-    const { call, close } = await runtime(grok, "preview")
+    const { call, close } = await runtime(grok, "released")
     await call("worktable_thread_delivery", {
       action: "accept",
       messageId: page.messageId,
@@ -505,7 +500,7 @@ describe("comments delivered to an agent's runtime", () => {
     await comment("deck", grokId, "And this one.")
     const failing = (await claimNextDelivery(grok, 0, 2, { comments: true }))!
     expect((failing as { comments: unknown[] }).comments).toHaveLength(2)
-    const again = await runtime(grok, "preview")
+    const again = await runtime(grok, "released")
     await again.call("worktable_thread_delivery", {
       action: "fail",
       messageId: failing.messageId,
@@ -529,7 +524,7 @@ describe("comments delivered to an agent's runtime", () => {
     // A run Grok never confirms holds its other work, until its comment is
     // resolved.
     const unconfirmed = (await claimNextDelivery(grok, 0, 2, { comments: true }))!
-    const owner = await runtime(grok, "preview")
+    const owner = await runtime(grok, "released")
     await owner.call("worktable_thread_delivery", {
       action: "accept",
       messageId: unconfirmed.messageId,

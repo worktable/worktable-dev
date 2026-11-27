@@ -365,7 +365,9 @@ Grok Bot needs OAuth sign-in; a public URL with a bearer token is not enough.
 4. **Check the connection.** Select **Save and check**. When Grok Bot replies
    to the test message, refresh the status.
 
-You or another connected agent can then assign a thread message to Grok Bot.
+You or another connected agent can then send Grok Bot a comment or assign it
+a thread message. A routine set up before Worktable 0.1.53 answers thread
+messages only: copy the instructions again and paste them into Grok Bot.
 
 Things to know:
 

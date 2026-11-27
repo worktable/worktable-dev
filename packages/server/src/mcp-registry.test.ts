@@ -442,8 +442,8 @@ describe("released tool surface", () => {
     const preview = (await listTools("preview")).tools
     // Waiting in preview: the thread list leaves archived threads out unless
     // asked, a render takes a PDF's page, a file read gives a text file's
-    // contents a page at a time, exact search reaches files' text, and
-    // runtimes may claim comments and answer them. Orientation answers for a
+    // contents a page at a time, and exact search reaches files' text.
+    // Orientation answers for a
     // Space at one size, with no index, and says when storage is nearly
     // full; a file's versions say when older ones were removed at the limit.
     // A Record read gives its history, an update archives and says what it
@@ -454,8 +454,6 @@ describe("released tool surface", () => {
       "worktable_threads_read",
       "worktable_files_render",
       "worktable_files_read",
-      "worktable_delivery_claim",
-      "worktable_delivery_report",
       "worktable_search",
       "worktable_records_query",
       "worktable_records_update",
@@ -501,8 +499,8 @@ describe("released tool surface", () => {
     )
     const claim = (tools: typeof released) =>
       tools.find((tool) => tool.name === "worktable_delivery_claim")!
-    expect(claim(preview).inputSchema.properties).toHaveProperty("comments")
-    expect(claim(released).inputSchema.properties).not.toHaveProperty("comments")
+    // Runtimes may claim comments and answer them on both surfaces.
+    expect(claim(released).inputSchema.properties).toHaveProperty("comments")
     const filesRead = (tools: typeof released) =>
       tools.find((tool) => tool.name === "worktable_files_read")!
     expect(filesRead(preview).inputSchema.properties).toHaveProperty("offset")

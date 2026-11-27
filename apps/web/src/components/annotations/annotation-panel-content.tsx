@@ -26,35 +26,24 @@ import { ThreadMarkdownProvider } from "@/components/threads/thread-markdown"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useWorkspace } from "@/lib/queries"
 
+type CommentRequest = NonNullable<Annotation["requests"]>[number];
+
+type RequestState = "sent" | "delivered" | "read" | "replied";
+
 /**
- * A comment's request as the comments list returns it: for an agent whose
- * runtime takes comments, working while a turn answers it, failed when the
- * runtime stopped answering.
+ * Where each recipient is with the comment, as far as Worktable knows. Every
+ * kind of agent shows the same states.
  */
-type CommentRequest = NonNullable<Annotation["requests"]>[number] & {
-  delivery?: "working" | "failed";
-};
-
-type RequestState = "sent" | "delivered" | "read" | "working" | "stuck" | "replied";
-
-/** Where each recipient is with the comment, as far as Worktable knows. */
 function requestState(request: CommentRequest): RequestState {
   if (request.status === "replied") return "replied";
-  // An agent's runtime working on it, or no longer answering.
-  if (request.delivery === "working") return "working";
-  if (request.delivery === "failed") return "stuck";
   if (request.readAt) return "read";
   return request.deliveredAt ? "delivered" : "sent";
 }
-
-const plural = (names: string) => names.includes(", ");
 
 const STATE_LABEL: Record<RequestState, (names: string) => string> = {
   sent: (names) => `To ${names}`,
   delivered: (names) => `Delivered to ${names}`,
   read: (names) => `Read by ${names}`,
-  working: (names) => `${names} ${plural(names) ? "are" : "is"} working`,
-  stuck: (names) => `${names} ${plural(names) ? "aren’t" : "isn’t"} answering`,
   replied: (names) => `Replied by ${names}`,
 };
 
@@ -78,7 +67,7 @@ function agentsNotShown(annotation: Annotation): string[] {
 function recipientsLine(annotation: Annotation, selfId?: string): string | null {
   const requests = openRequests(annotation);
   if (requests.length === 0) return null;
-  return (["sent", "delivered", "read", "working", "stuck", "replied"] as const)
+  return (["sent", "delivered", "read", "replied"] as const)
     .map((state) => {
       const names = requests
         .filter((request) => requestState(request) === state)
@@ -400,16 +389,16 @@ function previewText(body: string): string {
     .trim();
 }
 
-/** What an agent the comment went to is doing with it, while it is. */
+/**
+ * Where the first agent still waited on is with the comment, in the same
+ * words the open comment uses.
+ */
 function agentStatus(annotation: Annotation): string | null {
   if (annotation.status === "resolved") return null;
-  const waiting = openRequests(annotation).filter(
+  const waiting = openRequests(annotation).find(
     (request) => request.to.kind === "agent" && requestState(request) !== "replied"
   );
-  const working = waiting.find((request) => requestState(request) === "read");
-  if (working) return `${working.to.name} is working…`;
-  const sent = waiting[0];
-  return sent ? `Sent to ${sent.to.name}` : null;
+  return waiting ? STATE_LABEL[requestState(waiting)](waiting.to.name) : null;
 }
 
 /**

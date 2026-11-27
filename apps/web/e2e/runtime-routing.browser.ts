@@ -95,4 +95,8 @@ test("a selected Cloud Worktable survives hydration, navigation and direct reloa
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(tool.locator("#summary")).toHaveText("2 tasks")
   await expect(tool.locator("#choice")).toHaveText("Open")
+  // The page's background reads (the sidebar, for one) keep passing through
+  // the mount proxy after the last check; a fetch still in flight when the
+  // test ends would otherwise fail it.
+  await page.unrouteAll({ behavior: "ignoreErrors" })
 })

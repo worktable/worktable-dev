@@ -1,7 +1,6 @@
 import {
   useEffect,
   useEffectEvent,
-  useMemo,
   useRef,
   useState,
   type RefObject,
@@ -10,11 +9,7 @@ import { createPortal } from "react-dom"
 import { MessageSquarePlus } from "lucide-react"
 import type { PassageSelector } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
-import {
-  useHeaderContextualAction,
-  type PageContextualAction,
-} from "@/hooks/use-page-meta"
-import { useStableCallback } from "@/hooks/use-stable-callback"
+import { useHeaderContextualAction } from "@/hooks/use-page-meta"
 import { readPassageText, selectorForRange } from "./passage-text"
 
 export interface SelectedPassage {
@@ -61,22 +56,17 @@ export function SelectionComment({
     onComment({ range, selector })
   }
   const commentFromKey = useEffectEvent(comment)
-  const commentFromHeader = useStableCallback(comment)
 
-  const inHeader = !paused && shown?.kind === "header"
-  const headerAction = useMemo<PageContextualAction | null>(
-    () =>
-      inHeader
-        ? {
-            label: "Comment",
-            icon: MessageSquarePlus,
-            preserveSelection: true,
-            onClick: commentFromHeader,
-          }
-        : null,
-    [inHeader, commentFromHeader]
+  useHeaderContextualAction(
+    !paused && shown?.kind === "header"
+      ? {
+          label: "Comment",
+          icon: MessageSquarePlus,
+          preserveSelection: true,
+          onClick: comment,
+        }
+      : null
   )
-  useHeaderContextualAction(headerAction)
 
   useEffect(() => {
     if (paused) {

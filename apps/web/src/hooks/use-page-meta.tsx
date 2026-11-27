@@ -1,4 +1,13 @@
-import { createContext, useContext, useEffect, useState } from "react"
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import type { LucideIcon } from "lucide-react"
 import type { DocumentSharingSummary } from "@worktable/types"
 
@@ -202,11 +211,51 @@ export function useHeaderContextualAction(
 ): void {
   const setContextualAction = useContext(SetPageContextualActionContext)
   const [owner] = useState(() => Symbol("header-contextual-action"))
+  const latestOnClick = useRef(action?.onClick)
+  useLayoutEffect(() => {
+    latestOnClick.current = action?.onClick
+  })
+  const handleClick = useCallback(() => {
+    latestOnClick.current?.()
+  }, [])
+
+  const active = action !== null
+  const label = action?.label
+  const icon = action?.icon
+  const pendingLabel = action?.pendingLabel
+  const pending = action?.pending
+  const disabled = action?.disabled
+  const preserveSelection = action?.preserveSelection
+
+  const published = useMemo<PageContextualAction | null>(
+    () =>
+      active && label !== undefined
+        ? {
+            label,
+            icon,
+            pendingLabel,
+            pending,
+            disabled,
+            preserveSelection,
+            onClick: handleClick,
+          }
+        : null,
+    [
+      active,
+      label,
+      icon,
+      pendingLabel,
+      pending,
+      disabled,
+      preserveSelection,
+      handleClick,
+    ]
+  )
 
   useEffect(() => {
     if (!setContextualAction) return
-    setContextualAction(owner, action)
-  }, [action, owner, setContextualAction])
+    setContextualAction(owner, published)
+  }, [published, owner, setContextualAction])
 
   useEffect(() => {
     if (!setContextualAction) return

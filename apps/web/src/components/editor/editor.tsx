@@ -69,13 +69,9 @@ import {
   normalizeEditorInitialContent,
 } from "./initial-content"
 import { MobileFormattingToolbar } from "./mobile-formatting-toolbar"
-import {
-  useHeaderContextualAction,
-  type PageContextualAction,
-} from "@/hooks/use-page-meta"
+import { useHeaderContextualAction } from "@/hooks/use-page-meta"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useStableCallback } from "@/hooks/use-stable-callback"
 import { sideMenuFirstLine } from "./side-menu-position"
 import { usePaneWidth } from "@/hooks/use-pane-width"
 import { DataTooltips } from "@/components/document/data-tooltip"
@@ -816,28 +812,24 @@ function EditorHeaderSelectionComment({
     }
   }, [editor])
 
-  const comment = useStableCallback(() => {
+  const comment = () => {
     const request = readSelection() ?? selected.current
     if (!request) return
     selected.current = null
     setShown(false)
     onAnnotate(request)
-  })
+  }
 
-  const active = !paused && shown
-  const headerAction = useMemo<PageContextualAction | null>(
-    () =>
-      active
-        ? {
-            label: "Comment",
-            icon: MessageSquarePlus,
-            preserveSelection: true,
-            onClick: comment,
-          }
-        : null,
-    [active, comment]
+  useHeaderContextualAction(
+    !paused && shown
+      ? {
+          label: "Comment",
+          icon: MessageSquarePlus,
+          preserveSelection: true,
+          onClick: comment,
+        }
+      : null
   )
-  useHeaderContextualAction(headerAction)
 
   useEffect(() => {
     if (paused) {

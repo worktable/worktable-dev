@@ -157,7 +157,7 @@
   {
     "name": "worktable_state",
     "title": "Read Worktable state",
-    "description": "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId, set index for the Space's full document and Record index. It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow. When the Worktable is close to its storage limit, it says so.",
+    "description": "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId: the Space's pins, its folders with how many files each holds, and what changed last; list the files themselves with worktable_files_read. It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow. When the Worktable is close to its storage limit, it says so.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -167,10 +167,6 @@
         },
         "includeArchived": {
           "description": "When true, include archived spaces and docs in the response.",
-          "type": "boolean"
-        },
-        "index": {
-          "description": "With spaceId: return the Space's full document and Record index instead.",
           "type": "boolean"
         }
       },
@@ -246,136 +242,10 @@
           "type": "string"
         },
         "space": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/Space"
-            }
-          ]
-        },
-        "startHere": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "path": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 4096
-              },
-              "note": {
-                "type": "string",
-                "maxLength": 200
-              },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "active",
-                  "archived",
-                  "missing"
-                ]
-              },
-              "title": {
-                "type": "string"
-              },
-              "format": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 96,
-                    "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
-                  },
-                  "sourceVersion": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  }
-                },
-                "required": [
-                  "id",
-                  "sourceVersion"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "path",
-              "status"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "pins": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "path": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 4096
-              },
-              "note": {
-                "type": "string",
-                "maxLength": 200
-              },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "active",
-                  "archived",
-                  "missing"
-                ]
-              },
-              "title": {
-                "type": "string"
-              },
-              "format": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 96,
-                    "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
-                  },
-                  "sourceVersion": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  }
-                },
-                "required": [
-                  "id",
-                  "sourceVersion"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "path",
-              "status"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "docs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/DocListEntry"
-          }
-        },
-        "documents": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/DocumentListItem"
-          }
-        },
-        "index": {
+          "description": "With spaceId: the Space.",
           "type": "object",
           "properties": {
-            "spaceId": {
+            "id": {
               "$ref": "#/definitions/CanonicalId"
             },
             "name": {
@@ -383,76 +253,68 @@
             },
             "description": {
               "type": "string"
-            },
-            "generatedAt": {
-              "type": "string"
-            },
-            "docCount": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "groups": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "folder": {
-                    "type": "string"
-                  },
-                  "label": {
-                    "type": "string"
-                  },
-                  "docs": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "path": {
-                          "type": "string"
-                        },
-                        "title": {
-                          "type": "string"
-                        },
-                        "headings": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "backlinkCount": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9007199254740991
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "title",
-                        "headings",
-                        "backlinkCount"
-                      ],
-                      "additionalProperties": {}
-                    }
-                  }
-                },
-                "required": [
-                  "folder",
-                  "label",
-                  "docs"
-                ],
-                "additionalProperties": {}
-              }
             }
           },
           "required": [
-            "spaceId",
-            "name",
-            "generatedAt",
-            "docCount",
-            "groups"
+            "id",
+            "name"
           ],
           "additionalProperties": {}
+        },
+        "pins": {
+          "description": "Pinned docs; read these first. Only pins whose doc is still there.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "archived",
+                  "missing"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "format": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+                  },
+                  "sourceVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "sourceVersion"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "path",
+              "status"
+            ],
+            "additionalProperties": false
+          }
         },
         "skills": {
           "description": "The skills in your team's Library that apply to you, up to 50. The Library is your team's approved Docs: a person reviewed each one for agents to follow. Prefer a skill there over other Docs on the same work; Docs elsewhere may be drafts. Read one with worktable_skills_read.",
@@ -535,6 +397,66 @@
             "additionalProperties": {}
           }
         },
+        "items": {
+          "description": "With spaceId: how many files the Space holds.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "folders": {
+          "description": "With spaceId: the Space's top-level folders, most recently changed first, each with how many files it holds. List one with worktable_files_read pathPrefix.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "items": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "changedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "items"
+            ],
+            "additionalProperties": {}
+          }
+        },
+        "moreFolders": {
+          "description": "How many top-level folders there are beyond those listed.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "recent": {
+          "description": "With spaceId: the files changed most recently, newest first, ten at most.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "changedAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "changedAt"
+            ],
+            "additionalProperties": {}
+          }
+        },
         "storage": {
           "description": "Present when the Worktable has used 80% or more of its storage limit. At the limit its oldest history is removed to make room, and writes that still don't fit are refused.",
           "type": "object",
@@ -572,381 +494,6 @@
           "type": "string",
           "minLength": 1,
           "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$"
-        },
-        "Space": {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "const": "worktable.space"
-            },
-            "version": {
-              "type": "number"
-            },
-            "id": {
-              "type": "string"
-            },
-            "name": {
-              "type": "string"
-            },
-            "description": {
-              "type": "string"
-            },
-            "icon": {
-              "type": "string"
-            },
-            "group": {
-              "type": "string"
-            },
-            "createdAt": {
-              "type": "string"
-            },
-            "updatedAt": {
-              "type": "string"
-            },
-            "createdBy": {
-              "type": "string"
-            },
-            "settings": {
-              "type": "object",
-              "propertyNames": {
-                "type": "string"
-              },
-              "additionalProperties": {}
-            }
-          },
-          "required": [
-            "type",
-            "version",
-            "id",
-            "name",
-            "createdAt",
-            "updatedAt",
-            "createdBy",
-            "settings"
-          ],
-          "additionalProperties": {}
-        },
-        "DocListEntry": {
-          "type": "object",
-          "properties": {
-            "path": {
-              "type": "string"
-            },
-            "format": {
-              "type": "string",
-              "enum": [
-                "blocknote",
-                "markdown"
-              ]
-            },
-            "storedAs": {
-              "type": "string",
-              "enum": [
-                "json",
-                "md"
-              ]
-            },
-            "updatedAt": {
-              "type": "number"
-            },
-            "headings": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "blockCount": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "containsMermaid": {
-              "type": "boolean"
-            },
-            "richBlockTypes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "archived": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/ArchiveInfo"
-                }
-              ]
-            },
-            "createdAt": {
-              "type": "string"
-            },
-            "archiveOn": {
-              "description": "Present on temporary documents: when the document archives.",
-              "type": "string"
-            },
-            "provenance": {
-              "type": "object",
-              "properties": {
-                "updatedAt": {
-                  "type": "string"
-                },
-                "updatedBy": {
-                  "type": "string"
-                },
-                "source": {
-                  "type": "string"
-                },
-                "versionId": {
-                  "type": "string"
-                },
-                "contentHash": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "updatedAt",
-                "updatedBy",
-                "source",
-                "versionId",
-                "contentHash"
-              ],
-              "additionalProperties": {}
-            },
-            "backlinkCount": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            }
-          },
-          "required": [
-            "path",
-            "format"
-          ],
-          "additionalProperties": {}
-        },
-        "ArchiveInfo": {
-          "type": "object",
-          "properties": {
-            "archivedAt": {
-              "type": "string"
-            },
-            "archivedBy": {
-              "type": "string"
-            },
-            "reason": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "archivedAt",
-            "archivedBy"
-          ],
-          "additionalProperties": {}
-        },
-        "DocumentListItem": {
-          "oneOf": [
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string",
-                  "const": "document"
-                },
-                "path": {
-                  "type": "string"
-                },
-                "format": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 96,
-                      "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
-                    },
-                    "sourceVersion": {
-                      "type": "integer",
-                      "exclusiveMinimum": 0,
-                      "maximum": 9007199254740991
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "sourceVersion"
-                  ],
-                  "additionalProperties": false
-                },
-                "title": {
-                  "type": "string"
-                },
-                "health": {
-                  "type": "string",
-                  "enum": [
-                    "supported",
-                    "unsupported-format",
-                    "unsupported-version",
-                    "invalid",
-                    "ambiguous",
-                    "temporarily-unavailable"
-                  ]
-                },
-                "updatedAt": {
-                  "type": "string",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                  "format": "date-time"
-                },
-                "createdAt": {
-                  "type": "string",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                  "format": "date-time"
-                },
-                "lifetime": {
-                  "type": "string",
-                  "enum": [
-                    "durable",
-                    "temporary"
-                  ]
-                },
-                "archiveOn": {
-                  "type": "string",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
-                  "format": "date-time"
-                },
-                "archived": {
-                  "type": "boolean",
-                  "const": true
-                },
-                "folderOperations": {
-                  "type": "object",
-                  "properties": {
-                    "move": {
-                      "type": "boolean"
-                    },
-                    "archive": {
-                      "type": "boolean"
-                    },
-                    "delete": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "move"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "required": [
-                "kind",
-                "path",
-                "format",
-                "title",
-                "health"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "type": "string",
-                  "const": "conflict"
-                },
-                "pathKey": {
-                  "type": "string"
-                },
-                "health": {
-                  "type": "string",
-                  "const": "ambiguous"
-                },
-                "claims": {
-                  "minItems": 2,
-                  "type": "array",
-                  "items": {
-                    "oneOf": [
-                      {
-                        "type": "object",
-                        "properties": {
-                          "kind": {
-                            "type": "string",
-                            "const": "document"
-                          },
-                          "path": {
-                            "type": "string"
-                          },
-                          "format": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 96,
-                                "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
-                              },
-                              "sourceVersion": {
-                                "type": "integer",
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991
-                              }
-                            },
-                            "required": [
-                              "id",
-                              "sourceVersion"
-                            ],
-                            "additionalProperties": false
-                          },
-                          "archived": {
-                            "type": "boolean",
-                            "const": true
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "path",
-                          "format"
-                        ],
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "kind": {
-                            "type": "string",
-                            "const": "alias"
-                          },
-                          "path": {
-                            "type": "string"
-                          },
-                          "targetPath": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "kind",
-                          "path",
-                          "targetPath"
-                        ],
-                        "additionalProperties": false
-                      }
-                    ]
-                  }
-                }
-              },
-              "required": [
-                "kind",
-                "pathKey",
-                "health",
-                "claims"
-              ],
-              "additionalProperties": false
-            }
-          ]
         }
       }
     },
@@ -1898,7 +1445,7 @@
   {
     "name": "worktable_files_read",
     "title": "Read Worktable files",
-    "description": "Read one file by path, or list a Space's files when path is omitted: Docs, HTML Docs and drawings included, filtered by format, folder, glob or lifetime. A path is the file's whole name, extension included. Set source for its content: an image comes as an image you can see; a text, code, table or PDF file as contents, a page of its lines at a time (offset and limit, nextOffset for the next page), whatever its size, a PDF with each page marked and an outline of where each starts; other files as base64, or over 1 MiB only as a link where supported. Set versions for its history, or from for a text diff. Over a direct, Cloud or Worktable Link connection, a file read also gives downloadUrl, a link to its bytes that works for 10 minutes.",
+    "description": "Read one file by path, or list a Space's files when path is omitted: Docs, HTML Docs and drawings included, filtered by format, folder, glob or lifetime. A path is as the list gives it: a file's whole name with its extension, and a Doc, HTML Doc or drawing without one. Set source for its content: an image comes as an image you can see; a text, code, table or PDF file as contents, a page of its lines at a time (offset and limit, nextOffset for the next page), whatever its size, a PDF with each page marked and an outline of where each starts; other files as base64, or over 1 MiB only as a link where supported. Set versions for its history, or from for a text diff. Over a direct, Cloud or Worktable Link connection, a file read also gives downloadUrl, a link to its bytes that works for 10 minutes.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1934,7 +1481,7 @@
           ]
         },
         "limit": {
-          "description": "Page size: files when listing (default 200, up to 1000); with source, lines of the file's contents (default 1000, up to 10000; a page also stops at 32 KiB of text).",
+          "description": "Page size: files when listing (default 100, up to 1000); with source, lines of the file's contents (default 1000, up to 10000; a page also stops at 32 KiB of text).",
           "type": "integer",
           "minimum": 1,
           "maximum": 10000

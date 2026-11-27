@@ -189,13 +189,16 @@ function publicizeHtmlDoc(widget: unknown): unknown {
 function publicizeResult(
   operationId: keyof typeof OPERATION_DEFINITIONS,
   result: unknown,
-  scopes: string[]
+  scopes: string[],
+  surface: McpSurface
 ): unknown {
   if (operationId.startsWith("annotations.")) {
     return publicizeAnnotationResult(result, hasScope(scopes, "widgets:read"))
   }
   if (
-    (operationId === "spaces.update" || operationId === "workspace.state") &&
+    // The preview surface says a Space's pins once.
+    (operationId === "spaces.update" ||
+      (operationId === "workspace.state" && surface !== "preview")) &&
     result &&
     typeof result === "object" &&
     Array.isArray((result as Record<string, unknown>).pins)
@@ -352,7 +355,7 @@ export function registerTools(
           resultData,
           urlOrigin
         )
-        const publicResult = publicizeResult(operation.id, linked, scopes)
+        const publicResult = publicizeResult(operation.id, linked, scopes, surface)
         assertPublicOperationOutput(operation.id, publicResult)
         data = { ...data, ...publicResult }
         media.push(...content)
@@ -406,7 +409,7 @@ export function registerTools(
       return Promise.resolve(mkErr("file goes with action upload."))
     }
     return run(name, [operation], extra as CallExtra, { file, legacyFileRead })
-  }, forgivenArguments)
+  }, (name, args) => forgivenArguments(name, args, surface))
   const restoreToolListing = installOpenAiToolDescriptorCompatibility(server)
 
   registerCompanyKnowledgeTools(server, {

@@ -328,6 +328,7 @@ import {
   ReadSkillInput,
   ProposeSkillInput,
 } from "./schemas.ts"
+import { orientItems, SPACE_ORIENT_HINT, type OrientItem } from "./space-orientation.ts"
 
 import { ensureParticipant, resolveParticipant } from "../participant-store.ts"
 import { listSkills } from "../skill-notices.ts"
@@ -835,6 +836,8 @@ export async function syncDocAfterToolWrite(
 }
 
 const LIST_PAGE_SIZE = 200
+/** On the preview surface a page fits what agents' apps accept. */
+const PREVIEW_LIST_PAGE_SIZE = 100
 /** Records an MCP query returns when the agent sets no limit. */
 const MCP_DEFAULT_RECORD_PAGE = 100
 
@@ -1427,7 +1430,10 @@ async function _dispatchOperationInner(
       const lifetime = args["lifetime"] as DocumentLifetime | undefined
       const glob = args["glob"] as string | undefined
       const matchesGlob = glob === undefined ? null : compilePathGlob(glob)
-      const limit = (args["limit"] as number | undefined) ?? LIST_PAGE_SIZE
+      const preview = context.surface === "preview"
+      const limit =
+        (args["limit"] as number | undefined) ??
+        (preview ? PREVIEW_LIST_PAGE_SIZE : LIST_PAGE_SIZE)
       const offset = decodeListCursor(args["cursor"])
       const matching = (await listDocuments({ spaceId, includeArchived })).filter(
         (document) => {
@@ -1455,7 +1461,17 @@ async function _dispatchOperationInner(
       )
       const page = matching.slice(offset, offset + limit)
       return {
-        documents: page,
+        // A row says what an agent picks a file by. What it may do to the
+        // file, and when the file was made, a read of that file says.
+        documents: preview
+          ? page.map((item) => {
+              if (item.kind !== "document") return item
+              const row: Partial<typeof item> = { ...item }
+              delete row.folderOperations
+              delete row.createdAt
+              return row
+            })
+          : page,
         total: matching.length,
         ...(offset + limit < matching.length
           ? { nextCursor: String(offset + limit) }
@@ -2861,13 +2877,40 @@ async function _dispatchOperationInner(
           `Space is archived: ${spaceId}. Re-run with includeArchived=true to inspect it.`
         )
       }
+      const pins = hasScope(identity.scopes, "documents:read")
+        ? await resolveStartHere(spaceId, space)
+        : []
+      // On the preview surface the answer is the same size for any Space:
+      // its pins, folders and latest changes. The files are a list call away.
+      if (context.surface === "preview") {
+        const listed: OrientItem[] = hasScope(identity.scopes, "documents:read")
+          ? (await listDocuments({ spaceId, includeArchived })).map((item) =>
+              item.kind === "document"
+                ? { path: item.path, title: item.title, changedAt: item.updatedAt }
+                : { path: item.pathKey }
+            )
+          : (await listDocsDetailed(spaceId, { includeArchived })).map((doc) => ({
+              path: doc.path,
+              ...(doc.updatedAt ? { changedAt: new Date(doc.updatedAt).toISOString() } : {}),
+            }))
+        const live = pins.filter((pin) => pin.status === "active")
+        return {
+          space: {
+            id: space.id,
+            name: space.name,
+            ...(space.description ? { description: space.description } : {}),
+          },
+          ...(live.length > 0 ? { pins: live } : {}),
+          ...orientItems(listed),
+          hint: SPACE_ORIENT_HINT,
+          ...storageNotice(context.surface),
+          ...(await skills()),
+        }
+      }
       const docs = await decorateDocsWithBacklinkCounts(
         spaceId,
         await listDocsDetailed(spaceId, { includeArchived })
       )
-      const pins = hasScope(identity.scopes, "documents:read")
-        ? await resolveStartHere(spaceId, space)
-        : []
       return {
         space,
         ...(pins.length > 0 ? { pins } : {}),

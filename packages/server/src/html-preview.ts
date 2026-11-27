@@ -555,7 +555,7 @@ export async function captureHtmlPreviewOnPage(
       }
     })
   )
-  const host = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;border:0;width:100%;height:100%}</style></head><body><iframe id="artifact" sandbox="${snapshot.historical ? "" : "allow-scripts"}" referrerpolicy="no-referrer" src="/document"></iframe><script>
+  const host = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;border:0;width:100%;height:100%}</style></head><body><iframe id="artifact" sandbox="${snapshot.historical ? "" : "allow-scripts allow-forms"}" referrerpolicy="no-referrer" src="/document"></iframe><script>
 const frame=document.getElementById('artifact');
 window.addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow||!event.data||typeof event.data!=='object')return;

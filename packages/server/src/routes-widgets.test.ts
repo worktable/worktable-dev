@@ -110,7 +110,6 @@ describe("widget REST routes", () => {
 
     expect(createRes.status).toBe(201);
     const warningCodes = createRes.json.warnings.map((issue: { code: string }) => issue.code);
-    expect(warningCodes).toContain("form_submit_sandbox");
     expect(warningCodes).toContain("browser_storage");
     expect(warningCodes).toContain("direct_worktable_api_fetch");
   });

@@ -3,8 +3,10 @@ import { queryTargetCollections } from "./record-store.ts"
 
 export function buildWidgetCsp(network: boolean, fontOrigin?: string): string {
   return [
-    // allow-modals lets a page open the print dialog for itself.
-    "sandbox allow-scripts allow-modals",
+    // allow-modals lets a page open the print dialog for itself. allow-forms
+    // lets a form reach the page's submit handler; form-action 'none' below
+    // still keeps it from sending anywhere.
+    "sandbox allow-scripts allow-modals allow-forms",
     "default-src 'none'",
     "script-src 'unsafe-inline'",
     "style-src 'unsafe-inline'",

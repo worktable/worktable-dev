@@ -1456,6 +1456,10 @@ export async function setRecordArchive(
   return withStoreWriteLock(recordPath(spaceId, collectionId, recordId), async () => {
     const { data: existing, error } = await readRecord(spaceId, collectionId, recordId);
     if (error || !existing) return { data: null, error: error ?? `Record not found: ${recordId}` };
+    // Archiving an archived record, or restoring a live one, changes nothing.
+    // Checked under the lock and never written, so of two calls at once the
+    // second leaves who archived it, when and why as the first set them.
+    if (Boolean(existing.archive) === Boolean(archive)) return { data: existing, error: null };
     const record: RecordFile = {
       ...existing,
       // Restamp identity from the ADDRESSED path: this lifecycle write is
@@ -1475,8 +1479,7 @@ export async function setRecordArchive(
         : null,
     };
     const written = await writeRecordInner(spaceId, record, { skipDataValidation: true });
-    // Archiving an archived record, or restoring a live one, is no news.
-    if (written.data && Boolean(existing.archive) !== Boolean(archive)) {
+    if (written.data) {
       noteRecordActivity(spaceId, collectionId, archive ? "records.archived" : "records.restored");
       await noteRecordChange(spaceId, {
         kind: archive ? "archived" : "restored",

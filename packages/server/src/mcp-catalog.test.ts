@@ -461,6 +461,7 @@ describe("the preview tools", () => {
     expect(history.changes.map((change) => change.kind)).toEqual(["archived", "changed", "added"])
     expect(history.total).toBe(3)
     expect(history.changes[0]).toMatchObject({ reason: "Posted elsewhere", by: { kind: "agent" } })
+    expect(read.record).toMatchObject({ archive: { reason: "Posted elsewhere" } })
     expect(history.changes[1]!.fields).toEqual({ status: { before: "pending", after: "approved" } })
     // A change made by a call on several Records carries that call's id.
     const other = (await call("worktable_records_query", { ...at, recordId: "r2", history: true })).history as typeof history

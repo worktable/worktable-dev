@@ -860,22 +860,21 @@ function recordArchiveChange(
 }
 
 /**
- * A Record archived or brought back, as asked. One already as asked is left
- * alone: nothing is written and its history gains no line.
+ * A Record archived or brought back, as asked, by the id the caller named:
+ * a file's own copy of its id can be stale. The store leaves a Record that
+ * is already as asked alone, deciding under its lock.
  */
-async function setRecordArchived(
+function setRecordArchived(
   spaceId: string,
   collectionId: string,
-  record: RecordFile,
+  recordId: string,
   change: { archived: boolean; reason?: string },
   actorId: string
 ): Promise<{ data: RecordFile | null; error: string | null }> {
-  if (Boolean(record.archive) === change.archived)
-    return { data: record, error: null }
   return setRecordArchive(
     spaceId,
     collectionId,
-    record.id,
+    recordId,
     change.archived
       ? { archivedBy: actorId, ...(change.reason ? { reason: change.reason } : {}) }
       : null,
@@ -2333,21 +2332,20 @@ async function _dispatchOperationInner(
       // Archiving alone checks no values, so a Record whose values no longer
       // fit its collection can still be put away.
       const values = data !== undefined || metadata !== undefined || !archive
-      const result: Awaited<ReturnType<typeof updateRecord>> = values
+      const result = values
         ? await updateRecord(spaceId, collectionId, recordId, {
             strictFields: true,
             data,
             metadata,
             updatedBy: actorId,
           })
-        : await readRecord(spaceId, collectionId, recordId)
-      if (result.error || !result.data)
+        : null
+      if (result && (result.error || !result.data))
         throw new Error(result.error ?? "Update failed")
       const flipped = archive
-        ? await setRecordArchived(spaceId, collectionId, result.data, archive, actorId)
+        ? await setRecordArchived(spaceId, collectionId, recordId, archive, actorId)
         : result
-      if (flipped.error || !flipped.data)
-        throw new Error(flipped.error ?? "Archive failed")
+      if (!flipped?.data) throw new Error(flipped?.error ?? "Archive failed")
       const record = flipped.data
       wsManager.broadcast(spaceId, {
         type: "record_update",
@@ -2360,7 +2358,7 @@ async function _dispatchOperationInner(
       if (context.surface !== "preview") return { record }
       return {
         record,
-        ...(!values ? {} : result.unchanged ? { unchanged: true } : { changed: result.changed ?? [] }),
+        ...(!result ? {} : result.unchanged ? { unchanged: true } : { changed: result.changed ?? [] }),
         ...(archive ? { archived: Boolean(record.archive) } : {}),
       }
     }
@@ -2541,23 +2539,23 @@ async function _dispatchOperationInner(
       }> = []
       await batchRecordActivity(async () => {
         for (const recordId of ids) {
-          const result: Awaited<ReturnType<typeof updateRecord>> = values
+          const result = values
             ? await updateRecord(spaceId, collectionId, recordId, {
                 data,
                 metadata,
                 updatedBy: actorId,
                 strictFields: true,
               })
-            : await readRecord(spaceId, collectionId, recordId)
+            : null
           const flipped =
-            archive && result.data
-              ? await setRecordArchived(spaceId, collectionId, result.data, archive, actorId)
+            archive && (!result || result.data)
+              ? await setRecordArchived(spaceId, collectionId, recordId, archive, actorId)
               : result
-          if (!flipped.data) {
+          if (!flipped?.data) {
             results.push({
               recordId,
               updated: false,
-              error: flipped.error ?? "Update failed",
+              error: flipped?.error ?? "Update failed",
             })
             continue
           }
@@ -2565,7 +2563,7 @@ async function _dispatchOperationInner(
             recordId,
             updated: true,
             // What each write changed is told on the preview surface.
-            ...(context.surface !== "preview" || !values
+            ...(context.surface !== "preview" || !result
               ? {}
               : result.unchanged
                 ? { unchanged: true }

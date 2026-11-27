@@ -34,6 +34,7 @@ test.beforeAll(async () => {
         await worktable.records.create('tasks', {name: new FormData(event.target).get('name')});
         await worktable.state.set('view', 'Open');
         await render();
+        worktable.ui.notify('Task added', {tone: 'success'});
       });
       render();
     </script>`,
@@ -92,6 +93,8 @@ test("a selected Cloud Worktable survives hydration, navigation and direct reloa
   await tool.getByRole("button", { name: "Add task", exact: true }).click()
   await expect(tool.locator("#summary")).toHaveText("2 tasks")
   await expect(tool.locator("#choice")).toHaveText("Open")
+  // The page's own message shows as one of the app's toasts.
+  await expect(page.getByText("Task added", { exact: true })).toBeVisible()
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(tool.locator("#summary")).toHaveText("2 tasks")
   await expect(tool.locator("#choice")).toHaveText("Open")

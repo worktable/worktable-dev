@@ -1,4 +1,5 @@
 import { captureWorkSaved, currentAnalyticsContext, isAnalyticsMaintenance } from "./analytics.ts";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { isDeepStrictEqual } from "node:util";
 import { existsSync } from "node:fs";
 import { recordActivity } from "./activity-log.ts";
@@ -323,6 +324,8 @@ export async function writeRecordCollectionSchema(
   // otherwise slip past the gate and land newly invalid.
   let conflict = false;
   let gateError: string | null = null;
+  // What the write changed, for Activity: a new collection, or new fields.
+  let noted: "collection.added" | "collection.changed" | null = null;
   await withStoreWriteLock(uniqueLockKey(spaceId, parsed.data.id), () => withStoreWriteLock(schemaGateKey(spaceId, parsed.data.id), async () => {
     // Strict-create (ifAbsent) conflicts come FIRST: a duplicate create must
     // 409 per its contract, not surface the gate's 400 about rows it was
@@ -424,6 +427,8 @@ export async function writeRecordCollectionSchema(
       await mkdir(dirname(path), { recursive: true });
       await atomicWriteText(path, stringifyCanonicalYaml(parsed.data));
     });
+    if (!previous) noted = "collection.added";
+    else if (!isDeepStrictEqual(previous.fields, parsed.data.fields) || previous.titleField !== parsed.data.titleField) noted = "collection.changed";
   }));
   if (gateError) {
     return { data: null, error: gateError };
@@ -431,6 +436,7 @@ export async function writeRecordCollectionSchema(
   if (conflict) {
     return { data: null, error: `Collection "${parsed.data.id}" already exists`, conflict: true };
   }
+  if (noted) recordActivity({ spaceId, action: noted, target: { kind: "collection", collectionId: parsed.data.id } });
   notifyRecordChanged({ kind: "collection", spaceId, collectionId: parsed.data.id });
   return { data: parsed.data, error: null };
 }
@@ -1015,7 +1021,7 @@ async function writeRecordInner(
   spaceId: string,
   record: RecordFile,
   opts?: WriteValidationOptions
-): Promise<{ data: RecordFile | null; error: string | null }> {
+): Promise<RecordWriteResult> {
   const parsed = RecordFileSchema.safeParse(record);
   if (!parsed.success) return { data: null, error: parsed.error.message };
   return withStoreWriteLock(schemaGateKey(spaceId, parsed.data.collectionId), () => writeRecordValidated(spaceId, parsed.data, opts));
@@ -1028,13 +1034,23 @@ interface WriteValidationOptions {
   /** Refuse data keys the schema doesn't declare (MCP writes). Checked under
    *  the schema gate, so a concurrent schema change can't slip one past. */
   strictFields?: boolean;
+  /** The stored record an update started from. A write that would leave its
+   *  data and metadata as they are, once checked, writes nothing. */
+  existing?: RecordFile;
+}
+
+interface RecordWriteResult {
+  data: RecordFile | null;
+  error: string | null;
+  /** The write changed nothing, so nothing was written. */
+  unchanged?: boolean;
 }
 
 async function writeRecordValidated(
   spaceId: string,
   record: RecordFile,
   opts?: WriteValidationOptions
-): Promise<{ data: RecordFile | null; error: string | null }> {
+): Promise<RecordWriteResult> {
   const parsed = { data: record };
   // Lifecycle-only writes (archive/restore) leave `data` untouched, so they
   // skip schema validation: a record whose data drifted invalid via a file
@@ -1051,6 +1067,11 @@ async function writeRecordValidated(
     parsed.data.data = normalized.data;
     const validationError = validateAgainstSchema(parsed.data.data, schema, opts?.onlyKeys);
     if (validationError) return { data: null, error: validationError };
+    // Compared after the checks, so a refused value is still refused and a
+    // value that only normalizes to the stored one counts as unchanged.
+    if (opts?.existing && isDeepStrictEqual(parsed.data.data, opts.existing.data) && isDeepStrictEqual(parsed.data.metadata, opts.existing.metadata)) {
+      return { data: opts.existing, error: null, unchanged: true };
+    }
   }
   await ensureRecordDirs(spaceId, parsed.data.collectionId);
   const path = recordPath(spaceId, parsed.data.collectionId, parsed.data.id);
@@ -1115,12 +1136,46 @@ export async function createRecord(spaceId: string, collectionId: string, input:
   return result;
 }
 
+type RecordActivityAction = "records.added" | "records.updated" | "records.removed" | "records.archived" | "records.restored";
+
+interface RecordActivityCount {
+  spaceId: string;
+  collectionId: string;
+  action: RecordActivityAction;
+  count: number;
+}
+
+const recordActivityBatch = new AsyncLocalStorage<Map<string, RecordActivityCount>>();
+
+/** Run a call that changes many records, noting it in Activity once per
+ *  collection and kind of change with its count, not once per record. What
+ *  was written before a failure is still noted. */
+export async function batchRecordActivity<T>(work: () => Promise<T>): Promise<T> {
+  if (recordActivityBatch.getStore()) return work();
+  const counts = new Map<string, RecordActivityCount>();
+  try {
+    return await recordActivityBatch.run(counts, work);
+  } finally {
+    for (const { spaceId, collectionId, action, count } of counts.values()) {
+      recordActivity({ spaceId, action, target: { kind: "collection", collectionId }, count });
+    }
+  }
+}
+
 /** Record changes are noted per collection; readers combine a day's changes. */
 function noteRecordActivity(
   spaceId: string,
   collectionId: string,
-  action: "records.added" | "records.updated" | "records.removed"
+  action: RecordActivityAction
 ): void {
+  const batch = recordActivityBatch.getStore();
+  if (batch) {
+    const key = `${spaceId}\0${collectionId}\0${action}`;
+    const noted = batch.get(key);
+    if (noted) noted.count += 1;
+    else batch.set(key, { spaceId, collectionId, action, count: 1 });
+    return;
+  }
   recordActivity({
     spaceId,
     action,
@@ -1195,14 +1250,17 @@ function randomRecordId(): string {
   return `rec-${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`;
 }
 
-export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean; ifData?: Record<string, unknown> }): Promise<{ data: RecordFile | null; error: string | null }> {
+/** Merge a patch into a record. A patch that leaves the record as it is
+ *  writes nothing: the stored record comes back with `unchanged`, its
+ *  "updated by" and time as they were, and Activity says nothing. */
+export async function updateRecord(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean; ifData?: Record<string, unknown> }): Promise<RecordWriteResult> {
   assertSpaceAccess(spaceId, "edit");
   const result = await updateRecordInner(spaceId, collectionId, recordId, patch);
-  if (result.data) noteRecordActivity(spaceId, collectionId, "records.updated");
+  if (result.data && !result.unchanged) noteRecordActivity(spaceId, collectionId, "records.updated");
   return result;
 }
 
-async function updateRecordInner(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean; ifData?: Record<string, unknown> }): Promise<{ data: RecordFile | null; error: string | null }> {
+async function updateRecordInner(spaceId: string, collectionId: string, recordId: string, patch: { data?: Record<string, unknown>; metadata?: Record<string, unknown>; updatedBy?: string; strictFields?: boolean; ifData?: Record<string, unknown> }): Promise<RecordWriteResult> {
   if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
   if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
   if (!isCanonicalId(recordId)) return { data: null, error: invalidIdError("record", recordId) };
@@ -1222,8 +1280,8 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
     // and keys it leaves out keep their stored values.
     const metadata = patch.metadata ? { ...existing.metadata, ...patch.metadata } : existing.metadata;
     const record = buildRecordFile({ id: recordId, collectionId, data: { ...existing.data, ...(patch.data ?? {}) }, metadata, createdBy: patch.updatedBy, existing });
-    const written = await writeRecordInner(spaceId, record, { onlyKeys: touched, strictFields: patch.strictFields });
-    if (written.data) captureRecordSaved(existing, written.data);
+    const written = await writeRecordInner(spaceId, record, { onlyKeys: touched, strictFields: patch.strictFields, existing });
+    if (written.data && !written.unchanged) captureRecordSaved(existing, written.data);
     return written;
   }));
 }
@@ -1342,7 +1400,12 @@ export async function setRecordArchive(
           }
         : null,
     };
-    return writeRecordInner(spaceId, record, { skipDataValidation: true });
+    const written = await writeRecordInner(spaceId, record, { skipDataValidation: true });
+    // Archiving an archived record, or restoring a live one, is no news.
+    if (written.data && Boolean(existing.archive) !== Boolean(archive)) {
+      noteRecordActivity(spaceId, collectionId, archive ? "records.archived" : "records.restored");
+    }
+    return written;
   });
 }
 

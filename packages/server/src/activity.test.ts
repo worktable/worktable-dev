@@ -32,6 +32,7 @@ import { pathMovesFor } from "./doc-aliases.ts"
 import { ownerIdentity } from "./auth.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { resolveParticipant } from "./participant-store.ts"
+import { readRecord, setRecordArchive } from "./record-store.ts"
 import { activityRouter, pendingRouter } from "./routes/activity.ts"
 import { annotationsRouter } from "./routes/annotations.ts"
 import { homeRouter } from "./routes/home.ts"
@@ -359,6 +360,69 @@ describe("workspace activity", () => {
           entry.target.kind === "doc" && entry.target.path === "reports/pulse"
       )
     ).toBe(true)
+  })
+
+  it("says what happened to records: one line a call, and nothing when nothing changed", async () => {
+    const queue = (action: string, args: Record<string, unknown>) =>
+      agentTool("worktable_records_write", {
+        action,
+        spaceId: "company",
+        collectionId: "queue",
+        ...args,
+      })
+    await queue("upsert_collection", {
+      name: "Queue",
+      fields: { title: { type: "string" }, status: { type: "string" } },
+    })
+    await queue("create_many", {
+      records: [1, 2, 3].map((n) => ({
+        recordId: `reply-${n}`,
+        data: { title: `Reply ${n}`, status: "pending" },
+      })),
+    })
+
+    // Writing the value a record already holds changes nothing: it keeps who
+    // last changed it and when, and Activity says nothing.
+    const stored = await readRecord("company", "queue", "reply-1")
+    const same = await queue("update", {
+      recordId: "reply-1",
+      data: { status: "pending" },
+    })
+    expect(same["record"]).toEqual(stored.data)
+    expect((await readRecord("company", "queue", "reply-1")).data).toEqual(
+      stored.data
+    )
+
+    await queue("update_many", {
+      recordIds: ["reply-1", "reply-2", "reply-3"],
+      data: { status: "approved" },
+    })
+    // New fields are news; a new name for the collection is not.
+    await queue("upsert_collection", { fields: { why: { type: "string" } } })
+    await queue("upsert_collection", { name: "Reply Queue" })
+    // A person archives a record, twice, and brings it back.
+    await runAsActivityActor(ownerIdentity().principal, async () => {
+      await setRecordArchive("company", "queue", "reply-2", {})
+      await setRecordArchive("company", "queue", "reply-2", {})
+      await setRecordArchive("company", "queue", "reply-2", null)
+    })
+
+    const page = await request<ActivityPage>("/api/activity?spaceId=company")
+    expect(
+      Object.fromEntries(
+        page.entries.map((entry) => [
+          entry.action,
+          { records: entry.count ?? null, lines: entry.repeats },
+        ])
+      )
+    ).toEqual({
+      "collection.added": { records: null, lines: 1 },
+      "records.added": { records: 3, lines: 1 },
+      "records.updated": { records: 3, lines: 1 },
+      "collection.changed": { records: null, lines: 1 },
+      "records.archived": { records: 1, lines: 1 },
+      "records.restored": { records: 1, lines: 1 },
+    })
   })
 
   it("summarizes who worked on each doc without the page waiting on history", async () => {

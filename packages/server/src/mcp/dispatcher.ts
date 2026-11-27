@@ -80,6 +80,7 @@ import { createHtmlDocument } from "../html-document-create.ts"
 import { withCanonicalHtmlDocumentPath } from "../html-document-path.ts"
 import { updateHtmlDocumentLocked } from "../html-document-update.ts"
 import {
+  batchRecordActivity,
   buildRecordCollectionSchema,
   checkRecordData,
   undeclaredFieldsError,
@@ -2308,30 +2309,33 @@ async function _dispatchOperationInner(
         matchedBy?: string
         error?: string
       }> = []
-      for (const [index, row] of rows.entries()) {
-        const result = await createRecord(spaceId, collectionId, {
-          id: row.recordId,
-          data: row.data,
-          metadata: row.metadata,
-          createdBy: actorId,
-          strictFields: true,
-        })
-        results.push(
-          result.data
-            ? {
-                row: index + 1,
-                recordId: result.data.id,
-                created: result.created === true,
-                ...(result.matchedBy ? { matchedBy: result.matchedBy } : {}),
-              }
-            : {
-                row: index + 1,
-                recordId: row.recordId ?? "",
-                created: false,
-                error: result.error ?? "Write failed",
-              }
-        )
-      }
+      // One call is one line in Activity, with its count.
+      await batchRecordActivity(async () => {
+        for (const [index, row] of rows.entries()) {
+          const result = await createRecord(spaceId, collectionId, {
+            id: row.recordId,
+            data: row.data,
+            metadata: row.metadata,
+            createdBy: actorId,
+            strictFields: true,
+          })
+          results.push(
+            result.data
+              ? {
+                  row: index + 1,
+                  recordId: result.data.id,
+                  created: result.created === true,
+                  ...(result.matchedBy ? { matchedBy: result.matchedBy } : {}),
+                }
+              : {
+                  row: index + 1,
+                  recordId: row.recordId ?? "",
+                  created: false,
+                  error: result.error ?? "Write failed",
+                }
+          )
+        }
+      })
       wsManager.broadcast(spaceId, {
         type: "record_collection_update",
         spaceId,
@@ -2416,19 +2420,21 @@ async function _dispatchOperationInner(
         ids = matched.records.map((record) => record.id)
       }
       const results: Array<{ recordId: string; updated: boolean; error?: string }> = []
-      for (const recordId of ids) {
-        const result = await updateRecord(spaceId, collectionId, recordId, {
-          data,
-          metadata,
-          updatedBy: actorId,
-          strictFields: true,
-        })
-        results.push(
-          result.data
-            ? { recordId, updated: true }
-            : { recordId, updated: false, error: result.error ?? "Update failed" }
-        )
-      }
+      await batchRecordActivity(async () => {
+        for (const recordId of ids) {
+          const result = await updateRecord(spaceId, collectionId, recordId, {
+            data,
+            metadata,
+            updatedBy: actorId,
+            strictFields: true,
+          })
+          results.push(
+            result.data
+              ? { recordId, updated: true }
+              : { recordId, updated: false, error: result.error ?? "Update failed" }
+          )
+        }
+      })
       wsManager.broadcast(spaceId, {
         type: "record_collection_update",
         spaceId,

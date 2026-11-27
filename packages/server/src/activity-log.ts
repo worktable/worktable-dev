@@ -674,6 +674,9 @@ const COMBINABLE: ReadonlySet<ActivityAction> = new Set<ActivityAction>([
   "records.added",
   "records.updated",
   "records.removed",
+  "records.archived",
+  "records.restored",
+  "collection.changed",
 ])
 
 function combineKey(event: ActivityEvent, offset: number): string | null {

@@ -35,6 +35,10 @@ export const ActivityActionSchema = z.enum([
   "records.added",
   "records.updated",
   "records.removed",
+  "records.archived",
+  "records.restored",
+  "collection.added",
+  "collection.changed",
 ])
 
 export const ActivityTargetSchema = z.discriminatedUnion("kind", [

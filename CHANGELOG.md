@@ -38,6 +38,7 @@ infrastructure and personal context out of release notes.
 - **Share links:** A link made under More links can take visitor comments, with its own Allow comments switch. Each link says when comments are on.
 - **CSV and TSV files:** A table file fills its page as a grid in the style of Records. Every row shows, not only the first 1,000, with column letters, names and row numbers kept in view as you scroll. Click a column name to sort by it, search to keep the rows that match, and drag a column's edge to widen it. Numbers sort as numbers and align right. None of this changes the file.
 - **Full Worktable:** Making room at the storage limit never removes the version your last change replaced, so that change can always be undone. A replace that would need it gone is refused instead. A drawing keeps saving a little past the limit, so you don't lose what you were drawing.
+- **Activity for Records:** A bulk change or an import is one line with its count, so a large import no longer pushes older history out of Activity. Activity also says when Records are archived or restored, when a collection is added, and when its fields change.
 
 ### Fixed
 
@@ -54,6 +55,7 @@ infrastructure and personal context out of release notes.
 - **Full Worktable:** When a Worktable is at its storage limit, or a file is larger than 64 MiB, uploads, new Docs and drawings, saved versions and pasted images now say so instead of asking you to try again. A drawing that can't save says why and saves once there is room, and a pasted image that can't be saved no longer leaves an empty block.
 - **PDFs:** A PDF opens on its page and reads in place: scroll, select and copy text, find, jump to a page and zoom, with a picture of each page and the file's outline beside it. A password-protected PDF asks for its password, and a link ending in `#page=12` opens at that page.
 - **PDFs:** A PDF opens on its page and reads in place: scroll, select and copy text, find, jump to a page and zoom, with a picture of each page and the file's outline beside it. A password-protected PDF asks for its password, and a link ending in `#page=12` opens at that page. A PDF in a Doc opens full screen from its card.
+- **Records nobody changed:** Saving a Record with the values it already has no longer marks it as updated, moves it up the list or adds a line to Activity.
 
 ## [0.1.52] - 2026-11-19
 

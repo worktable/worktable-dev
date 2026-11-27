@@ -2885,7 +2885,7 @@ async function _dispatchOperationInner(
       const includeArchived = args["includeArchived"] as boolean | undefined
       const commonDocuments = hasScope(identity.scopes, "documents:read")
       const pathPrefix = normalizePathPrefix(args["pathPrefix"])
-      const limit = 50
+      const limit = Math.min((args["maxResults"] as number | undefined) ?? 50, 50)
 
       // A folder-scoped search ranks across a wider candidate set so the
       // folder's best matches are not crowded out before filtering.

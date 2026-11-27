@@ -38,6 +38,7 @@ import { isHosted } from "../hosted.ts"
 import {
   catalogTools,
   ToolArgumentError,
+  forgivenArguments,
   catalogOutputSchema,
   routeCatalogCall,
 } from "./catalog.ts"
@@ -405,7 +406,7 @@ export function registerTools(
       return Promise.resolve(mkErr("file goes with action upload."))
     }
     return run(name, [operation], extra as CallExtra, { file, legacyFileRead })
-  })
+  }, forgivenArguments)
   const restoreToolListing = installOpenAiToolDescriptorCompatibility(server)
 
   registerCompanyKnowledgeTools(server, {

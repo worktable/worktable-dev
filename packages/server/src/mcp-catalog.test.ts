@@ -265,6 +265,45 @@ describe("listed tools through MCP", () => {
     await call("worktable_spaces_write", { spaceId, archived: false })
   })
 
+  it("takes the arguments agents commonly send", async () => {
+    const { spaceId } = await call("worktable_spaces_write", { name: "Plans" })
+
+    // State, pins and the file tools say path, so agents send it to the Doc
+    // tools too. Links in Docs start with a slash, so their paths do as well.
+    await call("worktable_docs_write", { spaceId, path: "/notes/first", content: "# First\n\nAlpha line", lifetime: "durable" })
+    expect((await call("worktable_docs_read", { spaceId, path: "notes/first" })).content).toContain("Alpha line")
+    await call("worktable_docs_write", { spaceId, docPath: "/notes/first", edits: [{ oldText: "Alpha", newText: "Beta" }] })
+    expect((await call("worktable_docs_read", { spaceId, docPath: "/notes/first" })).content).toContain("Beta line")
+    expect(await call("worktable_files_read", { spaceId, path: "/notes/first" })).toBeDefined()
+    await call("worktable_files_write", {
+      spaceId,
+      path: "/notes/data.csv",
+      format: { id: "worktable.file", sourceVersion: 1 },
+      lifetime: "durable",
+      source: "a\n1\n",
+    })
+    await call("worktable_html_write", {
+      spaceId,
+      id: "/notes/page",
+      name: "Page",
+      lifetime: "durable",
+      html: "<!doctype html><html><head><title>Page</title></head><body>Page</body></html>",
+    })
+    await call("worktable_annotations_write", { spaceId, body: "Tighten this", target: { type: "doc", docPath: "/notes/first" } })
+    await call("worktable_files_update", { spaceId, path: "/notes/first", newPath: "/notes/second" })
+    const listed = JSON.stringify(await call("worktable_files_read", { spaceId, pathPrefix: "/notes" }))
+    for (const path of ["notes/second", "notes/data.csv", "notes/page"]) expect(listed).toContain(path)
+
+    // A search by meaning takes the options the tool lists for an exact one.
+    await call("worktable_docs_write", { spaceId, docPath: "notes/third", content: "# Third\n\nBeta line again", lifetime: "durable" })
+    const found = await call("worktable_search", { query: "Beta line", spaceId, maxResults: 1, caseSensitive: false, context: 2 })
+    expect(found.results).toHaveLength(1)
+
+    // A list of comments has no one target to give context for.
+    const comments = await call("worktable_annotations_read", { spaceId, includeTargetContext: true })
+    expect(comments.annotations).toHaveLength(1)
+  })
+
   it("renames an HTML Doc without its HTML, and keeps how its page is served to itself", async () => {
     const { spaceId } = await call("worktable_spaces_write", { name: "Apps" })
     const created = await call("worktable_html_write", {

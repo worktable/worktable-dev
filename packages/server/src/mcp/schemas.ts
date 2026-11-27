@@ -223,6 +223,13 @@ export const SearchInput = z.object({
     .describe(
       "Only documents at or under this folder path within spaceId; records are excluded."
     ),
+  maxResults: z
+    .number()
+    .int()
+    .min(1)
+    .max(500)
+    .optional()
+    .describe("The most results to return; a search by meaning returns up to 50."),
 })
 
 // ---- Widget schemas ----

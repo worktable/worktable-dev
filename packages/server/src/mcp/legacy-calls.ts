@@ -179,7 +179,9 @@ interface MutableRequestHandlerServer {
  */
 export function installLegacyCalls(
   server: McpServer,
-  run: (name: string, match: LegacyCallMatch, extra: unknown) => Promise<unknown>
+  run: (name: string, match: LegacyCallMatch, extra: unknown) => Promise<unknown>,
+  // Applied to every other call's arguments before the SDK validates them.
+  forgive: (name: string, args: unknown) => unknown = (_name, args) => args
 ): () => void {
   const raw = (server as unknown as { server?: MutableRequestHandlerServer })
     .server
@@ -195,7 +197,14 @@ export function installLegacyCalls(
         .params
       const name = typeof params?.name === "string" ? params.name : ""
       const match = matchLegacyCall(name, params?.arguments)
-      return match ? run(name, match, extra) : handler(request, extra)
+      if (match) return run(name, match, extra)
+      const forgiven = forgive(name, params?.arguments)
+      return handler(
+        forgiven === params?.arguments
+          ? request
+          : { ...(request as object), params: { ...params, arguments: forgiven } },
+        extra
+      )
     })
   }
   return () => {

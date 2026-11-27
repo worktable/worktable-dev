@@ -42,4 +42,22 @@ describe("what an agent is told about a Space's files", () => {
     // cuts one at about 10,000 tokens. This leaves room for pins and skills.
     expect(JSON.stringify(told).length).toBeLessThan(8000)
   })
+
+  it("names fewer files and folders when their paths are very long, and cuts none", () => {
+    // A path may be 4,096 characters, and a cut path opens nothing.
+    const long = (index: number) => `${String(index).padStart(3, "0")}-${"x".repeat(1500)}`
+    const items = Array.from({ length: 60 }, (_, index) => ({
+      path: `${long(index)}/${long(index)}`,
+      changedAt: at((index % 28) + 1),
+    }))
+    const told = orientItems(items)
+    expect(told.items).toBe(60)
+    expect(told.folders.length).toBeGreaterThan(0)
+    expect(told.folders.length + told.moreFolders!).toBe(60)
+    expect(told.recent.length).toBeGreaterThan(0)
+    for (const row of [...told.folders, ...told.recent]) {
+      expect(items.some((item) => item.path === row.path || item.path.startsWith(`${row.path}/`))).toBe(true)
+    }
+    expect(JSON.stringify(told).length).toBeLessThan(13000)
+  })
 })

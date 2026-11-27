@@ -22,6 +22,23 @@ export const ORIENT_FOLDER_LIMIT = 40
 export const ORIENT_RECENT_LIMIT = 10
 /** A title past this is cut: orientation names a file, it doesn't quote it. */
 const ORIENT_TITLE_LENGTH = 120
+/**
+ * The most characters either list may take. A path is never cut, since a cut
+ * path opens nothing, so a list of very long paths names fewer of them.
+ */
+export const ORIENT_LIST_CHARS = 6000
+
+/** The rows from the start of a list that fit in its share of the answer. */
+function fitting<T>(rows: readonly T[]): T[] {
+  const kept: T[] = []
+  let used = 0
+  for (const row of rows) {
+    used += JSON.stringify(row).length
+    if (used > ORIENT_LIST_CHARS && kept.length > 0) break
+    kept.push(row)
+  }
+  return kept
+}
 
 export const SPACE_ORIENT_HINT =
   "List files with worktable_files_read (pathPrefix for one folder), or find them with worktable_search."
@@ -47,21 +64,22 @@ export function orientItems(items: readonly OrientItem[]) {
   const folders = [...byFolder.values()].sort(
     (left, right) => newestFirst(left, right) || left.path.localeCompare(right.path)
   )
-  const recent = items
-    .filter((item) => item.changedAt)
-    .sort((left, right) => newestFirst(left, right) || left.path.localeCompare(right.path))
-    .slice(0, ORIENT_RECENT_LIMIT)
-    .map((item) => ({
-      path: item.path,
-      ...(item.title ? { title: item.title.slice(0, ORIENT_TITLE_LENGTH) } : {}),
-      changedAt: item.changedAt!,
-    }))
+  const recent = fitting(
+    items
+      .filter((item) => item.changedAt)
+      .sort((left, right) => newestFirst(left, right) || left.path.localeCompare(right.path))
+      .slice(0, ORIENT_RECENT_LIMIT)
+      .map((item) => ({
+        path: item.path,
+        ...(item.title ? { title: item.title.slice(0, ORIENT_TITLE_LENGTH) } : {}),
+        changedAt: item.changedAt!,
+      }))
+  )
+  const named = fitting(folders.slice(0, ORIENT_FOLDER_LIMIT))
   return {
     items: items.length,
-    folders: folders.slice(0, ORIENT_FOLDER_LIMIT),
-    ...(folders.length > ORIENT_FOLDER_LIMIT
-      ? { moreFolders: folders.length - ORIENT_FOLDER_LIMIT }
-      : {}),
+    folders: named,
+    ...(folders.length > named.length ? { moreFolders: folders.length - named.length } : {}),
     recent,
   }
 }

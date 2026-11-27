@@ -417,7 +417,7 @@ export const SpaceOrientationFields = {
         changedAt: z.string(),
       })
     )
-    .describe("With spaceId: the ten files changed most recently, newest first."),
+    .describe("With spaceId: the files changed most recently, newest first, ten at most."),
 }
 
 const SpaceOrientationSchema = z.looseObject({

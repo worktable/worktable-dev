@@ -435,7 +435,7 @@
           "maximum": 9007199254740991
         },
         "recent": {
-          "description": "With spaceId: the ten files changed most recently, newest first.",
+          "description": "With spaceId: the files changed most recently, newest first, ten at most.",
           "type": "array",
           "items": {
             "type": "object",

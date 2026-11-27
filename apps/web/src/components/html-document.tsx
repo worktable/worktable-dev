@@ -70,7 +70,7 @@ import {
 } from "react"
 import type { ViewerImage } from "@/components/viewer/image-viewer"
 import { frameImages } from "@/lib/frame-images"
-import { toast } from "@worktable/ui/components/sonner"
+import { Toaster, toast } from "@worktable/ui/components/sonner"
 import {
   ResponsiveDialog,
   ResponsiveDialogBody,
@@ -580,7 +580,13 @@ function WidgetDetailPage({
       }
       if (data?.type === "worktable.ui.notify") {
         if (data.spaceId === spaceId && data.widgetId === widgetId)
-          showPageNotice(data.message, data.tone)
+          showPageNotice(
+            data.message,
+            data.tone,
+            // In full screen only what is inside the page's wrapper shows.
+            document.fullscreenElement !== null &&
+              document.fullscreenElement === wrapperRef.current
+          )
         return
       }
       // Track the widget's record subscriptions so the parent's space socket can
@@ -1021,6 +1027,9 @@ function WidgetDetailPage({
           } ${previewVersionId ? "hidden xl:flex xl:flex-[1_1_50%] xl:border-r xl:border-border print:block print:flex-1 print:border-r-0" : "flex flex-1"}`}
         >
           <WidgetDiagnostics diagnostics={importantDiagnostics} />
+          {nativeFullscreen ? (
+            <Toaster id={PAGE_FULLSCREEN_TOASTER} theme={resolvedTheme} />
+          ) : null}
           {elementComments.mode && (
             <p
               role="status"
@@ -1394,15 +1403,21 @@ function ArchivedWidgetBanner({
   )
 }
 
+/** The toaster inside a page in full screen, where the app's own can't show. */
+const PAGE_FULLSCREEN_TOASTER = "html-doc-fullscreen"
+
 /**
  * A page's own short message, as one of the app's toasts. The same words
  * shown again replace the one on screen instead of stacking.
  */
-function showPageNotice(message: unknown, tone: unknown) {
+function showPageNotice(message: unknown, tone: unknown, fullscreen: boolean) {
   if (typeof message !== "string") return
   const text = message.trim().slice(0, 200)
   if (!text) return
-  const options = { id: `page-notice:${text}` }
+  const options = {
+    id: `page-notice:${text}`,
+    ...(fullscreen ? { toasterId: PAGE_FULLSCREEN_TOASTER } : {}),
+  }
   if (tone === "error") toast.error(text, options)
   else if (tone === "warning") toast.warning(text, options)
   else if (tone === "success") toast.success(text, options)

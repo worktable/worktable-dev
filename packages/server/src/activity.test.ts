@@ -29,6 +29,7 @@ import {
 } from "./activity-log.ts"
 import { setAppDirOverride } from "./app-storage.ts"
 import { pathMovesFor } from "./doc-aliases.ts"
+import { createHtmlDocument } from "./html-document-create.ts"
 import { ownerIdentity } from "./auth.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { resolveParticipant } from "./participant-store.ts"
@@ -461,6 +462,48 @@ describe("workspace activity", () => {
     ).toMatchObject([
       ["doc.deleted", null, { path: "final" }],
       ["doc.moved", "draft", { path: "final" }],
+    ])
+  })
+
+  it("says when an agent changes an HTML Doc someone else made", async () => {
+    const PAGE = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h1>Board</h1></body></html>`
+    await runAsActivityActor(ownerIdentity().principal, () =>
+      createHtmlDocument({
+        spaceId: "company",
+        explicitId: "board",
+        name: "Board",
+        html: PAGE,
+        createdBy: "local:owner",
+        versionSource: "rest-api",
+        versionUpdatedBy: "local:owner",
+      })
+    )
+    const lines = async () =>
+      (await request<ActivityPage>("/api/activity?spaceId=company")).entries.map(
+        (entry) => [entry.action, entry.actor.kind, entry.actor.name ?? null]
+      )
+    // A new name only goes another way than a change to the page.
+    await agentTool("worktable_html_write", { action: "rename", spaceId: "company", htmlId: "board", name: "Hiring board" })
+    expect(await lines()).toEqual([
+      ["doc.edited", "agent", "Codex"],
+      ["doc.created", "person", "Owner"],
+    ])
+    // Later, the agent changes the page itself.
+    setSystemTime(new Date(Date.now() + 60 * 60_000))
+    const { revision } = await agentTool("worktable_html_read", { action: "read", spaceId: "company", htmlId: "board", includeHtml: false })
+    await agentTool("worktable_html_write", {
+      action: "update",
+      spaceId: "company",
+      htmlId: "board",
+      expectedRevision: revision,
+      edits: [{ oldText: "<h1>Board</h1>", newText: "<h1>Hiring board</h1>" }],
+    })
+    setSystemTime()
+    // The same day, the same agent and the same page stay one line.
+    const page = await request<ActivityPage>("/api/activity?spaceId=company")
+    expect(page.entries.map((entry) => [entry.action, entry.repeats])).toEqual([
+      ["doc.edited", 2],
+      ["doc.created", 1],
     ])
   })
 

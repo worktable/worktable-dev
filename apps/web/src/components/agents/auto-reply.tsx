@@ -137,8 +137,7 @@ function About({ connection }: { connection: AgentConnection }) {
     )
   return (
     <p>
-      {name} answers thread messages on its own. It sees comments the next time
-      it works in Worktable.
+      {name} answers comments and messages you send it on its own.
     </p>
   )
 }

@@ -12,8 +12,9 @@ infrastructure and personal context out of release notes.
 ### Added
 
 - **Images in HTML Docs open full screen:** Click a picture on an HTML Doc to see it in the image viewer, as in other Docs: zoom, pan, and move through the page's pictures. A picture the page links or uses as a button keeps its own click.
+- **Comments reach always-on agents:** A comment you send to OpenClaw, Hermes or Grok Bot is now picked up and answered on its own, as a thread message is. The comments waiting on one page come to the agent together, and each gets an answer. Update the OpenClaw and Hermes plugins, and for Grok Bot copy its routine instructions again from **Settings → Agents** and paste them into Grok Bot.
 - **Recent in the sidebar:** The sidebar lists what you opened last on this device, with **See All** to list the rest beside the page. Opening something from Recent leaves the list in the same order.
-- **PDFs:** A PDF opens on its page and reads in place: scroll, select and copy text, find, jump to a page and zoom, with a picture of each page and the file's outline beside it. A password-protected PDF asks for its password, and a link ending in `#page=12` opens at that page.
+- **PDFs:** A PDF opens on its page and reads in place: scroll, select and copy text, find, jump to a page and zoom, with a picture of each page and the file's outline beside it. A password-protected PDF asks for its password, and a link ending in `#page=12` opens at that page. A PDF in a Doc opens full screen from its card.
 - **Pinned pictures:** On Home and Space Home, a pinned image, PDF or drawing shows a picture of it instead of its icon.
 - **Export downloads resume:** A Worktable export that stops downloading partway can pick up where it stopped, in a browser or download tool that resumes downloads.
 - **Agents (preview):** With preview tools on, agents asked for slides learn what makes a deck work in Worktable: one 16:9 slide at a time with keys and tap, a stack on a phone, one slide per page in print, and the slide kept in the address so an edit doesn't move the presenter. What the slides hold and how they look is left to the request.
@@ -56,8 +57,7 @@ infrastructure and personal context out of release notes.
 - **Export and import:** When a Worktable is too large to export with all its history, a package is too large to import, or the disk is full, Settings says so and what to do next, instead of "Export failed." with a technical reason.
 - **Export:** A Worktable at its 2 GiB limit always exports with all its history: packages can now be up to 2.25 GiB, room for the history, the offline viewer and a drawing saved a little past the limit. Before, a full Worktable of photos or PDFs could fail to export.
 - **Full Worktable:** When a Worktable is at its storage limit, or a file is larger than 64 MiB, uploads, new Docs and drawings, saved versions and pasted images now say so instead of asking you to try again. A drawing that can't save says why and saves once there is room, and a pasted image that can't be saved no longer leaves an empty block.
-- **PDFs:** A PDF opens on its page and reads in place: scroll, select and copy text, find, jump to a page and zoom, with a picture of each page and the file's outline beside it. A password-protected PDF asks for its password, and a link ending in `#page=12` opens at that page.
-- **PDFs:** A PDF opens on its page and reads in place: scroll, select and copy text, find, jump to a page and zoom, with a picture of each page and the file's outline beside it. A password-protected PDF asks for its password, and a link ending in `#page=12` opens at that page. A PDF in a Doc opens full screen from its card.
+- **Comment states:** The comments list says the same as the open comment: To, Delivered to, Read by or Replied by.
 - **Records nobody changed:** Saving a Record with the values it already has no longer marks it as updated, moves it up the list or adds a line to Activity.
 
 ## [0.1.52] - 2026-11-19

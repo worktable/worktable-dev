@@ -774,7 +774,6 @@ export const RenameThreadInput = z.object({
 export const ClaimThreadDeliveryInput = z.object({
   waitSeconds: z.number().min(0).max(25).optional(),
   threadLocationVersion: z.literal(2).optional(),
-  // Taken from any caller; honoured on the preview surface only.
   comments: z
     .boolean()
     .optional()

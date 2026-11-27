@@ -111,7 +111,7 @@ export function startGrokBotRuntime(
           ["threads:read", "threads:write", "threads:participate"].every(
             (scope) => hasScope(agent.scopeCeiling!, scope)
           ))
-      // SPIKE: a comment rings Grok only once its routine asks for comments.
+      // A comment rings Grok only once its routine asks for comments.
       const comments = await takesComments(connection.participantId)
       const queued = deliveries.filter(
         (d) =>
@@ -237,7 +237,7 @@ export function startGrokBotRuntime(
   }
   const offConfig = onGrokBotChange(nudge)
   const offPolicy = onTeamPolicyChange(nudge)
-  // SPIKE: a comment sent to Grok is work, as a thread message is.
+  // A comment sent to Grok is work, as a thread message is.
   const offPending = onPendingChange((change) => {
     if (change.type === "added" && change.entry.kind === "comment") {
       canonicalRevision += 1

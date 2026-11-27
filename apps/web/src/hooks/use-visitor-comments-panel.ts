@@ -1,13 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useLocation, useNavigate } from "@tanstack/react-router"
 import type { DocumentSharingSummary } from "@worktable/types"
-
-/** The address of one comment in its Doc: `#comment-<id>`. */
-const COMMENT_HASH = "comment-"
-
-export function commentHash(annotationId: string): string {
-  return `${COMMENT_HASH}${annotationId}`
-}
+import { COMMENT_HASH } from "@/lib/comment-hash"
 
 /**
  * Pending and notices open Visitors, Home's Try Next opens Comments, and a

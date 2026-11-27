@@ -326,8 +326,10 @@ as the member (see [Team variant](#team-variant)).
 
 Per endpoint (the Spaces list, a Space, its documents, the document page,
 document content by revision, Recent, Pending, threads, search and
-`/api/workspace`) it sends 3 warm-up requests, then `--requests` (default 20)
-in sequence, then stays idle for as long; the per-request figure is the
+`/api/workspace`) it sends 3 warm-up requests and waits out the 2 s window in
+which a file just written has a fingerprint caches don't trust (a warm-up can
+write, as the first Threads request writes the delivery file), then sends
+`--requests` (default 20) in sequence, then stays idle for as long; the per-request figure is the
 difference over the request count. Each endpoint is measured `--attempts`
 times (default 2). The attempt with the quietest idle window is kept, and
 among equally quiet ones the attempt whose requests did the least, since

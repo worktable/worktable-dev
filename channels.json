@@ -9,10 +9,10 @@
       "held": false
     },
     "beta": {
-      "version": "0.1.53-dev.585+568e770",
-      "tag": "v0.1.53-dev.585",
-      "commit": "568e770407bd2b5ef9354c153653d0fc99ebc501",
-      "publishedAt": "2026-11-27T10:12:39.022Z",
+      "version": "0.1.53-dev.586+9645442",
+      "tag": "v0.1.53-dev.586",
+      "commit": "96454427c1117f0259d875a86afd273097a2b216",
+      "publishedAt": "2026-11-27T10:27:20.397Z",
       "held": false,
       "desktop": {
         "version": "0.1.53-dev.584+2e0246c",

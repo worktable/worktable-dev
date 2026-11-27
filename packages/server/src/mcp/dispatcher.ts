@@ -91,6 +91,8 @@ import {
   listRecordCollections,
   queryRecords,
   readRecord,
+  readRecordChangesPage,
+  setRecordArchive,
   readRecordCollectionSchema,
   listRecordCollectionNames,
   updateRecord,
@@ -146,7 +148,7 @@ import {
   type CurrentFile,
 } from "../document-page-service.ts"
 import { FILE_NO_HISTORY_MESSAGE, fileNoHistory } from "../file-limits.ts"
-import type { FileNoHistory } from "@worktable/types"
+import type { FileNoHistory, RecordFile } from "@worktable/types"
 import { randomUUID } from "node:crypto"
 import { diffDocumentText, docBlocksAtRevision } from "../document-diff.ts"
 import {
@@ -325,6 +327,7 @@ import {
   RestoreDocumentFolderInput,
   DeleteDocumentFolderInput,
   RECORD_BATCH_LIMIT,
+  RECORD_HISTORY_DEFAULT,
   ReadSkillInput,
   ProposeSkillInput,
 } from "./schemas.ts"
@@ -833,6 +836,51 @@ export async function syncDocAfterToolWrite(
       ...(revision ? { revision } : {}),
     },
   })
+}
+
+/** The most of a Record's history one read returns, past its first change. */
+const RECORD_HISTORY_PAGE_BYTES = 64 * 1024
+
+/**
+ * The archive change an update asks for, if any. Held on the preview surface:
+ * elsewhere it is refused, never dropped, so no caller believes it archived.
+ */
+function recordArchiveChange(
+  args: Record<string, unknown>,
+  surface: McpSurface | undefined
+): { archived: boolean; reason?: string } | null {
+  const archived = args["archived"] as boolean | undefined
+  const reason = args["reason"] as string | undefined
+  if (archived === undefined && reason === undefined) return null
+  if (surface !== "preview")
+    throw new Error("This Worktable's update takes data and metadata only.")
+  if (archived !== true && reason !== undefined)
+    throw new Error("reason goes with archived: true.")
+  return { archived: archived!, ...(reason ? { reason } : {}) }
+}
+
+/**
+ * A Record archived or brought back, as asked. One already as asked is left
+ * alone: nothing is written and its history gains no line.
+ */
+async function setRecordArchived(
+  spaceId: string,
+  collectionId: string,
+  record: RecordFile,
+  change: { archived: boolean; reason?: string },
+  actorId: string
+): Promise<{ data: RecordFile | null; error: string | null }> {
+  if (Boolean(record.archive) === change.archived)
+    return { data: record, error: null }
+  return setRecordArchive(
+    spaceId,
+    collectionId,
+    record.id,
+    change.archived
+      ? { archivedBy: actorId, ...(change.reason ? { reason: change.reason } : {}) }
+      : null,
+    actorId
+  )
 }
 
 const LIST_PAGE_SIZE = 200
@@ -2182,13 +2230,31 @@ async function _dispatchOperationInner(
       return warnings.length > 0 ? { ...result, warnings } : result
     }
     case "records.read": {
-      const { data, error } = await readRecord(
-        args["spaceId"] as string,
-        args["collectionId"] as string,
-        args["recordId"] as string
-      )
+      const spaceId = args["spaceId"] as string
+      const collectionId = args["collectionId"] as string
+      const recordId = args["recordId"] as string
+      const { data, error } = await readRecord(spaceId, collectionId, recordId)
       if (error || !data) throw new Error(error ?? "Record not found")
-      return { record: data }
+      // A Record's history is held on the preview surface.
+      if (context.surface !== "preview" || args["history"] !== true)
+        return { record: data }
+      const page = await readRecordChangesPage(spaceId, collectionId, recordId, {
+        before: args["historyCursor"] as string | undefined,
+        limit: (args["historyLimit"] as number | undefined) ?? RECORD_HISTORY_DEFAULT,
+        maxBytes: RECORD_HISTORY_PAGE_BYTES,
+      })
+      if (page.error || !page.data) throw new Error(page.error ?? "Record not found")
+      const { changes, total, next, fromStart } = page.data
+      return {
+        record: data,
+        history: {
+          changes,
+          total,
+          ...(next ? { nextCursor: next } : {}),
+          // Said once, so an agent doesn't ask again for what was never kept.
+          ...(fromStart ? {} : { earlierNotKept: true }),
+        },
+      }
     }
     case "records.create": {
       const spaceId = args["spaceId"] as string
@@ -2261,22 +2327,42 @@ async function _dispatchOperationInner(
       const spaceId = args["spaceId"] as string
       const collectionId = args["collectionId"] as string
       const recordId = args["recordId"] as string
-      const result = await updateRecord(spaceId, collectionId, recordId, {
-        strictFields: true,
-        data: args["data"] as Record<string, unknown> | undefined,
-        metadata: args["metadata"] as Record<string, unknown> | undefined,
-        updatedBy: actorId,
-      })
+      const archive = recordArchiveChange(args, context.surface)
+      const data = args["data"] as Record<string, unknown> | undefined
+      const metadata = args["metadata"] as Record<string, unknown> | undefined
+      // Archiving alone checks no values, so a Record whose values no longer
+      // fit its collection can still be put away.
+      const values = data !== undefined || metadata !== undefined || !archive
+      const result: Awaited<ReturnType<typeof updateRecord>> = values
+        ? await updateRecord(spaceId, collectionId, recordId, {
+            strictFields: true,
+            data,
+            metadata,
+            updatedBy: actorId,
+          })
+        : await readRecord(spaceId, collectionId, recordId)
       if (result.error || !result.data)
         throw new Error(result.error ?? "Update failed")
+      const flipped = archive
+        ? await setRecordArchived(spaceId, collectionId, result.data, archive, actorId)
+        : result
+      if (flipped.error || !flipped.data)
+        throw new Error(flipped.error ?? "Archive failed")
+      const record = flipped.data
       wsManager.broadcast(spaceId, {
         type: "record_update",
         spaceId,
         collectionId,
         recordId,
-        data: result.data,
+        data: record,
       })
-      return { record: result.data }
+      // What the write changed is told on the preview surface.
+      if (context.surface !== "preview") return { record }
+      return {
+        record,
+        ...(!values ? {} : result.unchanged ? { unchanged: true } : { changed: result.changed ?? [] }),
+        ...(archive ? { archived: Boolean(record.archive) } : {}),
+      }
     }
     case "records.create_many": {
       const spaceId = args["spaceId"] as string
@@ -2402,7 +2488,13 @@ async function _dispatchOperationInner(
       if ((recordIds ? 1 : 0) + (where ? 1 : 0) !== 1) {
         throw new Error("Give either recordIds or where.")
       }
-      if (!data && !metadata) throw new Error("Give data or metadata to set.")
+      const archive = recordArchiveChange(args, context.surface)
+      if (!data && !metadata && !archive)
+        throw new Error(
+          context.surface === "preview"
+            ? "Give data, metadata or archived to set."
+            : "Give data or metadata to set."
+        )
       if (data) {
         const schema = (
           await readRecordCollectionSchema(spaceId, collectionId)
@@ -2427,6 +2519,8 @@ async function _dispatchOperationInner(
           where,
           select: [],
           limit: RECORD_BATCH_LIMIT,
+          // Bringing Records back has to find the archived ones.
+          ...(archive?.archived === false ? { includeArchived: true } : {}),
         })
         if ((matched.total ?? matched.records.length) > RECORD_BATCH_LIMIT) {
           throw new Error(
@@ -2435,20 +2529,49 @@ async function _dispatchOperationInner(
         }
         ids = matched.records.map((record) => record.id)
       }
-      const results: Array<{ recordId: string; updated: boolean; error?: string }> = []
+      // Archiving alone checks no values, as for one Record.
+      const values = data !== undefined || metadata !== undefined
+      const results: Array<{
+        recordId: string
+        updated: boolean
+        error?: string
+        changed?: string[]
+        unchanged?: boolean
+        archived?: boolean
+      }> = []
       await batchRecordActivity(async () => {
         for (const recordId of ids) {
-          const result = await updateRecord(spaceId, collectionId, recordId, {
-            data,
-            metadata,
-            updatedBy: actorId,
-            strictFields: true,
+          const result: Awaited<ReturnType<typeof updateRecord>> = values
+            ? await updateRecord(spaceId, collectionId, recordId, {
+                data,
+                metadata,
+                updatedBy: actorId,
+                strictFields: true,
+              })
+            : await readRecord(spaceId, collectionId, recordId)
+          const flipped =
+            archive && result.data
+              ? await setRecordArchived(spaceId, collectionId, result.data, archive, actorId)
+              : result
+          if (!flipped.data) {
+            results.push({
+              recordId,
+              updated: false,
+              error: flipped.error ?? "Update failed",
+            })
+            continue
+          }
+          results.push({
+            recordId,
+            updated: true,
+            // What each write changed is told on the preview surface.
+            ...(context.surface !== "preview" || !values
+              ? {}
+              : result.unchanged
+                ? { unchanged: true }
+                : { changed: result.changed ?? [] }),
+            ...(archive ? { archived: Boolean(flipped.data.archive) } : {}),
           })
-          results.push(
-            result.data
-              ? { recordId, updated: true }
-              : { recordId, updated: false, error: result.error ?? "Update failed" }
-          )
         }
       })
       wsManager.broadcast(spaceId, {

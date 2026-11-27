@@ -424,4 +424,60 @@ describe("the preview tools", () => {
       expect(row).not.toHaveProperty("createdAt")
     }
   })
+
+  it("let an agent archive a Record, read what changed in it and learn what its own write changed", async () => {
+    const { spaceId } = await call("worktable_spaces_write", { name: "Queue" })
+    const at = { spaceId, collectionId: "replies" }
+    await call("worktable_records_upsert_collection", {
+      ...at,
+      name: "Replies",
+      fields: { title: { type: "string" }, status: { type: "select", values: ["pending", "approved"] } },
+    })
+    for (const recordId of ["r1", "r2"]) {
+      await call("worktable_records_create", { ...at, recordId, data: { title: recordId, status: "pending" } })
+    }
+
+    // A write says which fields it changed, or that it changed nothing.
+    const approve = { ...at, recordId: "r1", data: { title: "r1", status: "approved" } }
+    expect(await call("worktable_records_update", approve)).toMatchObject({ changed: ["status"] })
+    expect(await call("worktable_records_update", approve)).toMatchObject({ unchanged: true })
+
+    // Archiving keeps the Record and takes it out of queries; it is brought back the same way.
+    const archived = await call("worktable_records_update", { ...at, recordId: "r1", archived: true, reason: "Posted elsewhere" })
+    expect(archived).toMatchObject({ archived: true })
+    expect(archived).not.toHaveProperty("changed")
+    expect((await call("worktable_records_query", at)).total).toBe(1)
+    const many = await call("worktable_records_update", { ...at, recordIds: ["r1", "r2"], archived: true })
+    expect(many.counts).toEqual({ updated: 2, failed: 0 })
+    expect((await call("worktable_records_query", at)).total).toBe(0)
+    await call("worktable_records_update", { ...at, where: { title: "r2" }, archived: false })
+    expect(((await call("worktable_records_query", at)).records as Array<{ id: string }>).map((record) => record.id)).toEqual(["r2"])
+    await expect(call("worktable_records_update", { ...at, recordId: "r2", reason: "No archive asked" })).rejects.toThrow("reason goes with archived")
+
+    // The history says who changed what, newest first, and pages to the oldest.
+    const read = await call("worktable_records_query", { ...at, recordId: "r1", history: true })
+    const history = read.history as { changes: Array<Record<string, unknown>>; total: number; nextCursor?: string }
+    // Archived once: asking again for a Record already archived writes nothing.
+    expect(history.changes.map((change) => change.kind)).toEqual(["archived", "changed", "added"])
+    expect(history.total).toBe(3)
+    expect(history.changes[0]).toMatchObject({ reason: "Posted elsewhere", by: { kind: "agent" } })
+    expect(history.changes[1]!.fields).toEqual({ status: { before: "pending", after: "approved" } })
+    // A change made by a call on several Records carries that call's id.
+    const other = (await call("worktable_records_query", { ...at, recordId: "r2", history: true })).history as typeof history
+    expect(other.changes.map((change) => change.kind)).toEqual(["restored", "archived", "added"])
+    expect(other.changes[0]!.call).toBeDefined()
+    expect(other.changes[1]!.call).not.toBe(other.changes[0]!.call)
+    const first = (await call("worktable_records_query", { ...at, recordId: "r1", history: true, limit: 2 })).history as typeof history
+    expect(first.changes.length).toBe(2)
+    const rest = (await call("worktable_records_query", { ...at, recordId: "r1", history: true, cursor: first.nextCursor })).history as typeof history
+    expect(rest.changes.map((change) => change.kind)).toEqual(["added"])
+    expect(rest.nextCursor).toBeUndefined()
+    // These changes reach back to the Record being added, so none is missing.
+    expect(rest).not.toHaveProperty("earlierNotKept")
+    // Asking for archived Records too is no reason to refuse a read by id.
+    expect(await call("worktable_records_query", { ...at, recordId: "r1", history: true, includeArchived: true })).toHaveProperty("history")
+    // Without history a read is what it was.
+    expect(await call("worktable_records_query", { ...at, recordId: "r1" })).not.toHaveProperty("history")
+    await expect(call("worktable_records_query", { ...at, history: true })).rejects.toThrow("history reads one Record")
+  })
 })

@@ -446,6 +446,8 @@ describe("released tool surface", () => {
     // runtimes may claim comments and answer them. Orientation answers for a
     // Space at one size, with no index, and says when storage is nearly
     // full; a file's versions say when older ones were removed at the limit.
+    // A Record read gives its history, an update archives and says what it
+    // changed, and delete says where a Record is archived instead.
     // Every other tool is listed the same on both.
     const waiting = [
       "worktable_state",
@@ -455,6 +457,9 @@ describe("released tool surface", () => {
       "worktable_delivery_claim",
       "worktable_delivery_report",
       "worktable_search",
+      "worktable_records_query",
+      "worktable_records_update",
+      "worktable_delete",
     ]
     const storageNotes: Record<string, string> = {
       worktable_state: "storage",

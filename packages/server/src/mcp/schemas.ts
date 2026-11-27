@@ -501,10 +501,24 @@ export const QueryRecordsInput = z.object({
     .describe("Keyset pagination cursor from a previous response's nextCursor"),
 })
 
+/** Changes of a Record's history one read returns unless asked for more, and the most. */
+export const RECORD_HISTORY_DEFAULT = 20
+export const RECORD_HISTORY_MAX = 100
+
 export const ReadRecordInput = z.object({
   spaceId: z.string(),
   collectionId: z.string(),
   recordId: z.string(),
+  // The Record's history. Taken from any caller; honoured on the preview
+  // surface only.
+  history: z
+    .boolean()
+    .optional()
+    .describe(
+      "With recordId: true also returns the Record's history, its kept changes newest first: who changed which fields, when, and what each held before."
+    ),
+  historyLimit: z.number().int().min(1).max(RECORD_HISTORY_MAX).optional(),
+  historyCursor: z.string().optional(),
 })
 
 export const CreateRecordInput = z.object({
@@ -515,12 +529,27 @@ export const CreateRecordInput = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 })
 
+// Archiving through update is held for the preview surface.
+const ArchivedInput = z
+  .boolean()
+  .optional()
+  .describe(
+    "true archives: the Record leaves lists and queries and is kept, with its history. false brings it back. Use this, not delete, for a Record that is finished, wrong or a duplicate."
+  )
+const ArchiveReasonInput = z
+  .string()
+  .max(2048)
+  .optional()
+  .describe("With archived: true, why, in a sentence. It shows in the Record's history.")
+
 export const UpdateRecordInput = z.object({
   spaceId: z.string(),
   collectionId: z.string(),
   recordId: z.string(),
   data: z.record(z.string(), z.unknown()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  archived: ArchivedInput,
+  reason: ArchiveReasonInput,
 })
 
 /** Records one create_many or update_many call may write. */
@@ -567,6 +596,8 @@ export const UpdateRecordsInput = z.object({
     ),
   data: z.record(z.string(), z.unknown()).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  archived: ArchivedInput,
+  reason: ArchiveReasonInput,
 })
 
 export const DeleteRecordInput = z.object({

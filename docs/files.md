@@ -952,7 +952,10 @@ an undo would put back.
   history setting and each history's own size do. At the total limit a change
   is written without being kept.
 - A value over 64 KiB can't be seen or put back from history.
-- Agents can't read a Record's history yet, and nothing in the app shows it.
+- Nothing in the app shows a Record's history yet.
+- Agents read a Record's history, and archive a Record instead of deleting
+  it, on the preview surface only: `worktable_records_query` with `recordId`
+  and `history`, `worktable_records_update` with `archived`.
 - Keeping a change is best effort: if it fails after the Record is written,
   the write stands and the failure is logged.
 

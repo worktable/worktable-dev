@@ -14,6 +14,7 @@ import { captureWorkSaved, currentAnalyticsContext, hasAuthoredHtml, isAnalytics
 // widget mutates, not authored content, and is never versioned.
 // ============================================================
 
+import { noteDocumentEdited } from "./activity-log.ts";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { sourceCategory, WidgetPermissionsSchema, type DocumentId, type WidgetFile } from "@worktable/types";
@@ -289,19 +290,40 @@ export async function deleteWidgetProvenance(spaceId: string, widgetId: string):
  * widgets.meta.json, and marking the previous version a meaningful checkpoint
  * when the source category transitions (human ↔ agent ↔ external ↔ restore).
  */
+type RecordWidgetVersionOptions = {
+  force?: boolean;
+  operation?: "create" | "update" | "checkpoint";
+  checkpoint?: VersionCheckpoint;
+  documentId?: DocumentId;
+  /** Exact result of a creation whose inventory claim is not published yet. */
+  afterContent?: WidgetVersionContent;
+};
+
+/**
+ * Record a version of an HTML Doc after a write. A change to an existing
+ * page is noted in Activity as an edit, as a Doc's is, whoever made it and
+ * whichever path it came through: its code, its access, its name.
+ */
 export async function recordWidgetVersion(
   spaceId: string,
   widgetId: string,
   before: WidgetVersionContent | null,
   context?: WidgetVersionContext,
-  opts?: {
-    force?: boolean;
-    operation?: "create" | "update" | "checkpoint";
-    checkpoint?: VersionCheckpoint;
-    documentId?: DocumentId;
-    /** Exact result of a creation whose inventory claim is not published yet. */
-    afterContent?: WidgetVersionContent;
+  opts?: RecordWidgetVersionOptions
+): Promise<DocProvenance | undefined> {
+  const provenance = await recordWidgetVersionInner(spaceId, widgetId, before, context, opts);
+  if (provenance && before !== null && (opts?.operation ?? "update") === "update") {
+    noteDocumentEdited(spaceId, widgetId, context?.updatedBy, context?.source);
   }
+  return provenance;
+}
+
+async function recordWidgetVersionInner(
+  spaceId: string,
+  widgetId: string,
+  before: WidgetVersionContent | null,
+  context?: WidgetVersionContext,
+  opts?: RecordWidgetVersionOptions
 ): Promise<DocProvenance | undefined> {
   const after = opts?.afterContent ?? await captureWidgetVersionContent(spaceId, widgetId);
   if (!after) return undefined;

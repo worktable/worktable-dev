@@ -29,6 +29,7 @@ import {
 } from "./activity-log.ts"
 import { setAppDirOverride } from "./app-storage.ts"
 import { pathMovesFor } from "./doc-aliases.ts"
+import { createHtmlDocument } from "./html-document-create.ts"
 import { ownerIdentity } from "./auth.ts"
 import { createWorktableMcpServer } from "./mcp/server.ts"
 import { resolveParticipant } from "./participant-store.ts"
@@ -37,7 +38,8 @@ import { activityRouter, pendingRouter } from "./routes/activity.ts"
 import { annotationsRouter } from "./routes/annotations.ts"
 import { homeRouter } from "./routes/home.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
-import { setSpaceArchived, writeSpace } from "./store.ts"
+import { settleLinkRewrites } from "./link-rewrite.ts"
+import { setSpaceArchived, writeDoc, writeSpace } from "./store.ts"
 import { postThreadMessage } from "./thread-service.ts"
 import { readThread } from "./thread-store.ts"
 import type { TokenIdentity } from "./token-store.ts"
@@ -373,7 +375,12 @@ describe("workspace activity", () => {
     await writeDocAt("notes/plan")
     await writeDocAt("notes/plan/risks")
     await writeDocAt("memo")
+    // A person's Doc links to the plan; the move fixes its link.
+    await runAsActivityActor(ownerIdentity().principal, () =>
+      writeDoc("company", "index", "# Index\n\n[Plan](notes/plan)\n", { updatedBy: "user", source: "rest-api" })
+    )
     await files("move", { path: "notes/plan", to: "plans/launch" })
+    await settleLinkRewrites()
     await files("move", { path: "memo", to: "note" })
     // A path names a Doc whatever its letter case.
     await agentTool("worktable_delete", {
@@ -394,6 +401,9 @@ describe("workspace activity", () => {
       { from: "memo", to: "note", docs: 1 },
       { from: "notes/plan", to: "plans/launch", docs: 2 },
     ])
+    expect(await readFile(join(root, "spaces/company/docs/index.md"), "utf8")).toContain("plans/launch")
+    // Worktable fixed the link itself; nobody edited the Doc.
+    expect(page.entries.filter((entry) => entry.action === "doc.edited")).toEqual([])
 
     // The delete names the Doc as it was called, and neither it nor the
     // Doc's earlier lines open anything.
@@ -461,6 +471,48 @@ describe("workspace activity", () => {
     ).toMatchObject([
       ["doc.deleted", null, { path: "final" }],
       ["doc.moved", "draft", { path: "final" }],
+    ])
+  })
+
+  it("says when an agent changes an HTML Doc someone else made", async () => {
+    const PAGE = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h1>Board</h1></body></html>`
+    await runAsActivityActor(ownerIdentity().principal, () =>
+      createHtmlDocument({
+        spaceId: "company",
+        explicitId: "board",
+        name: "Board",
+        html: PAGE,
+        createdBy: "local:owner",
+        versionSource: "rest-api",
+        versionUpdatedBy: "local:owner",
+      })
+    )
+    const lines = async () =>
+      (await request<ActivityPage>("/api/activity?spaceId=company")).entries.map(
+        (entry) => [entry.action, entry.actor.kind, entry.actor.name ?? null]
+      )
+    // A new name only goes another way than a change to the page.
+    await agentTool("worktable_html_write", { action: "rename", spaceId: "company", htmlId: "board", name: "Hiring board" })
+    expect(await lines()).toEqual([
+      ["doc.edited", "agent", "Codex"],
+      ["doc.created", "person", "Owner"],
+    ])
+    // Later, the agent changes the page itself.
+    setSystemTime(new Date(Date.now() + 60 * 60_000))
+    const { revision } = await agentTool("worktable_html_read", { action: "read", spaceId: "company", htmlId: "board", includeHtml: false })
+    await agentTool("worktable_html_write", {
+      action: "update",
+      spaceId: "company",
+      htmlId: "board",
+      expectedRevision: revision,
+      edits: [{ oldText: "<h1>Board</h1>", newText: "<h1>Hiring board</h1>" }],
+    })
+    setSystemTime()
+    // The same day, the same agent and the same page stay one line.
+    const page = await request<ActivityPage>("/api/activity?spaceId=company")
+    expect(page.entries.map((entry) => [entry.action, entry.repeats])).toEqual([
+      ["doc.edited", 2],
+      ["doc.created", 1],
     ])
   })
 

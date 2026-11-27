@@ -449,13 +449,20 @@ export async function moveDocumentFolder(
     const renamed = outcome.renamed.map(({ from, to }) => ({ from, to }))
     if (renamed.length > 0) {
       // A Doc moved with what is under it, or a plain folder of Docs.
-      const isDoc = renamed.some((entry) => entry.from === fromPrefix)
+      // Paths are matched as the catalog compares them: the request's letter
+      // case need not be the stored Doc's.
+      const fromKey = analyzeDocumentPath(fromPrefix).comparisonKey
+      const self = renamed.find(
+        (entry) => analyzeDocumentPath(entry.from).comparisonKey === fromKey
+      )
       recordActivity({
         spaceId,
         action: "doc.moved",
-        target: { kind: "doc", path: toPrefix, ...(isDoc ? {} : { folder: true }) },
-        from: fromPrefix,
-        to: toPrefix,
+        target: self
+          ? { kind: "doc", path: self.to }
+          : { kind: "doc", path: toPrefix, folder: true },
+        from: self?.from ?? fromPrefix,
+        to: self?.to ?? toPrefix,
         count: renamed.length,
       })
     }

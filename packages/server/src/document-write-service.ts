@@ -32,7 +32,7 @@ import {
   type DocumentCatalog,
 } from "./document-catalog.ts"
 import { fileNoHistory } from "./file-limits.ts"
-import { documentTitleAt, readDocumentCatalogSnapshot } from "./document-query.ts"
+import { documentAt, readDocumentCatalogSnapshot } from "./document-query.ts"
 import {
   advanceDocumentCreateRecoveryV2,
   finishDocumentCreateRecoveryV2,
@@ -3029,7 +3029,7 @@ async function deleteRegisteredDocumentExactly(options: {
   assertSpaceAccess(options.spaceId, "edit");
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   // Read before it goes: Activity names a deleted Doc by its title.
-  const title = await documentTitleAt(options.spaceId, options.path)
+  const title = (await documentAt(options.spaceId, options.path))?.title
   // A Doc open for editing has a live room. The delete lets its editors go
   // and retires its collaboration state, so no one keeps editing, or is
   // served, the deleted Doc; a refused delete leaves the room as it was.

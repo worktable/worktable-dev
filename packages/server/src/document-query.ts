@@ -592,18 +592,28 @@ export async function listDocuments(options: {
   return (await listDocumentsWithAliases(options)).documents
 }
 
-/** What the Doc at `path` is called, archived or not; undefined when no Doc is there. */
-export async function documentTitleAt(
+/**
+ * The Doc at `path`, archived or not, as it is stored and called: a path is
+ * matched as the catalog compares paths, so its letter case need not match.
+ */
+export async function documentAt(
   spaceId: string,
   path: string
-): Promise<string | undefined> {
+): Promise<{ path: string; title: string } | undefined> {
+  const key = analyzeDocumentPath(path).comparisonKey
+  if (key === null) return undefined
   const documents = await listDocuments({ spaceId, includeArchived: true }).catch(
     () => []
   )
-  const found = documents.find(
-    (item) => item.kind === "document" && item.path === path
-  )
-  return found?.kind === "document" ? found.title : undefined
+  for (const item of documents) {
+    if (
+      item.kind === "document" &&
+      analyzeDocumentPath(item.path).comparisonKey === key
+    ) {
+      return { path: item.path, title: item.title }
+    }
+  }
+  return undefined
 }
 
 /** listDocuments, with the document aliases of the same snapshot. */

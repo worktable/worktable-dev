@@ -375,10 +375,11 @@ describe("workspace activity", () => {
     await writeDocAt("memo")
     await files("move", { path: "notes/plan", to: "plans/launch" })
     await files("move", { path: "memo", to: "note" })
+    // A path names a Doc whatever its letter case.
     await agentTool("worktable_delete", {
       action: "document",
       spaceId: "company",
-      path: "note",
+      path: "Note",
     })
 
     const page = await request<ActivityPage>("/api/activity?spaceId=company")
@@ -424,6 +425,20 @@ describe("workspace activity", () => {
           entry.target.missing
       )
     ).toBe(false)
+
+    // Deleted with the Doc under it: one line, named for the Doc, not a
+    // folder of Docs.
+    await agentTool("worktable_delete", {
+      action: "document",
+      spaceId: "company",
+      path: "Plans/Launch",
+    })
+    const after = await request<ActivityPage>("/api/activity?spaceId=company")
+    expect(
+      after.entries
+        .filter((entry) => entry.action === "doc.deleted")
+        .map((entry) => ({ ...entry.target, docs: entry.count ?? 1 }))[0]
+    ).toMatchObject({ path: "plans/launch", title: "Pulse", docs: 2 })
   })
 
   it("says what happened to records: one line a call, and nothing when nothing changed", async () => {

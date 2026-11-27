@@ -9585,7 +9585,7 @@
           }
         },
         "unchanged": {
-          "description": "With recordId: true when every value sent was already stored, so nothing was written.",
+          "description": "With recordId: true when the call changed nothing: every value sent was already stored.",
           "type": "boolean"
         },
         "archived": {

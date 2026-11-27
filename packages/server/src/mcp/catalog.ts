@@ -1274,7 +1274,7 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
       unchanged: z
         .boolean()
         .optional()
-        .describe("With recordId: true when every value sent was already stored, so nothing was written."),
+        .describe("With recordId: true when the call changed nothing: every value sent was already stored."),
       archived: z
         .boolean()
         .optional()

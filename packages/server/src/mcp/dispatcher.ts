@@ -860,6 +860,22 @@ function recordArchiveChange(
 }
 
 /**
+ * What an update that sent values tells its caller: the fields it changed, or
+ * that the call changed nothing. A call whose values were already stored but
+ * which archived the Record, or brought it back, did change something.
+ */
+function recordWriteOutcome(
+  written: Awaited<ReturnType<typeof updateRecord>> | null,
+  after: RecordFile
+): { changed?: string[]; unchanged?: true } {
+  if (!written?.data) return {}
+  const moved = Boolean(written.data.archive) !== Boolean(after.archive)
+  return written.unchanged && !moved
+    ? { unchanged: true }
+    : { changed: written.changed ?? [] }
+}
+
+/**
  * A Record archived or brought back, as asked, by the id the caller named:
  * a file's own copy of its id can be stale. The store leaves a Record that
  * is already as asked alone, deciding under its lock.
@@ -2358,7 +2374,7 @@ async function _dispatchOperationInner(
       if (context.surface !== "preview") return { record }
       return {
         record,
-        ...(!result ? {} : result.unchanged ? { unchanged: true } : { changed: result.changed ?? [] }),
+        ...recordWriteOutcome(result, record),
         ...(archive ? { archived: Boolean(record.archive) } : {}),
       }
     }
@@ -2563,11 +2579,9 @@ async function _dispatchOperationInner(
             recordId,
             updated: true,
             // What each write changed is told on the preview surface.
-            ...(context.surface !== "preview" || !result
-              ? {}
-              : result.unchanged
-                ? { unchanged: true }
-                : { changed: result.changed ?? [] }),
+            ...(context.surface === "preview"
+              ? recordWriteOutcome(result, flipped.data)
+              : {}),
             ...(archive ? { archived: Boolean(flipped.data.archive) } : {}),
           })
         }

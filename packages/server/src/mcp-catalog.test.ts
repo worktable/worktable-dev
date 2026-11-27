@@ -480,5 +480,9 @@ describe("the preview tools", () => {
     // Without history a read is what it was.
     expect(await call("worktable_records_query", { ...at, recordId: "r1" })).not.toHaveProperty("history")
     await expect(call("worktable_records_query", { ...at, history: true })).rejects.toThrow("history reads one Record")
+    // Values already stored, but the Record is archived: the call changed something.
+    const put = await call("worktable_records_update", { ...at, recordId: "r2", data: { title: "r2" }, archived: true })
+    expect(put).toMatchObject({ archived: true, changed: [] })
+    expect(put).not.toHaveProperty("unchanged")
   })
 })

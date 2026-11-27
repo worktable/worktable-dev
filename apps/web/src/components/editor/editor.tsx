@@ -69,6 +69,7 @@ import {
   normalizeEditorInitialContent,
 } from "./initial-content"
 import { MobileFormattingToolbar } from "./mobile-formatting-toolbar"
+import { useHeaderContextualAction } from "@/hooks/use-page-meta"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { sideMenuFirstLine } from "./side-menu-position"
@@ -194,6 +195,8 @@ interface EditorProps {
   activeAnnotationId?: string | null
   onCreateAnnotation?: (request: AnnotationCreateRequest) => void
   onSelectAnnotation?: (annotation: Annotation) => void
+  /** While the comment box is open (hides the contextual header Comment button). */
+  commentingPaused?: boolean
   /**
    * Marks the text open comments are about, as a Markdown Doc does, and says
    * which comments' text is gone. Only for the editor on screen.
@@ -274,6 +277,7 @@ export function Editor({
   activeAnnotationId,
   onCreateAnnotation,
   onSelectAnnotation,
+  commentingPaused = false,
   passages,
   afterTitle,
   title,
@@ -304,6 +308,7 @@ export function Editor({
       activeAnnotationId={activeAnnotationId}
       onCreateAnnotation={onCreateAnnotation}
       onSelectAnnotation={onSelectAnnotation}
+      commentingPaused={commentingPaused}
       passages={passages}
       afterTitle={afterTitle}
       title={title}
@@ -325,6 +330,7 @@ function EditorInner({
   activeAnnotationId,
   onCreateAnnotation,
   onSelectAnnotation,
+  commentingPaused = false,
   passages,
   afterTitle,
   title,
@@ -341,8 +347,7 @@ function EditorInner({
   const normalizedInitialContent = useMemo(
     () =>
       normalizeEditorInitialContent(initialContent) as
-        | EditorBlock[]
-        | undefined,
+        EditorBlock[] | undefined,
     [initialContent]
   )
 
@@ -698,6 +703,12 @@ function EditorInner({
           formattingToolbar={false}
           sideMenu={false}
         >
+          {editable && onCreateAnnotation && (
+            <EditorHeaderSelectionComment
+              onAnnotate={onCreateAnnotation}
+              paused={commentingPaused}
+            />
+          )}
           {isMobile ? (
             <MobileEditorToolbarController
               scrollRootRef={editorScrollRef}
@@ -724,6 +735,172 @@ function EditorInner({
       </div>
     </div>
   )
+}
+
+const coarsePointer = () => window.matchMedia("(pointer: coarse)").matches
+
+/**
+ * Publishes a contextual Comment action in the shared header while text is
+ * highlighted in an editable rich Doc on a touch screen, alongside the
+ * existing editor toolbar button.
+ */
+function EditorHeaderSelectionComment({
+  onAnnotate,
+  paused = false,
+}: {
+  onAnnotate: (request: AnnotationCreateRequest) => void
+  paused?: boolean
+}) {
+  const editor = useBlockNoteEditor()
+  const [shown, setShown] = useState(false)
+  if (paused && shown) setShown(false)
+  // Snapshot the selected block & quote: tapping a header button on mobile can
+  // collapse the DOM selection before click fires.
+  const selected = useRef<AnnotationCreateRequest | null>(null)
+
+  const readSelection = useCallback((): AnnotationCreateRequest | null => {
+    const capable = editor as unknown as AnnotationCapableEditor
+    const root = capable.domElement
+    const selection = window.getSelection()
+    if (
+      !capable.isEditable ||
+      !root ||
+      !selection ||
+      selection.isCollapsed ||
+      !selection.rangeCount
+    ) {
+      return null
+    }
+    const range = selection.getRangeAt(0)
+    if (!root.contains(range.commonAncestorContainer)) return null
+    const commonElement =
+      range.commonAncestorContainer instanceof Element
+        ? range.commonAncestorContainer
+        : range.commonAncestorContainer.parentElement
+    if (commonElement?.closest(".worktable-after-title")) return null
+    const quote = capable.getSelectedText?.() || range.toString()
+    if (!quote.trim()) return null
+
+    let target: AnnotationBlock | undefined =
+      capable.getSelection?.()?.blocks[0]
+    if (!target) {
+      const startElement =
+        range.startContainer instanceof Element
+          ? range.startContainer
+          : range.startContainer.parentElement
+      const blockEl = startElement?.closest<HTMLElement>("[data-id]")
+      if (blockEl?.dataset.id) {
+        target = {
+          id: blockEl.dataset.id,
+          type: blockEl.querySelector<HTMLElement>("[data-content-type]")
+            ?.dataset.contentType,
+        }
+      }
+    }
+    if (!target) {
+      try {
+        target = capable.getTextCursorPosition().block
+      } catch {
+        return null
+      }
+    }
+    return {
+      blockId: target.id,
+      blockType: target.type,
+      quote,
+      anchor: range.cloneRange(),
+    }
+  }, [editor])
+
+  const comment = () => {
+    const request = readSelection() ?? selected.current
+    if (!request) return
+    selected.current = null
+    setShown(false)
+    onAnnotate(request)
+  }
+
+  useHeaderContextualAction(
+    !paused && shown
+      ? {
+          label: "Comment",
+          icon: MessageSquarePlus,
+          preserveSelection: true,
+          onClick: comment,
+        }
+      : null
+  )
+
+  useEffect(() => {
+    if (paused) {
+      selected.current = null
+      return
+    }
+    let timer = 0
+    let releaseTimer = 0
+    let activating = false
+
+    const sync = () => {
+      if (activating) return
+      if (!coarsePointer()) {
+        selected.current = null
+        setShown(false)
+        return
+      }
+      const next = readSelection()
+      selected.current = next
+      setShown(next !== null)
+    }
+
+    const later = () => {
+      if (activating) return
+      window.clearTimeout(timer)
+      if (!coarsePointer() || !readSelection()) sync()
+      else timer = window.setTimeout(sync, 300)
+    }
+
+    const down = (event: PointerEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-preserve-selection='true']")
+      ) {
+        activating = true
+        window.clearTimeout(releaseTimer)
+      }
+    }
+
+    const up = () => {
+      if (!activating) return
+      window.clearTimeout(releaseTimer)
+      releaseTimer = window.setTimeout(() => {
+        activating = false
+        sync()
+      }, 150)
+    }
+
+    if (coarsePointer() && readSelection()) {
+      timer = window.setTimeout(sync, 300)
+    }
+
+    const unsubscribe = editor.onSelectionChange(later)
+    document.addEventListener("selectionchange", later)
+    document.addEventListener("pointerdown", down, true)
+    document.addEventListener("pointerup", up, true)
+    document.addEventListener("pointercancel", up, true)
+    window.addEventListener("resize", sync)
+    return () => {
+      window.clearTimeout(timer)
+      window.clearTimeout(releaseTimer)
+      unsubscribe()
+      document.removeEventListener("selectionchange", later)
+      document.removeEventListener("pointerdown", down, true)
+      document.removeEventListener("pointerup", up, true)
+      document.removeEventListener("pointercancel", up, true)
+      window.removeEventListener("resize", sync)
+    }
+  }, [editor, paused, readSelection])
+
+  return null
 }
 
 function getSelectionRect() {

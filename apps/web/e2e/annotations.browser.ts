@@ -104,7 +104,15 @@ for (const mobile of [true, false]) {
         if (mobile) await expect(composer.locator("blockquote")).toHaveText(quote)
         else await expect.poll(() => draftHighlight(page)).toEqual([quote])
       }
-      const selectQuote = async () => {
+      const header = page.locator("[data-worktable-app-header]")
+      const headerComment = header.getByRole("button", {
+        name: "Comment",
+        exact: true,
+      })
+      const toolbarComment = page
+        .locator(".bn-mobile-formatting-toolbar")
+        .getByRole("button", { name: "Comment", exact: true })
+      const selectQuote = async (source: "toolbar" | "header" = "toolbar") => {
         // Native selection handles are OS UI, so focus the editor and select
         // the quote through it, then use a real touch tap on mobile to
         // exercise selection/focus preservation. Do not tap the text and set
@@ -125,24 +133,32 @@ for (const mobile of [true, false]) {
         await expect
           .poll(() => page.evaluate(() => window.getSelection()?.toString()))
           .toBe(quote)
-        const annotate = page.getByRole("button", {
-          name: "Comment",
-          exact: true,
-        })
-        if (mobile) await annotate.tap()
-        else await annotate.click()
+        if (mobile) {
+          // On touch screens, both the contextual header Comment button (full
+          // text) and the mobile formatting toolbar Comment button stay available.
+          await expect(headerComment).toBeVisible()
+          await expect(headerComment).toHaveText("Comment")
+          await expect(toolbarComment).toBeVisible()
+          await (source === "header" ? headerComment : toolbarComment).tap()
+        } else {
+          await expect(headerComment).toHaveCount(0)
+          await page
+            .getByRole("button", { name: "Comment", exact: true })
+            .click()
+        }
         await expect(composer).toBeVisible()
         await settled(composer)
       }
 
-      await selectQuote()
+      await selectQuote("header")
       await expectQuote()
       await expect(composer.getByRole("textbox")).toBeFocused()
       await page.keyboard.press("Escape")
       await expect(composer).not.toBeVisible()
+      if (mobile) await expect(headerComment).toHaveCount(0)
       expect(await savedAnnotations()).toEqual([])
 
-      await selectQuote()
+      await selectQuote("toolbar")
       await expectQuote()
       await expect(composer.getByRole("textbox")).toBeFocused()
       if (mobile) await page.keyboard.insertText("Please clarify the wording.")
@@ -158,6 +174,7 @@ for (const mobile of [true, false]) {
         },
       ])
       await expect(composer).not.toBeVisible()
+      if (mobile) await expect(headerComment).toHaveCount(0)
       // On a phone the next comment is a tap away; the panel stays shut.
       await expect(
         page
@@ -169,7 +186,7 @@ for (const mobile of [true, false]) {
       expect(await savedAnnotations()).toHaveLength(1)
 
       // A second annotation on the same block starts from a blank draft.
-      await selectQuote()
+      await selectQuote("header")
       await expect(composer.getByRole("textbox")).toHaveValue("")
     })
 
@@ -201,6 +218,10 @@ for (const mobile of [true, false]) {
       await expect(article).toContainText("moves to May.", { timeout: 60_000 })
       await expect(page.locator('[contenteditable="true"]')).toHaveCount(0)
 
+      const header = page.locator("[data-worktable-app-header]")
+      const edit = header.getByRole("button", { name: "Edit", exact: true })
+      await expect(edit).toBeVisible()
+
       // From inside the bold words to the plain text after them.
       await article.locator("p", { hasText: "moves to May" }).evaluate((paragraph) => {
         const bold = paragraph.querySelector("strong")!
@@ -210,9 +231,23 @@ for (const mobile of [true, false]) {
         window.getSelection()!.removeAllRanges()
         window.getSelection()!.addRange(range)
       })
-      const comment = page.getByRole("button", { name: "Comment", exact: true })
-      if (mobile) await comment.tap()
-      else await comment.click()
+      const comment = mobile
+        ? header.getByRole("button", { name: "Comment", exact: true })
+        : page.getByRole("button", { name: "Comment", exact: true })
+      if (mobile) {
+        // On touch screens, Comment takes the header's contextual slot with
+        // full text, clear of Android's bottom selection drawer, and
+        // temporarily replaces the narrow header's Edit icon.
+        await expect(comment).toBeVisible()
+        await expect(comment).toHaveText("Comment")
+        await expect(edit).toHaveCount(0)
+        await comment.tap()
+      } else {
+        await expect(
+          header.getByRole("button", { name: "Comment", exact: true })
+        ).toHaveCount(0)
+        await comment.click()
+      }
       const composer = page.getByRole("dialog", { name: "Add Comment" })
       await expect(composer.getByRole("textbox")).toBeFocused()
       await settled(composer)
@@ -241,6 +276,10 @@ for (const mobile of [true, false]) {
         await page.keyboard.press("Enter")
       }
       await expect(composer).not.toBeVisible()
+      if (mobile) {
+        await expect(comment).toHaveCount(0)
+        await expect(edit).toBeVisible()
+      }
 
       await expect.poll(savedAnnotations).toMatchObject([
         {

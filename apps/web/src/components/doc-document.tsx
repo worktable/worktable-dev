@@ -1984,6 +1984,7 @@ function BlockNoteDocPage({
                     annotations={annotations}
                     activeAnnotationId={activeAnnotationId}
                     onSelectAnnotation={selectAnnotation}
+                    commentingPaused={composerOpen}
                     passages={editorPassages}
                     onCreateAnnotation={(draft) => {
                       setComposerDraft(draft)

@@ -1,3 +1,4 @@
+import { useMemo, type ReactNode } from "react"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import type {
   DocumentListItem,
@@ -9,13 +10,16 @@ import type {
 import { normalizeRecordFieldType } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
 import { ArrowRight } from "lucide-react"
-import { queryKeys } from "@/lib/queries"
+import { queryKeys, useActorName } from "@/lib/queries"
 import { columnLabel, type RecordFieldColumn } from "@/lib/records"
 import { readRecordHistory } from "@/lib/records-api"
 import { RelativeTime } from "@/lib/time"
 import { humanizeSegment } from "@/lib/tree"
-import { useActorName } from "@/lib/use-actor-name"
-import { FieldValue, type ExpandedRecords } from "./field-value"
+import {
+  DocumentReferenceScope,
+  FieldValue,
+  type ExpandedRecords,
+} from "./field-value"
 
 const KIND_WORDS: Record<Exclude<RecordChange["kind"], "changed">, string> = {
   added: "Added",
@@ -35,13 +39,37 @@ function columnFor(
   }
 }
 
-/** One field as it was and as it became; a side with no value shows nothing. */
+/** Values that are a list: a change to one shows only with every entry. */
+const LIST_TYPES = new Set(["multi_select", "relation", "document", "file"])
+
+/** Every document a kept value names, to look them all up in one request. */
+function documentPaths(
+  changes: readonly RecordChange[],
+  schema: RecordCollectionSchema | undefined
+): string[] {
+  const paths = new Set<string>()
+  for (const change of changes) {
+    for (const [key, value] of Object.entries(change.fields ?? {})) {
+      if (columnFor(key, schema).type !== "document") continue
+      for (const side of [value.before, value.after]) {
+        for (const entry of Array.isArray(side) ? side : [side]) {
+          if (typeof entry === "string" && entry) paths.add(entry)
+        }
+      }
+    }
+  }
+  return [...paths]
+}
+
+/** One value as it was and as it became; a side with no value shows nothing. */
 function ValueChange({
+  label,
   column,
   change,
   spaceId,
   expanded,
 }: {
+  label: ReactNode
   column: RecordFieldColumn
   change: RecordValueChange
   spaceId: string
@@ -59,26 +87,30 @@ function ValueChange({
       spaceId={spaceId}
       expanded={expanded}
       linksDisabled
+      rowHeight={LIST_TYPES.has(column.type) ? "full" : undefined}
     />
   )
   return (
     <div className="grid grid-cols-[minmax(5.5rem,0.34fr)_minmax(0,1fr)] items-start gap-3">
-      <dt className="truncate text-muted-foreground">{columnLabel(column)}</dt>
+      <dt className="truncate text-muted-foreground">{label}</dt>
       <dd className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-foreground/90">
         {had && (
           <span className="min-w-0 text-muted-foreground line-through decoration-muted-foreground/60">
             {change.beforeTooLarge ? tooLarge : value(change.before)}
           </span>
         )}
-        {had && has && (
-          <ArrowRight
-            aria-label="changed to"
-            className="size-3 shrink-0 text-muted-foreground"
-          />
-        )}
         {has ? (
-          <span className="min-w-0">
-            {change.afterTooLarge ? tooLarge : value(change.after)}
+          // The arrow stays with the value it points at when the line breaks.
+          <span className="flex min-w-0 items-center gap-1.5">
+            {had && (
+              <ArrowRight
+                aria-label="changed to"
+                className="size-3 shrink-0 text-muted-foreground"
+              />
+            )}
+            <span className="min-w-0">
+              {change.afterTooLarge ? tooLarge : value(change.after)}
+            </span>
           </span>
         ) : (
           <span className="text-muted-foreground">Cleared</span>
@@ -107,7 +139,7 @@ export function RecordHistory({
   documents?: readonly DocumentListItem[]
 }) {
   const nameOf = useActorName()
-  const { data, isPending, isError, hasNextPage, fetchNextPage, isFetchingNextPage } =
+  const { data, isPending, hasNextPage, fetchNextPage, isFetchingNextPage } =
     useInfiniteQuery({
       queryKey: [
         ...queryKeys.records(spaceId, record.collectionId),
@@ -126,6 +158,11 @@ export function RecordHistory({
       // History for one state of the record never changes.
       staleTime: Number.POSITIVE_INFINITY,
     })
+  const changes = useMemo(
+    () => data?.pages.flatMap((page) => page.changes) ?? [],
+    [data]
+  )
+  const paths = useMemo(() => documentPaths(changes, schema), [changes, schema])
   if (isPending) {
     return (
       <div aria-hidden className="space-y-2 pt-1">
@@ -134,8 +171,9 @@ export function RecordHistory({
       </div>
     )
   }
-  if (isError) return <p>Couldn’t load the history.</p>
-  const changes = data.pages.flatMap((page) => page.changes)
+  // Changes already shown stay when older ones fail to load: Show Older
+  // asks for them again.
+  if (!data) return <p>Couldn’t load the history.</p>
   if (changes.length === 0) return <p>No changes kept yet.</p>
   const pageTitle = (path: string) => {
     const page = documents?.find(
@@ -145,13 +183,23 @@ export function RecordHistory({
       ? page.title
       : humanizeSegment(path.split("/").at(-1) ?? path)
   }
-  return (
+  const list = (
     <ol className="divide-y divide-border/60">
       {changes.map((change) => {
-        const fields = Object.entries({
-          ...change.fields,
-          ...change.metadata,
-        })
+        // A field and one of the record's other values can share a name, so
+        // each keeps its own row: a field under its name, the other as written.
+        const rows = [
+          ...Object.entries(change.fields ?? {}).map(([key, value]) => {
+            const column = columnFor(key, schema)
+            return { id: `field:${key}`, label: columnLabel(column), column, value }
+          }),
+          ...Object.entries(change.metadata ?? {}).map(([key, value]) => ({
+            id: `metadata:${key}`,
+            label: <span className="font-mono">{key}</span>,
+            column: { key, field: null, type: "unknown" } as RecordFieldColumn,
+            value,
+          })),
+        ]
         return (
           <li key={change.id} className="space-y-2 py-3 first:pt-1 last:pb-0">
             <div className="flex items-baseline justify-between gap-3">
@@ -167,13 +215,14 @@ export function RecordHistory({
               <RelativeTime iso={change.at} />
             </div>
             {change.reason && <p>{change.reason}</p>}
-            {fields.length > 0 && (
+            {rows.length > 0 && (
               <dl className="space-y-1.5">
-                {fields.map(([key, value]) => (
+                {rows.map((row) => (
                   <ValueChange
-                    key={key}
-                    column={columnFor(key, schema)}
-                    change={value}
+                    key={row.id}
+                    label={row.label}
+                    column={row.column}
+                    change={row.value}
                     spaceId={spaceId}
                     expanded={expanded}
                   />
@@ -196,5 +245,12 @@ export function RecordHistory({
         </li>
       )}
     </ol>
+  )
+  return paths.length > 0 ? (
+    <DocumentReferenceScope spaceId={spaceId} paths={paths}>
+      {list}
+    </DocumentReferenceScope>
+  ) : (
+    list
   )
 }

@@ -143,3 +143,8 @@ export const RECORD_PREDICATE_OPS = [
   "isEmpty",
 ] as const
 
+/**
+ * The hash that opens a Doc on one comment: `#comment-<id>`. Home builds it
+ * and the comments panel reads it.
+ */
+export const COMMENT_HASH_PREFIX = "comment-"

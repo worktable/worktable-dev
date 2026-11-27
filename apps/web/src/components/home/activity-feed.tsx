@@ -105,18 +105,23 @@ function TargetLink({ entry }: { entry: ActivityEntry }) {
 export function ThreadLink({
   spaceId,
   threadId,
+  messageId,
   className,
   children,
 }: {
   spaceId: string | null
   threadId: string
+  /** Open the thread at this message. */
+  messageId?: string
   className?: string
   children: ReactNode
 }) {
+  const message = messageId ? { message: messageId } : {}
   return spaceId ? (
     <Link
       to="/spaces/$spaceId/threads/$"
       params={{ spaceId, _splat: threadId }}
+      search={message}
       className={className}
     >
       {children}
@@ -125,7 +130,7 @@ export function ThreadLink({
     <Link
       to="/threads/$"
       params={{ _splat: `worktable/${threadId}` }}
-      search={{ location: "all" }}
+      search={{ location: "all", ...message }}
       className={className}
     >
       {children}

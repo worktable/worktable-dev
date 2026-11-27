@@ -38,6 +38,7 @@ import { homeRouter } from "./routes/home.ts"
 import { invalidateSearchIndex } from "./search-index.ts"
 import { setSpaceArchived, writeSpace } from "./store.ts"
 import { postThreadMessage } from "./thread-service.ts"
+import { readThread } from "./thread-store.ts"
 import type { TokenIdentity } from "./token-store.ts"
 import {
   ensureWorkspaceManifest,
@@ -394,7 +395,7 @@ describe("workspace activity", () => {
     await drainActivity()
   })
 
-  it("lists what is waiting on the reader until they answer", async () => {
+  it("lists a thread that waits on the reader once, until they reply in it", async () => {
     const owner = ownerIdentity()
     const ownerParticipant = (
       await resolveParticipant(owner, { name: "Owner" })
@@ -403,12 +404,21 @@ describe("workspace activity", () => {
       name: "Codex",
       defaultSpaceId: "company",
     })
+    const location = { kind: "space", spaceId: "company" } as const
     const asked = await postThreadMessage(codex, {
-      location: { kind: "space", spaceId: "company" },
+      location,
       to: "Owner",
       body: "Which invitation variant should we ship?",
       idempotencyKey: "ask-owner",
       responseIdentityId: defaultConversationIdentityId(ownerParticipant.id),
+      waitSeconds: 0,
+    })
+    setSystemTime(new Date(Date.now() + 60_000))
+    // A later message in the same thread asks too.
+    const askedAgain = await postThreadMessage(codex, {
+      threadId: asked.threadId,
+      body: "And should it go out today?",
+      idempotencyKey: "ask-owner-again",
       waitSeconds: 0,
     })
 
@@ -417,21 +427,61 @@ describe("workspace activity", () => {
       {
         kind: "threadRequest",
         threadId: asked.threadId,
+        // It opens at the oldest message still waiting, and shows the newest.
+        messageId: asked.messageId,
         from: { kind: "agent", name: "Codex" },
-        excerpt: "Which invitation variant should we ship?",
+        excerpt: "And should it go out today?",
       },
     ])
+    expect(pending.total).toBe(1)
 
-    await postThreadMessage(owner, {
+    // A reply typed into the thread names no message.
+    const answer = {
       threadId: asked.threadId,
-      body: "The shorter one.",
+      body: "The shorter one, today.",
       idempotencyKey: "owner-answer",
-      inReplyTo: asked.messageId,
-      responseTo: asked.messageId,
       expectsReply: false,
-    })
+    }
+    const answered = await postThreadMessage(owner, answer)
     expect((await request<PendingResult>("/api/pending")).items).toEqual([])
+    const stored = await readThread(location, asked.threadId)
+    const request_ = (messageId: string) =>
+      stored.messages.find((message) => message.id === messageId)
+        ?.responseRequest
+    // The newest ask is answered by the reply, so an agent waiting on it gets
+    // the reply; the older one stops waiting.
+    expect(request_(askedAgain.messageId)).toMatchObject({
+      status: "responded",
+      respondedBy: answered.messageId,
+    })
+    expect(request_(asked.messageId)?.status).toBe("withdrawn")
+    // Sending the same reply again is the same reply.
+    expect((await postThreadMessage(owner, answer)).messageId).toBe(
+      answered.messageId
+    )
   })
+
+  it("lists everything that waits on the reader, however much", async () => {
+    const ownerParticipant = (
+      await resolveParticipant(ownerIdentity(), { name: "Owner" })
+    ).participant
+    await resolveParticipant(codex, { name: "Codex", defaultSpaceId: "company" })
+    for (let index = 0; index < 12; index += 1) {
+      await postThreadMessage(codex, {
+        location: { kind: "space", spaceId: "company" },
+        to: "Owner",
+        title: `Question ${index}`,
+        body: `Question ${index}?`,
+        idempotencyKey: `ask-${index}`,
+        responseIdentityId: defaultConversationIdentityId(ownerParticipant.id),
+        waitSeconds: 0,
+      })
+    }
+    const pending = await request<PendingResult>("/api/pending")
+    expect(pending.items).toHaveLength(12)
+    expect(pending.total).toBe(12)
+  })
+
   it("gives Home one row per sitting, and each place its two weeks", async () => {
     const owner: ActivityActor = { kind: "person", id: "local:owner" }
     const agent: ActivityActor = { kind: "agent", id: codex.principal.id, name: "Codex" }

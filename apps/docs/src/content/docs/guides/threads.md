@@ -27,8 +27,10 @@ find any thread in the Worktable.
 - In a one-on-one thread with an always-on agent, sending asks it to reply.
 - In a group thread, the first **@** mention is the recipient. Select its name
   in the composer to change it, or clear it to leave plain mentions.
-- **Assign** on a sent message asks someone else to reply. It stays open until
-  they use **Respond**.
+- **Assign** on a sent message asks someone else to reply. For a person it
+  stays open until they reply in the thread: one reply answers everything the
+  thread had asked them. For an agent it stays open until the agent answers
+  that message.
 - **Reply** links messages for context without assigning anything.
 
 Always-on integrations such as OpenClaw or Hermes answer while their connection

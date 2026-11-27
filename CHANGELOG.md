@@ -24,6 +24,7 @@ infrastructure and personal context out of release notes.
 
 ### Changed
 
+- **Pending, one row per thread:** A thread that asks you more than once shows once in Pending, and replying in the thread clears it. Before, every message was a row of its own, and a row stayed until you used **Respond** on that exact message. An agent waiting on your answer now gets the reply you typed.
 - **Sidebar in large Spaces:** A Space and each of its folders show their newest few rows, with **See All** to list the whole folder beside the page, where its folders unfold in place. Temporary docs stay in their folders with a clock that shows when they archive, and images a Doc shows are no longer rows of their own. **Records** is one row that opens the collection you had open last; switch collections from its name above the table. A Space's archived docs show when you choose **Show Archived** in its menu. A folder's menu in the path at the top lists its newest docs first.
 - **Sidebar follows what you open:** Opening a doc from search, Home or a link opens its Space and folders in the sidebar and brings its row into view. Clicking around the sidebar itself leaves it where it is.
 - **Folders Only:** Settings > Appearance > Sidebar can show only folders. A folder then opens with its docs listed beside the page.
@@ -40,6 +41,9 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Everything in Pending can be reached:** Pending lists everything waiting on you. Before, only the newest ten showed, so older requests could not be opened from Home.
+- **Pending opens at the place:** A comment sent to you opens its Doc on that comment, and a thread opens at the message that asked, not at its newest message.
+- **Replies in threads:** A reply that sits right under the message it answers no longer repeats that message above itself.
 - **Pending tip on Home:** The tip about Pending sits under its heading instead of covering the greeting.
 - **Older agent connections:** An agent connected with an earlier default access now reads Docs and gets the Library's skills. Before, it saw no skills, and Settings showed it without read access.
 - **Security updates:** Libraries with published security fixes are updated, among them the web server, pasting into the editor, reading image sizes, the agent connector and the checks on agents' tool calls.

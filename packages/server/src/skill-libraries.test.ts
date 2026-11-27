@@ -301,6 +301,8 @@ describe("skill libraries", () => {
         change: "add",
       }),
     ])
+    // The count is of everything that waits, a proposal included.
+    expect(pending.total).toBe(1)
     const id = (pending.items[0] as { entryId: string }).entryId
     const forAgent = (await rest<PendingResult>("GET", "/api/pending", undefined, helperIdentity)).body
     expect(forAgent.items.filter((item) => item.kind === "skillProposal")).toEqual([])

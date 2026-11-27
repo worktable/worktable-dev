@@ -7,6 +7,7 @@ import {
 import { useState } from "react"
 import { HelpIcon, TipCard } from "@/components/help/help"
 import type { PendingItem } from "@worktable/types"
+import { COMMENT_HASH_PREFIX } from "@worktable/types/constants"
 import { cn } from "@worktable/ui/lib/utils"
 import { ThreadLink } from "@/components/home/activity-feed"
 import { ActorAvatar } from "@/components/home/home-latest"
@@ -141,6 +142,7 @@ function PendingRow({
     <ThreadLink
       spaceId={item.spaceId}
       threadId={item.threadId}
+      messageId={item.kind === "threadRequest" ? item.messageId : undefined}
       className={className}
     >
       {children}
@@ -149,7 +151,11 @@ function PendingRow({
     <Link
       to="/spaces/$spaceId/documents/$"
       params={{ spaceId: item.spaceId, _splat: item.docPath }}
-      hash={item.kind === "commentRequest" ? undefined : "visitors"}
+      hash={
+        item.kind === "commentRequest"
+          ? `${COMMENT_HASH_PREFIX}${item.annotationId}`
+          : "visitors"
+      }
       className={className}
     >
       {children}

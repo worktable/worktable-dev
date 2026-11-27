@@ -779,6 +779,24 @@ function responseTargetForMessage(
   )?.id
 }
 
+/**
+ * A person's reply that named no message was recorded as answering the newest
+ * request waiting on them, so its retry names none either.
+ */
+function answeredWaitingRequest(
+  thread: Thread,
+  message: ThreadMessage,
+  input: AppendThreadMessageInput
+): boolean {
+  return (
+    input.author.kind === "human" &&
+    input.responseTo === undefined &&
+    input.inReplyTo === undefined &&
+    message.inReplyTo !== undefined &&
+    responseTargetForMessage(thread, message.id) === message.inReplyTo
+  )
+}
+
 function responseTargetMatchesRetry(
   thread: Thread,
   message: ThreadMessage,
@@ -812,8 +830,9 @@ function sameMessageIntent(
     message.authorIdentityId === intent.authorIdentityId &&
     message.body === input.body &&
     (message.sequence !== 1 || titleState(thread)?.creationTitle === input.title) &&
-    message.inReplyTo === replyTarget &&
-    responseTargetMatchesRetry(thread, message, input) &&
+    ((message.inReplyTo === replyTarget &&
+      responseTargetMatchesRetry(thread, message, input)) ||
+      answeredWaitingRequest(thread, message, input)) &&
     sameIdentitySet(
       creationIntent.notifyIdentityIds,
       intent.notifyIdentityIds
@@ -1149,14 +1168,14 @@ export async function appendThreadMessage(
       now,
       input.availableParticipants
     )
-    const replyTargetId = input.responseTo ?? input.inReplyTo
+    const namedTargetId = input.responseTo ?? input.inReplyTo
     if (
-      replyTargetId &&
-      !thread.messages.some((message) => message.id === replyTargetId)
+      namedTargetId &&
+      !thread.messages.some((message) => message.id === namedTargetId)
     ) {
       throw new ThreadError(
         "THREAD_NOT_FOUND",
-        `Reply target not found in thread: ${replyTargetId}`
+        `Reply target not found in thread: ${namedTargetId}`
       )
     }
     if (
@@ -1171,6 +1190,32 @@ export async function appendThreadMessage(
     }
 
     const intent = resolvedIntent(thread, input)
+    // A person's reply answers everything the thread had asked them: the
+    // message it replies to, or else the newest one still waiting on them,
+    // is answered by it, and their older requests stop waiting. An agent's
+    // reply answers only the message it names, which its delivery and its
+    // hold on that message depend on.
+    const personIdentityIds = new Set(
+      input.author.kind === "human"
+        ? thread.identities.flatMap((identity) =>
+            identity.memberId === input.author.id ? [identity.id] : []
+          )
+        : []
+    )
+    const waitsOnAuthor = (candidate: ThreadMessage) =>
+      candidate.responseRequest?.status === "open" &&
+      candidate.responseRequest.identityId === intent.authorIdentityId
+    const answeredId =
+      input.responseTo ??
+      (input.author.kind !== "human"
+        ? undefined
+        : input.inReplyTo
+          ? thread.messages.find(
+              (candidate) =>
+                candidate.id === input.inReplyTo && waitsOnAuthor(candidate)
+            )?.id
+          : [...thread.messages].reverse().find(waitsOnAuthor)?.id)
+    const replyTargetId = namedTargetId ?? answeredId
     const message: ThreadMessage = {
       id: `msg_${nanoid(16)}`,
       sequence: thread.messages.length + 1,
@@ -1195,24 +1240,40 @@ export async function appendThreadMessage(
       createdAt: now,
     }
     const messages = thread.messages.map((candidate) => {
-      if (candidate.id !== input.responseTo) return candidate
       const request = candidate.responseRequest
+      if (candidate.id === answeredId) {
+        if (
+          request?.identityId !== intent.authorIdentityId ||
+          request.status !== "open"
+        ) {
+          throw new ThreadError(
+            "FORBIDDEN",
+            "This conversation identity does not have an open response request for that message"
+          )
+        }
+        return {
+          ...candidate,
+          creationIntent: messageCreationIntent(candidate),
+          responseRequest: {
+            ...request,
+            status: "responded" as const,
+            respondedBy: message.id,
+            resolvedAt: now,
+          },
+        }
+      }
       if (
-        request?.identityId !== intent.authorIdentityId ||
-        request.status !== "open"
+        request?.status !== "open" ||
+        !personIdentityIds.has(request.identityId)
       ) {
-        throw new ThreadError(
-          "FORBIDDEN",
-          "This conversation identity does not have an open response request for that message"
-        )
+        return candidate
       }
       return {
         ...candidate,
         creationIntent: messageCreationIntent(candidate),
         responseRequest: {
-          ...request,
-          status: "responded" as const,
-          respondedBy: message.id,
+          identityId: request.identityId,
+          status: "withdrawn" as const,
           resolvedAt: now,
         },
       }

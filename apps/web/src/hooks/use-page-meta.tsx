@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react"
+import { createContext, useContext, useEffect, useState } from "react"
 import type { LucideIcon } from "lucide-react"
 import type { DocumentSharingSummary } from "@worktable/types"
 
@@ -34,6 +34,26 @@ export interface PagePrimaryAction {
   pendingLabel?: string
   pending?: boolean
   disabled?: boolean
+  onClick: () => void
+}
+
+/**
+ * A transient header action tied to the user's current context (such as a text
+ * selection). Shown with its full label so it remains clear on narrow screens,
+ * temporarily taking the header's primary action slot while active.
+ */
+export interface PageContextualAction {
+  /** Full visible label, kept in full even on narrow screens. */
+  label: string
+  icon?: LucideIcon
+  pendingLabel?: string
+  pending?: boolean
+  disabled?: boolean
+  /**
+   * Keep the current DOM selection/focus when pressed so pointerdown does not
+   * clear a selection before click runs.
+   */
+  preserveSelection?: boolean
   onClick: () => void
 }
 
@@ -106,6 +126,11 @@ export function narrowHeaderAction(
   return null
 }
 
+export type SetPageContextualAction = (
+  owner: symbol,
+  action: PageContextualAction | null
+) => void
+
 // Pages set their meta; the shell header reads it. Separate contexts keep a
 // page that only sets meta from re-rendering whenever the header changes.
 export const PageMetaContext = createContext<PageMeta | null>(null)
@@ -113,6 +138,40 @@ export const PageMetaContext = createContext<PageMeta | null>(null)
 export const SetPageMetaContext = createContext<
   ((meta: PageMeta | null) => void) | undefined
 >(undefined)
+
+// Contextual actions use their own channel so transient UI (like text
+// selection) only updates the header action slot without re-rendering
+// breadcrumbs, the page menu, or the page itself.
+export const PageContextualActionContext =
+  createContext<PageContextualAction | null>(null)
+
+export const SetPageContextualActionContext = createContext<
+  SetPageContextualAction | undefined
+>(undefined)
+
+export interface OwnedPageContextualAction {
+  owner: symbol
+  action: PageContextualAction
+}
+
+/**
+ * Resolve the next active contextual header action. Clearing only removes an
+ * entry owned by the same caller so an unmounting component cannot wipe out a
+ * newer caller's action across transitions.
+ */
+export function resolvePageContextualAction(
+  current: OwnedPageContextualAction | null,
+  owner: symbol,
+  action: PageContextualAction | null
+): OwnedPageContextualAction | null {
+  if (action === null) {
+    return current?.owner === owner ? null : current
+  }
+  if (current?.owner === owner && current.action === action) {
+    return current
+  }
+  return { owner, action }
+}
 
 /** The open page's header meta. */
 export function usePageMeta(): PageMeta | null {
@@ -126,4 +185,31 @@ export function useSetPageMeta(): (meta: PageMeta | null) => void {
     throw new Error("useSetPageMeta must be used within SetPageMetaContext")
   }
   return setPageMeta
+}
+
+/** The open page's active contextual header action, if any. */
+export function usePageContextualAction(): PageContextualAction | null {
+  return useContext(PageContextualActionContext)
+}
+
+/**
+ * Publish a transient contextual action to the shared app header.
+ * Each caller owns its registration so unmounting cannot clear a newer
+ * caller's action across transitions.
+ */
+export function useHeaderContextualAction(
+  action: PageContextualAction | null
+): void {
+  const setContextualAction = useContext(SetPageContextualActionContext)
+  const [owner] = useState(() => Symbol("header-contextual-action"))
+
+  useEffect(() => {
+    if (!setContextualAction) return
+    setContextualAction(owner, action)
+  }, [action, owner, setContextualAction])
+
+  useEffect(() => {
+    if (!setContextualAction) return
+    return () => setContextualAction(owner, null)
+  }, [owner, setContextualAction])
 }

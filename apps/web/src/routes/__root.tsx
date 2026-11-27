@@ -69,7 +69,9 @@ import {
 } from "@worktable/ui/components/dropdown-menu"
 import { Toaster } from "@worktable/ui/components/sonner"
 // Only header actions that explain themselves load the tooltip.
-const HeaderActionTooltip = lazy(() => import("@/components/header-action-tooltip"))
+const HeaderActionTooltip = lazy(
+  () => import("@/components/header-action-tooltip")
+)
 const SettingsDialog = lazy(() =>
   import("@/components/settings/settings-dialog").then((module) => ({
     default: module.SettingsDialog,
@@ -99,15 +101,21 @@ import {
   useRestoreDiscardedPage,
 } from "@/hooks/use-page-lifecycle"
 import {
+  PageContextualActionContext,
   PageMetaContext,
+  SetPageContextualActionContext,
   SetPageMetaContext,
   narrowHeaderAction,
+  resolvePageContextualAction,
+  usePageContextualAction,
   usePageMeta,
+  type OwnedPageContextualAction,
+  type PageMeta,
+  type SetPageContextualAction,
 } from "@/hooks/use-page-meta"
 import { Breadcrumb } from "@/components/breadcrumb"
 import { useBreadcrumbs } from "@/hooks/use-breadcrumbs"
 import { PageMenu } from "@/components/page-menu"
-import type { PageMeta } from "@/hooks/use-page-meta"
 import { TraceProfiler } from "@/components/trace-profiler"
 import { onBrowserLogout } from "@/lib/auth-events"
 import { rendererPreloads } from "@/lib/document-renderers"
@@ -320,9 +328,10 @@ function AppSidebarWhenQuiet() {
     const sidebar = import("@/components/app-sidebar").then(
       (module): ComponentType => memo(module.AppSidebar),
       // Code that can't load fails the page, as a lazy component's does.
-      (error: unknown): ComponentType => () => {
-        throw error
-      }
+      (error: unknown): ComponentType =>
+        () => {
+          throw error
+        }
     )
     void whenQuiet(() => screenBusy(router), SIDEBAR_WAIT_MS)
       .then(() => sidebar)
@@ -474,15 +483,34 @@ function RootLayoutWithProviders() {
 // ── Root Layout ──────────────────────────────────────────────
 
 /**
- * Holds the open page's header meta. A change re-renders only the header
- * parts that read it, not the shell or the page that set it.
+ * Holds the open page's header meta and any active contextual action. A change
+ * re-renders only the header parts that read it, not the shell or the page
+ * that set it.
  */
 function PageMetaProvider({ children }: { children: ReactNode }) {
   const [pageMeta, setPageMeta] = useState<PageMeta | null>(null)
+  const [contextual, setContextual] =
+    useState<OwnedPageContextualAction | null>(null)
+
+  const setContextualAction = useCallback<SetPageContextualAction>(
+    (owner, action) => {
+      setContextual((current) =>
+        resolvePageContextualAction(current, owner, action)
+      )
+    },
+    []
+  )
+
   return (
     <SetPageMetaContext.Provider value={setPageMeta}>
       <PageMetaContext.Provider value={pageMeta}>
-        {children}
+        <SetPageContextualActionContext.Provider value={setContextualAction}>
+          <PageContextualActionContext.Provider
+            value={contextual?.action ?? null}
+          >
+            {children}
+          </PageContextualActionContext.Provider>
+        </SetPageContextualActionContext.Provider>
       </PageMetaContext.Provider>
     </SetPageMetaContext.Provider>
   )
@@ -573,9 +601,11 @@ function RootLayout() {
     if (!("__TAURI__" in globalThis)) return
     let stop: (() => void) | undefined
     let unmounted = false
-    void import("@/lib/desktop-external-links").then(({ openExternalLinksThroughDesktop }) => {
-      if (!unmounted) stop = openExternalLinksThroughDesktop(window)
-    })
+    void import("@/lib/desktop-external-links").then(
+      ({ openExternalLinksThroughDesktop }) => {
+        if (!unmounted) stop = openExternalLinksThroughDesktop(window)
+      }
+    )
     return () => {
       unmounted = true
       stop?.()
@@ -907,6 +937,8 @@ const PageHeaderActions = memo(function PageHeaderActions({
   isMobile: boolean
 }) {
   const pageMeta = usePageMeta()
+  const contextualAction = usePageContextualAction()
+  const ContextualActionIcon = contextualAction?.icon
   const primaryAction = pageMeta?.primaryAction
   const PrimaryActionIcon = primaryAction?.icon ?? Pencil
   const secondaryAction = pageMeta?.secondaryAction
@@ -917,7 +949,9 @@ const PageHeaderActions = memo(function PageHeaderActions({
       {/* Narrow screens keep one action; the page menu holds the rest. */}
       {secondaryAction &&
         SecondaryActionIcon &&
-        (!isMobile || narrowHeaderAction(pageMeta) === "secondary") &&
+        (!isMobile ||
+          (!contextualAction &&
+            narrowHeaderAction(pageMeta) === "secondary")) &&
         (() => {
           const button = (
             <Button
@@ -977,22 +1011,57 @@ const PageHeaderActions = memo(function PageHeaderActions({
         </Button>
       )}
 
-      {primaryAction && (
+      {contextualAction ? (
         <Button
           size="sm"
           className="h-8 shrink-0 gap-1.5 px-2.5"
-          onClick={primaryAction.onClick}
-          aria-label={primaryAction.label}
-          title={primaryAction.label}
-          disabled={primaryAction.disabled || primaryAction.pending}
+          data-preserve-selection={
+            contextualAction.preserveSelection ? "true" : undefined
+          }
+          onPointerDown={
+            contextualAction.preserveSelection
+              ? (event) => event.preventDefault()
+              : undefined
+          }
+          onMouseDown={
+            contextualAction.preserveSelection
+              ? (event) => event.preventDefault()
+              : undefined
+          }
+          onClick={contextualAction.onClick}
+          aria-label={contextualAction.label}
+          title={contextualAction.label}
+          disabled={contextualAction.disabled || contextualAction.pending}
         >
-          <PrimaryActionIcon className="size-3.5" />
-          <span className="hidden sm:inline">
-            {primaryAction.pending
-              ? (primaryAction.pendingLabel ?? primaryAction.label)
-              : (primaryAction.displayLabel ?? primaryAction.label)}
+          {contextualAction.pending ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : ContextualActionIcon ? (
+            <ContextualActionIcon className="size-3.5" />
+          ) : null}
+          <span>
+            {contextualAction.pending
+              ? (contextualAction.pendingLabel ?? contextualAction.label)
+              : contextualAction.label}
           </span>
         </Button>
+      ) : (
+        primaryAction && (
+          <Button
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 px-2.5"
+            onClick={primaryAction.onClick}
+            aria-label={primaryAction.label}
+            title={primaryAction.label}
+            disabled={primaryAction.disabled || primaryAction.pending}
+          >
+            <PrimaryActionIcon className="size-3.5" />
+            <span className="hidden sm:inline">
+              {primaryAction.pending
+                ? (primaryAction.pendingLabel ?? primaryAction.label)
+                : (primaryAction.displayLabel ?? primaryAction.label)}
+            </span>
+          </Button>
+        )
       )}
 
       {!isMobile && pageMeta?.document && !pageMeta.document.lifetimeInPage && (

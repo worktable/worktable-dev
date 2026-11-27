@@ -1,9 +1,20 @@
-import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react"
+import {
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react"
 import { createPortal } from "react-dom"
 import { MessageSquarePlus } from "lucide-react"
 import type { PassageSelector } from "@worktable/types"
 import { Button } from "@worktable/ui/components/button"
-import { cn } from "@worktable/ui/lib/utils"
+import {
+  useHeaderContextualAction,
+  type PageContextualAction,
+} from "@/hooks/use-page-meta"
+import { useStableCallback } from "@/hooks/use-stable-callback"
 import { readPassageText, selectorForRange } from "./passage-text"
 
 export interface SelectedPassage {
@@ -12,9 +23,7 @@ export interface SelectedPassage {
 }
 
 type Shown =
-  | { kind: "float"; top: number; left: number }
-  | { kind: "bar" }
-  | null
+  { kind: "float"; top: number; left: number } | { kind: "header" } | null
 
 const coarsePointer = () => window.matchMedia("(pointer: coarse)").matches
 
@@ -23,8 +32,9 @@ const ABOVE = 48
 
 /**
  * A Comment button for text selected in a read-only Doc. With a mouse it
- * floats at the end of the selection; on a touch screen it sits at the
- * bottom, clear of the system's own selection menu. Mod+Alt+M does the same.
+ * floats at the end of the selection; on a touch screen it appears as a
+ * contextual action in the header, clear of both the system's selection menu
+ * and Android's bottom search drawer. Mod+Alt+M does the same.
  */
 export function SelectionComment({
   rootRef,
@@ -50,11 +60,31 @@ export function SelectionComment({
     onComment({ range, selector })
   }
   const commentFromKey = useEffectEvent(comment)
+  const commentFromHeader = useStableCallback(comment)
+
+  const inHeader = !paused && shown?.kind === "header"
+  const headerAction = useMemo<PageContextualAction | null>(
+    () =>
+      inHeader
+        ? {
+            label: "Comment",
+            icon: MessageSquarePlus,
+            preserveSelection: true,
+            onClick: commentFromHeader,
+          }
+        : null,
+    [inHeader, commentFromHeader]
+  )
+  useHeaderContextualAction(headerAction)
 
   useEffect(() => {
     if (paused) return
     let timer = 0
+    let releaseTimer = 0
     let pressed = false
+    // A touch tap on the contextual button can collapse the DOM selection
+    // before click fires; hold the snapshot and button alive until the tap ends.
+    let activating = false
     const read = (): Range | null => {
       const selection = window.getSelection()
       const root = rootRef.current
@@ -65,6 +95,7 @@ export function SelectionComment({
       return range.toString().trim() ? range : null
     }
     const place = () => {
+      if (activating) return
       const range = read()
       selected.current = range?.cloneRange() ?? null
       if (!range || pressed) {
@@ -72,7 +103,9 @@ export function SelectionComment({
         return
       }
       if (coarsePointer()) {
-        setShown({ kind: "bar" })
+        setShown((current) =>
+          current?.kind === "header" ? current : { kind: "header" }
+        )
         return
       }
       const rects = range.getClientRects()
@@ -84,14 +117,31 @@ export function SelectionComment({
       })
     }
     const later = () => {
+      if (activating) return
       window.clearTimeout(timer)
       if (!read()) place()
       else timer = window.setTimeout(place, coarsePointer() ? 300 : 120)
     }
     const down = (event: PointerEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-preserve-selection='true']")
+      ) {
+        activating = true
+        window.clearTimeout(releaseTimer)
+        return
+      }
       if (event.pointerType === "mouse") pressed = true
     }
     const up = () => {
+      if (activating) {
+        window.clearTimeout(releaseTimer)
+        releaseTimer = window.setTimeout(() => {
+          activating = false
+          place()
+        }, 150)
+        return
+      }
       if (!pressed) return
       pressed = false
       later()
@@ -111,42 +161,34 @@ export function SelectionComment({
     document.addEventListener("selectionchange", later)
     document.addEventListener("pointerdown", down, true)
     document.addEventListener("pointerup", up, true)
+    document.addEventListener("pointercancel", up, true)
     document.addEventListener("keydown", key)
     window.addEventListener("scroll", place, true)
     window.addEventListener("resize", place)
     return () => {
       window.clearTimeout(timer)
+      window.clearTimeout(releaseTimer)
       document.removeEventListener("selectionchange", later)
       document.removeEventListener("pointerdown", down, true)
       document.removeEventListener("pointerup", up, true)
+      document.removeEventListener("pointercancel", up, true)
       document.removeEventListener("keydown", key)
       window.removeEventListener("scroll", place, true)
       window.removeEventListener("resize", place)
     }
   }, [rootRef, paused])
 
-  if (!shown || paused) return null
+  if (shown?.kind !== "float" || paused) return null
   return createPortal(
     <div
-      className={cn(
-        "overlay-floating fixed z-40 rounded-lg bg-popover p-1 print:hidden",
-        shown.kind === "bar"
-          ? "bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 rounded-full"
-          : "-translate-x-1/2"
-      )}
-      style={
-        shown.kind === "float" ? { top: shown.top, left: shown.left } : undefined
-      }
+      data-preserve-selection="true"
+      className="overlay-floating fixed z-40 -translate-x-1/2 rounded-lg bg-popover p-1 print:hidden"
+      style={{ top: shown.top, left: shown.left }}
       // Keep the selection: pressing the button must not clear it first.
       onPointerDown={(event) => event.preventDefault()}
       onMouseDown={(event) => event.preventDefault()}
     >
-      <Button
-        size={shown.kind === "bar" ? "default" : "sm"}
-        variant="ghost"
-        className={shown.kind === "bar" ? "rounded-full px-5" : undefined}
-        onClick={comment}
-      >
+      <Button size="sm" variant="ghost" onClick={comment}>
         <MessageSquarePlus />
         Comment
       </Button>

@@ -21,10 +21,10 @@ apps and public sharing through your Cloud account. Check **Settings → Remote*
 for availability. A remote self-hosted installation needs an HTTPS address.
 
 1. Choose **Sign in** in **Settings → Remote** and complete browser sign-in.
-2. Choose the Cloud Worktable whose plan covers this device and turn on
-   **Worktable Link**. Every plan includes Link, the free Solo plan too. With
-   no Cloud Worktable yet, choose **Create a Cloud Worktable** first. Signing
-   in alone does not enable access.
+2. Turn on **Worktable Link**. Every plan includes Link, the free Solo plan
+   too, which covers this device when your account has no Cloud Worktable.
+   With several, choose the one whose plan covers this device. Signing in
+   alone does not enable access.
 3. For ChatGPT or Claude, choose the app in **Settings → Agents → Connect
    App**, choose **Set Up**, then add the official Worktable app. If the app
    already works in another Worktable, use **Move Here** beside where it

@@ -22,6 +22,7 @@ infrastructure and personal context out of release notes.
 - **QR codes for share links:** Share shows a link's QR code beside Copy. Download it, copy it as an image, or show it full screen with the link written under it. Links under More links have QR Code in their menu.
 - **Agents (preview):** With preview tools on, an agent orienting in a Worktable that is close to its storage limit is told so, and a file's history says when older versions were removed to make room.
 - **Agents (preview):** With preview tools on, an agent that asks about a Space gets an answer its app accepts whatever the Space holds: the Space's pins, its folders with how many files each has, and what changed last. Before, the answer listed every file twice with each Doc's headings, and past about forty Docs agents' apps refused it or cut it, so the agent never saw the pins. The file list gives 100 files a page in shorter rows, and `worktable_state` no longer has an index to ask for.
+- **Agents (preview):** With preview tools on, an agent can archive a Record instead of deleting it, and bring it back; before, it could only delete one for good. It can read a Record's history: who changed which fields, when, and what each held before. An update tells the agent which fields it changed, or that it changed nothing.
 
 ### Changed
 

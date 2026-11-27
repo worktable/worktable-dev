@@ -12,6 +12,7 @@ import { readDocAliases, resolveDocAliasIn } from "./doc-aliases.ts";
 import { compareFieldValues, compareForOrder, fieldValue, isMissing, recordMatchesSearch, RecordQueryShapeError, referencedCollections, runQueryV2 } from "./record-query.ts";
 import { notifyRecordChanged } from "./record-events.ts";
 import { forgetRecordHistory, noteRecordChange, readRecordHistory } from "./record-history.ts";
+import { agentNamesByPrincipal } from "./agent-connection-store.ts";
 import { recordIndex, recordIndexEnabled } from "./record-index.ts";
 import { atomicWriteText, deduplicateSlug, ensureSpaceDirectories, getSpacesBaseDir, slugify, withStoreWriteLock } from "./store.ts";
 import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts";
@@ -1025,6 +1026,40 @@ export async function readRecordChanges(spaceId: string, collectionId: string, r
   return { data: await readRecordHistory(spaceId, collectionId, recordId), error: null };
 }
 
+/**
+ * A page of a record's kept changes, newest first, with agents under the
+ * names they have now, as in Activity. `total` says how many are kept, and
+ * `before` asks for the changes older than the one it names: a change that is
+ * no longer kept has nothing older left, so it answers with none. A page also
+ * stops, after its first change, at `maxBytes` of them; `next` names the last
+ * change of a page that left older ones out. `fromStart` says the kept changes
+ * reach back to the record being added: otherwise it changed before the
+ * oldest one kept, earlier than changes were kept or than they are kept for.
+ */
+export async function readRecordChangesPage(
+  spaceId: string,
+  collectionId: string,
+  recordId: string,
+  page: { before?: string; limit: number; maxBytes?: number }
+): Promise<{ data: { changes: RecordChange[]; total: number; next?: string; fromStart: boolean } | null; error: string | null }> {
+  const { data, error } = await readRecordChanges(spaceId, collectionId, recordId);
+  if (error || !data) return { data: null, error: error ?? "Record not found" };
+  const from = page.before === undefined ? 0 : data.findIndex((change) => change.id === page.before) + 1 || data.length;
+  const names = await agentNamesByPrincipal().catch(() => new Map<string, string>());
+  const changes: RecordChange[] = [];
+  let bytes = 0;
+  for (const kept of data.slice(from, from + page.limit)) {
+    const change = kept.by.kind === "agent" && names.has(kept.by.id) ? { ...kept, by: { ...kept.by, name: names.get(kept.by.id)! } } : kept;
+    if (page.maxBytes !== undefined) {
+      bytes += Buffer.byteLength(JSON.stringify(change));
+      if (changes.length > 0 && bytes > page.maxBytes) break;
+    }
+    changes.push(change);
+  }
+  const more = from + changes.length < data.length;
+  return { data: { changes, total: data.length, ...(more && changes.length > 0 ? { next: changes.at(-1)!.id } : {}), fromStart: data.at(-1)?.kind === "added" }, error: null };
+}
+
 // Validate + persist a record WITHOUT acquiring the per-path write lock. Callers
 // that already hold a lock across a read-modify-write (updateRecord) use this to
 // avoid deadlocking the non-reentrant lock; writeRecord wraps it with the lock.
@@ -1055,6 +1090,8 @@ interface RecordWriteResult {
   error: string | null;
   /** The write changed nothing, so nothing was written. */
   unchanged?: boolean;
+  /** An update's changed fields by key, a metadata entry as `metadata.<key>`. */
+  changed?: string[];
 }
 
 async function writeRecordValidated(
@@ -1309,6 +1346,15 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
       captureRecordSaved(existing, written.data);
       // Under the record's lock, so its changes are kept in the order made.
       await noteRecordChange(spaceId, { kind: "changed", before: existing, after: written.data, call: currentRecordCall() });
+      const differs = (before: Record<string, unknown>, after: Record<string, unknown>) =>
+        [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((key) => !isDeepStrictEqual(before[key], after[key]));
+      return {
+        ...written,
+        changed: [
+          ...differs(existing.data, written.data.data),
+          ...differs(existing.metadata, written.data.metadata).map((key) => `metadata.${key}`),
+        ],
+      };
     }
     return written;
   }));
@@ -1410,6 +1456,10 @@ export async function setRecordArchive(
   return withStoreWriteLock(recordPath(spaceId, collectionId, recordId), async () => {
     const { data: existing, error } = await readRecord(spaceId, collectionId, recordId);
     if (error || !existing) return { data: null, error: error ?? `Record not found: ${recordId}` };
+    // Archiving an archived record, or restoring a live one, changes nothing.
+    // Checked under the lock and never written, so of two calls at once the
+    // second leaves who archived it, when and why as the first set them.
+    if (Boolean(existing.archive) === Boolean(archive)) return { data: existing, error: null };
     const record: RecordFile = {
       ...existing,
       // Restamp identity from the ADDRESSED path: this lifecycle write is
@@ -1429,8 +1479,7 @@ export async function setRecordArchive(
         : null,
     };
     const written = await writeRecordInner(spaceId, record, { skipDataValidation: true });
-    // Archiving an archived record, or restoring a live one, is no news.
-    if (written.data && Boolean(existing.archive) !== Boolean(archive)) {
+    if (written.data) {
       noteRecordActivity(spaceId, collectionId, archive ? "records.archived" : "records.restored");
       await noteRecordChange(spaceId, {
         kind: archive ? "archived" : "restored",

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ActivityActorSchema } from "./activity";
 import { RECORD_PREDICATE_OPS } from "./constants";
 import { ArchiveInfoSchemaV1, CanonicalIdSchema, CanonicalMetadataSchema, IsoTimestampSchema } from "./widgets";
 
@@ -114,6 +115,42 @@ export const RecordFileSchema = z.looseObject({
   metadata: CanonicalMetadataSchema.default({}),
   data: z.record(z.string(), z.unknown()).default({}),
 });
+
+/**
+ * A value as it was and as it became; a side left out means the key was
+ * absent, unless the side is marked as too large to have been kept.
+ */
+export const RecordValueChangeSchema = z.object({
+  before: z.unknown().optional(),
+  after: z.unknown().optional(),
+  beforeTooLarge: z.boolean().optional(),
+  afterTooLarge: z.boolean().optional(),
+});
+
+/**
+ * One change to one record, kept beside the record: who made it, when, and
+ * each field that really changed. The newest is how the record came to be
+ * as it is.
+ */
+export const RecordChangeSchema = z.object({
+  id: z.string().min(1),
+  at: IsoTimestampSchema,
+  by: ActivityActorSchema,
+  /** The HTML Doc the change was made through, by its path. */
+  page: z.string().optional(),
+  /** One id for every record a single call or import changed. */
+  call: z.string().optional(),
+  kind: z.enum(["added", "changed", "archived", "restored"]),
+  fields: z.record(z.string(), RecordValueChangeSchema).optional(),
+  metadata: z.record(z.string(), RecordValueChangeSchema).optional(),
+  /** The reason given with an archive. */
+  reason: z.string().optional(),
+  /** So many fields changed that which ones could not be kept. */
+  detailTooLarge: z.boolean().optional(),
+});
+
+export type RecordValueChange = z.infer<typeof RecordValueChangeSchema>;
+export type RecordChange = z.infer<typeof RecordChangeSchema>;
 
 /**
  * Keys every record carries beside its `data`, a share link's records too.

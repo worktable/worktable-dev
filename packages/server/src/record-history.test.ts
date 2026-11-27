@@ -1,0 +1,399 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import type { RecordChange } from "@worktable/types"
+import { Hono } from "hono"
+import { existsSync } from "node:fs"
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { drainActivity, runAsActivityActor } from "./activity-log.ts"
+import { setAppDirOverride } from "./app-storage.ts"
+import { ownerIdentity } from "./auth.ts"
+import {
+  MAX_HISTORY_BYTES,
+  MAX_VALUE_BYTES,
+  pruneRecordHistories,
+  recordHistoryPath,
+} from "./record-history.ts"
+import {
+  batchRecordActivity,
+  createRecord,
+  readRecordChanges,
+  updateRecord,
+} from "./record-store.ts"
+import { recordsRouter } from "./routes/records.ts"
+import {
+  invalidateServerSettingsCache,
+  updateServerSettings,
+} from "./settings-store.ts"
+import { spacesRouter } from "./routes/spaces.ts"
+import type { RequestPrincipal } from "./token-store.ts"
+import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+const agent: RequestPrincipal = {
+  id: "local-token:codex",
+  type: "agent",
+  displayName: "Codex",
+  authorizedBy: "local:owner",
+}
+
+let root = ""
+let appDir = ""
+
+/** The app as a signed-in person uses it. */
+function app(): Hono {
+  const server = new Hono()
+  server.use("*", async (c, next) => {
+    c.set("identity", ownerIdentity())
+    return next()
+  })
+  server.use("*", (c, next) =>
+    runAsActivityActor(c.get("identity").principal, next)
+  )
+  server.route("/api/spaces", spacesRouter)
+  server.route("/api/spaces/:spaceId/records", recordsRouter)
+  return server
+}
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<{ status: number; json: T }> {
+  const response = await app().fetch(
+    new Request(`http://localhost${path}`, {
+      method,
+      ...(body === undefined
+        ? {}
+        : {
+            body: JSON.stringify(body),
+            headers: { "Content-Type": "application/json" },
+          }),
+    })
+  )
+  return { status: response.status, json: (await response.json()) as T }
+}
+
+const queue = "/api/spaces/outreach/records/queue"
+
+async function history(recordId: string): Promise<RecordChange[]> {
+  const { json } = await request<{ changes: RecordChange[] }>(
+    "GET",
+    `${queue}/${recordId}/history`
+  )
+  return json.changes
+}
+
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), "worktable-record-history-"))
+  appDir = await mkdtemp(join(tmpdir(), "worktable-record-history-app-"))
+  setWorkspaceRootOverride(root)
+  setAppDirOverride(appDir)
+  invalidateServerSettingsCache()
+  ensureWorkspaceManifest()
+  await request("POST", "/api/spaces", { name: "Outreach" })
+  await request("POST", "/api/spaces/outreach/records", {
+    id: "queue",
+    name: "Queue",
+    fields: {
+      title: { type: "string" },
+      status: { type: "string" },
+      final_text: { type: "text" },
+    },
+  })
+})
+
+afterEach(async () => {
+  await drainActivity()
+  setWorkspaceRootOverride(null)
+  setAppDirOverride(null)
+  invalidateServerSettingsCache()
+  await Promise.all([
+    rm(root, { recursive: true, force: true }),
+    rm(appDir, { recursive: true, force: true }),
+  ])
+})
+
+describe("record history", () => {
+  it("keeps who changed what and what it replaced", async () => {
+    // An agent drafts a reply.
+    await runAsActivityActor(agent, () =>
+      createRecord("outreach", "queue", {
+        id: "reply-1",
+        data: { title: "Reply to a thread", status: "pending" },
+        createdBy: agent.id,
+      })
+    )
+    // The person approves it on a page, with their own wording.
+    await runAsActivityActor(ownerIdentity().principal, () =>
+      updateRecord("outreach", "queue", "reply-1", {
+        data: { status: "approved", final_text: "Written by hand" },
+        updatedBy: "widget:board",
+      })
+    )
+    // The agent writes over both, then saves the same values again.
+    for (let pass = 0; pass < 2; pass += 1) {
+      await runAsActivityActor(agent, () =>
+        updateRecord("outreach", "queue", "reply-1", {
+          data: { status: "pending", final_text: "Polished" },
+          updatedBy: agent.id,
+        })
+      )
+    }
+    // The person archives it, saying why, and brings it back.
+    await request("POST", `${queue}/reply-1/archive`, { reason: "Duplicate" })
+    await request("POST", `${queue}/reply-1/restore`)
+
+    const changes = await history("reply-1")
+    expect(
+      changes.map((change) => ({
+        kind: change.kind,
+        by: change.by.kind,
+        ...(change.page ? { page: change.page } : {}),
+        ...(change.reason ? { reason: change.reason } : {}),
+        ...(change.fields ? { fields: change.fields } : {}),
+      }))
+    ).toEqual([
+      { kind: "restored", by: "person" },
+      { kind: "archived", by: "person", reason: "Duplicate" },
+      {
+        kind: "changed",
+        by: "agent",
+        fields: {
+          status: { before: "approved", after: "pending" },
+          final_text: { before: "Written by hand", after: "Polished" },
+        },
+      },
+      {
+        kind: "changed",
+        by: "person",
+        page: "board",
+        // The title did not change; the text had no value before.
+        fields: {
+          status: { before: "pending", after: "approved" },
+          final_text: { after: "Written by hand" },
+        },
+      },
+      { kind: "added", by: "agent" },
+    ])
+    expect(changes[2]?.by).toMatchObject({ id: agent.id, name: "Codex" })
+
+    // A crash can cut a line short. It costs that line, never the next change.
+    const path = recordHistoryPath("outreach", "queue", "reply-1")!
+    await appendFile(path, '\n{"id":"cut sho')
+    await request("PATCH", `${queue}/reply-1`, { data: { status: "posted" } })
+    const afterCrash = await history("reply-1")
+    expect(afterCrash).toHaveLength(changes.length + 1)
+    expect(afterCrash[0]?.fields).toEqual({
+      status: { before: "pending", after: "posted" },
+    })
+
+    // History is the record's: no record, no history, and a deleted record
+    // takes its history with it.
+    expect(
+      (await request("GET", `${queue}/no-such-record/history`)).status
+    ).toBe(404)
+    expect(existsSync(path)).toBe(true)
+    await request("DELETE", `${queue}/reply-1`)
+    expect(existsSync(path)).toBe(false)
+  })
+
+  it("stays bounded: a value too large is not kept, and a history loses its oldest changes first", async () => {
+    await runAsActivityActor(agent, () =>
+      createRecord("outreach", "queue", {
+        id: "big",
+        data: { title: "Big", final_text: "short" },
+        createdBy: agent.id,
+      })
+    )
+    const write = (final_text: string, status?: string) =>
+      runAsActivityActor(agent, () =>
+        updateRecord("outreach", "queue", "big", {
+          data: { final_text, ...(status ? { status } : {}) },
+          updatedBy: agent.id,
+        })
+      )
+    // Past the size a value is kept at, the change says only that.
+    await write("x".repeat(MAX_VALUE_BYTES + 1), "pending")
+    expect((await history("big"))[0]?.fields).toEqual({
+      final_text: { before: "short", afterTooLarge: true },
+      status: { after: "pending" },
+    })
+
+    // Values just under that size fill a history in a few changes. It stays
+    // within its size, keeps the newest, and still reads whole.
+    const nearly = (letter: string) => letter.repeat(MAX_VALUE_BYTES - 16)
+    for (const letter of "abcdefghijkl") await write(nearly(letter))
+    const path = recordHistoryPath("outreach", "queue", "big")!
+    expect((await stat(path)).size).toBeLessThanOrEqual(MAX_HISTORY_BYTES)
+    const kept = await history("big")
+    expect(kept.length).toBeGreaterThan(1)
+    expect(kept.length).toBeLessThan(14)
+    expect(kept[0]?.fields?.final_text?.after).toBe(nearly("l"))
+
+    // A read returns a page, and says how many there are.
+    const page = await request<{ changes: RecordChange[]; total: number }>(
+      "GET",
+      `${queue}/big/history?limit=2`
+    )
+    expect(page.json.changes).toHaveLength(2)
+    expect(page.json.total).toBe(kept.length)
+
+    // Nothing a change holds escapes the bound. A reason far too long is
+    // clipped, and a change to more fields than fit says only that; neither
+    // costs the changes kept before it.
+    const before = (await history("big")).length
+    await request("POST", `${queue}/big/archive`, {
+      reason: "r".repeat(1_400_000),
+    })
+    await request("POST", `${queue}/big/restore`)
+    const manyFields = Object.fromEntries(
+      Array.from({ length: 6000 }, (_, index) => [
+        `field_${String(index).padStart(4, "0")}_${"k".repeat(48)}`,
+        index,
+      ])
+    )
+    await runAsActivityActor(agent, () =>
+      updateRecord("outreach", "queue", "big", {
+        data: manyFields,
+        updatedBy: agent.id,
+      })
+    )
+    const bounded = await history("big")
+    expect(bounded[0]).toMatchObject({ kind: "changed", detailTooLarge: true })
+    expect(bounded[0]?.fields).toBeUndefined()
+    expect(bounded[2]?.kind).toBe("archived")
+    expect(bounded[2]?.reason).toHaveLength(2048)
+    expect((await stat(path)).size).toBeLessThanOrEqual(MAX_HISTORY_BYTES)
+    // The history was full, so the oldest made room; none of the rest went.
+    expect(bounded.length).toBeGreaterThanOrEqual(before - 1)
+
+    // A history something outside Worktable left far larger still reads,
+    // from its newest end.
+    const junk = `\n${JSON.stringify({ junk: "y".repeat(1024) })}`
+    await writeFile(path, junk.repeat(4096))
+    // The sweep rewrites a history only from all of it, so it leaves this.
+    const oversized = (await stat(path)).size
+    await pruneRecordHistories(
+      { mode: "age", maxAgeDays: 30 },
+      () => true,
+      Date.now() + 40 * DAY_MS
+    )
+    expect((await stat(path)).size).toBe(oversized)
+    await write("after the junk")
+    expect((await history("big"))[0]?.fields?.final_text?.after).toBe(
+      "after the junk"
+    )
+    expect((await stat(path)).size).toBeLessThanOrEqual(MAX_HISTORY_BYTES)
+
+    // History is written inside the workspace folder and nowhere else: with
+    // a link where a collection's history folder would be, the Record is
+    // written, no change is kept, and nothing lands where the link points.
+    const outside = await mkdtemp(join(tmpdir(), "worktable-record-history-out-"))
+    try {
+      await request("POST", "/api/spaces/outreach/records", {
+        id: "linked",
+        name: "Linked",
+        fields: { title: { type: "string" } },
+      })
+      await mkdir(join(root, "versions", "outreach", "records"), { recursive: true })
+      await symlink(outside, join(root, "versions", "outreach", "records", "linked"))
+      const made = await createRecord("outreach", "linked", {
+        id: "one",
+        data: { title: "One" },
+      })
+      expect(made.created).toBe(true)
+      expect(await readdir(outside)).toEqual([])
+      expect((await readRecordChanges("outreach", "linked", "one")).data).toEqual([])
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it("marks the records one call changed, and holds history to the retention policy", async () => {
+    const asAgent = <T>(work: () => Promise<T>) =>
+      runAsActivityActor(agent, work)
+    await asAgent(() =>
+      batchRecordActivity(async () => {
+        for (const id of ["a", "b"]) {
+          await createRecord("outreach", "queue", {
+            id,
+            data: { title: id, status: "pending" },
+            createdBy: agent.id,
+          })
+        }
+      })
+    )
+    const read = async (id: string) =>
+      (await readRecordChanges("outreach", "queue", id)).data ?? []
+    const [a, b] = [await read("a"), await read("b")]
+    expect(a[0]?.call).toBeTruthy()
+    expect(b[0]?.call).toBe(a[0]?.call)
+
+    // Keeping the newest two per item prunes as changes are written.
+    await updateServerSettings({
+      history: { retention: { mode: "count", maxPerDoc: 2 } },
+    })
+    for (const status of ["approved", "posted", "seen"]) {
+      await asAgent(() =>
+        updateRecord("outreach", "queue", "a", {
+          data: { status },
+          updatedBy: agent.id,
+        })
+      )
+    }
+    // A change made alone names no call.
+    expect((await read("a"))[0]?.call).toBeUndefined()
+
+    expect((await read("a")).map((change) => change.fields?.status?.after)).toEqual(
+      ["seen", "posted"]
+    )
+    // The sweep under the same policy finds nothing more to remove.
+    expect(
+      (await pruneRecordHistories({ mode: "count", maxPerDoc: 2 })).changesRemoved
+    ).toBe(0)
+
+    // Past the window, a record keeps how it came to be as it is, and what a
+    // record that is gone left behind goes.
+    await rm(join(root, "spaces", "outreach", "records", "queue", "b.yaml"))
+    const later = Date.now() + 40 * DAY_MS
+    // A sweep whose policy changes under it removes nothing more.
+    let asked = 0
+    expect(
+      (
+        await pruneRecordHistories(
+          { mode: "age", maxAgeDays: 30 },
+          () => (asked += 1) === 1,
+          later
+        )
+      ).changesRemoved
+    ).toBe(0)
+    const pruned = await pruneRecordHistories(
+      { mode: "age", maxAgeDays: 30 },
+      () => true,
+      later
+    )
+    expect(pruned.changesRemoved).toBe(2)
+    expect((await read("a")).map((change) => change.fields?.status?.after)).toEqual(
+      ["seen"]
+    )
+    expect(existsSync(recordHistoryPath("outreach", "queue", "b")!)).toBe(false)
+    // Nothing more to remove: a second pass changes nothing.
+    expect(
+      (await pruneRecordHistories({ mode: "age", maxAgeDays: 30 }, () => true, later))
+        .changesRemoved
+    ).toBe(0)
+    // Keeping everything walks nothing.
+    expect((await pruneRecordHistories({ mode: "all" })).changesRemoved).toBe(0)
+  })
+})

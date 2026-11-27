@@ -872,6 +872,90 @@ The round trip at the limit is measured on a remote runner, not in a test.
 Share links and visitor comments live in app data, so an export doesn't carry
 them.
 
+## Record history
+
+A Record's file holds its latest values. Every change made to a Record
+through Worktable is also kept beside Doc versions: who made it, when, the
+HTML Doc it was made through, and each field that really changed with the
+value before and after. A write that leaves a Record as it is keeps nothing
+and changes nothing, the Record's "updated by" and time included. One call
+or import that changes many Records marks each of their changes with the same
+id.
+
+History is one small file per Record that has changed, at
+`versions/<space>/records/<collection>/<record>.jsonl`, one line per change.
+It is in the workspace folder, so backups and exports carry it, and it counts
+as history, never toward the limit for files (rule 14). An export under a
+bounded history policy takes each Record's history whole. It is kept as long
+as Doc versions are, under the same setting: past the window, or beyond the
+newest few under a count, changes go, and a Record's newest change always
+stays, so it can say who last changed it and what that replaced. Reading a
+Record or its collection never reads history; it is read when someone opens
+it, a page of changes at a time.
+
+History is bounded however it is written. A value over 64 KiB is not kept:
+its change says only that it was too large. One change stays within 256 KiB:
+its largest values go first, then, when the names of its fields alone are too
+much, which fields changed; an archive's reason is kept to 2,048 characters.
+A Record's history stays within 1 MiB, its oldest changes going first, so a
+read never loads more than that, and a history is only ever rewritten from
+changes that were read whole. No part of a history's path may be a link:
+history is written inside the workspace folder and nowhere else, and a change
+that would follow a link is not kept. Each change
+is admitted under the storage limit as history (rule 14); one that would pass
+the total limit is not kept, and the Record's write stands.
+
+**Why:** an agent that writes a field a person just changed leaves no trace of
+what was there. History is how a person sees what an agent overwrote, and what
+an undo would put back.
+
+**Enforced in:** `record-history.ts` (the file, its lines and pruning),
+`record-store.ts` (`createRecord`, `updateRecord`, `setRecordArchive`,
+`deleteRecord`, `readRecordChanges`), `storage-limit.ts`
+(`admitStorageWrite`), `version-retention.ts`
+(`runRetentionSweep`), `workspace-transfer-v2.ts` (`classifyVersion`),
+`routes/records.ts` (`GET .../history`).
+
+**Proved by:**
+
+- `record-history.test.ts` "keeps who changed what and what it replaced": an
+  agent's draft, a person's change through a page, an agent writing over it,
+  an archive with its reason and a restore; a repeated write adds nothing; a
+  deleted Record's history goes with it.
+- `record-history.test.ts` "marks the records one call changed, and holds
+  history to the retention policy": a count keeps the newest few, an age
+  window keeps a Record's newest change and removes what a Record that is gone
+  left behind, a second pass removes nothing, and keeping everything walks
+  nothing.
+- `record-history.test.ts` "stays bounded: a value too large is not kept, and
+  a history loses its oldest changes first": a history filled by large values
+  stays within its size and keeps the newest, a read returns a page with the
+  total, a reason far too long and a change to more fields than fit cost no
+  earlier change, a history left far larger from outside still reads from its
+  newest end and is left alone by the sweep, and a link in place of a
+  collection's history folder keeps no change and writes nothing outside.
+- `storage-limit.test.ts` "keeps no Record change that would pass the total
+  limit, and still writes the Record".
+- `workspace-transfer-v2.test.ts` "carries every Record's history whole under
+  a bounded history policy".
+- `activity.test.ts` "says what happened to records: one line a call, and
+  nothing when nothing changed": an unchanged write leaves the Record as it
+  was.
+
+**Gaps:**
+
+- A deleted Record is removed at once, and its history with it. It does not
+  wait in deleted items for the history window as a deleted Doc does.
+- A Record changed or deleted on disk keeps no change: the change is seen, as
+  any file change is, but nothing says what it replaced.
+- Making room at the storage limit doesn't remove Record history; only the
+  history setting and each history's own size do. At the total limit a change
+  is written without being kept.
+- A value over 64 KiB can't be seen or put back from history.
+- Agents can't read a Record's history yet, and nothing in the app shows it.
+- Keeping a change is best effort: if it fails after the Record is written,
+  the write stands and the failure is logged.
+
 ## Hidden files
 
 A file or Doc whose name starts with a dot, or that sits in a folder whose name

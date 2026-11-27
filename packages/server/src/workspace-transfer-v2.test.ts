@@ -971,6 +971,29 @@ describe("workspace export v2", () => {
     )
   })
 
+  it("carries every Record's history whole under a bounded history policy", async () => {
+    // Two Records of one collection: each history is its own item, so
+    // keeping one per item keeps both, and neither is a file it can't place.
+    const histories = ["reply-1", "reply-2"].map(
+      (id) => `versions/notes/records/queue/${id}.jsonl`
+    )
+    for (const path of histories) {
+      await mkdir(join(source, path, ".."), { recursive: true })
+      await writeFile(
+        join(source, path),
+        `${JSON.stringify({ id: "rch_1", at: "2020-01-01T00:00:00.000Z", by: { kind: "agent", id: "a" }, kind: "added" })}\n`
+      )
+    }
+
+    const result = await writeWorkspaceExportV2(join(root, "record-history"), {
+      history: { mode: "count", maxPerItem: 1 },
+    })
+
+    const exported = result.manifest.integrity.files.map((file) => file.path)
+    for (const path of histories) expect(exported).toContain(path)
+    expect(result.manifest.history.warnings).toEqual([])
+  })
+
   it("bounds concurrent history classification work", async () => {
     for (let index = 0; index < 20; index += 1) {
       await addVersion(

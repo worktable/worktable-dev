@@ -2,7 +2,8 @@ import { requireScope, restWriteActor } from "../auth.ts";
 import { Hono } from "hono";
 import { z } from "zod";
 import { readSpace } from "../store.ts";
-import { buildRecordCollectionSchema, createRecord, deleteRecord, getRecordDiagnostics, listIntegrityWarnings, listRecordCollections, listRecords, queryRecords, readRecord, readRecordCollectionSchema, RecordQueryError, setRecordArchive, updateRecord, writeRecordCollectionSchema } from "../record-store.ts";
+import { agentNamesByPrincipal } from "../agent-connection-store.ts";
+import { buildRecordCollectionSchema, createRecord, deleteRecord, getRecordDiagnostics, listIntegrityWarnings, listRecordCollections, listRecords, queryRecords, readRecord, readRecordChanges, readRecordCollectionSchema, RecordQueryError, setRecordArchive, updateRecord, writeRecordCollectionSchema } from "../record-store.ts";
 import { recordIndex, recordIndexEnabled } from "../record-index.ts";
 import { noteRecordMutated } from "../search-index.ts";
 import { wsManager } from "../ws.ts";
@@ -10,6 +11,10 @@ import { filesEnabled } from "../files-enabled.ts";
 import { importIntoRecords, proposeImport } from "../records-import.ts";
 
 export const recordsRouter = new Hono();
+
+/** Changes a history read returns unless asked for more, and the most it returns. */
+const RECORD_HISTORY_PAGE = 100;
+const RECORD_HISTORY_PAGE_MAX = 500;
 
 // Loose on purpose, mirroring the store's tolerant reader: unknown per-field
 // keys and unknown TYPES from a newer Worktable must round-trip through this
@@ -232,6 +237,27 @@ recordsRouter.get("/:collectionId/:recordId", requireScope("records:read"), asyn
   const { data, error } = await readRecord(spaceId, collectionId, recordId);
   if (error || !data) return c.json({ error: error ?? "Record not found", code: "NOT_FOUND" }, 404);
   return c.json({ record: data });
+});
+
+// A record's kept changes, newest first. Asked for when a person opens its
+// history, never with the record or its collection.
+recordsRouter.get("/:collectionId/:recordId/history", requireScope("records:read"), async (c) => {
+  const spaceId = c.req.param("spaceId") ?? "";
+  const collectionId = c.req.param("collectionId") ?? "";
+  const recordId = c.req.param("recordId") ?? "";
+  const { data, error } = await readRecordChanges(spaceId, collectionId, recordId);
+  if (error || !data) return c.json({ error: error ?? "Record not found", code: "NOT_FOUND" }, 404);
+  // The newest first, a page of them: `total` says how many there are.
+  const asked = Number(c.req.query("limit") ?? RECORD_HISTORY_PAGE);
+  const limit = Number.isInteger(asked) && asked > 0 ? Math.min(asked, RECORD_HISTORY_PAGE_MAX) : RECORD_HISTORY_PAGE;
+  // Agents show under the names they have now, as in Activity.
+  const names = await agentNamesByPrincipal().catch(() => new Map<string, string>());
+  const changes = data.slice(0, limit).map((change) =>
+    change.by.kind === "agent" && names.has(change.by.id)
+      ? { ...change, by: { ...change.by, name: names.get(change.by.id)! } }
+      : change
+  );
+  return c.json({ changes, total: data.length });
 });
 
 recordsRouter.patch("/:collectionId/:recordId", requireScope("records:write"), async (c) => {

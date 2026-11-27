@@ -247,12 +247,16 @@ recordsRouter.get("/:collectionId/:recordId/history", requireScope("records:read
   const recordId = c.req.param("recordId") ?? "";
   const { data, error } = await readRecordChanges(spaceId, collectionId, recordId);
   if (error || !data) return c.json({ error: error ?? "Record not found", code: "NOT_FOUND" }, 404);
-  // The newest first, a page of them: `total` says how many there are.
+  // The newest first, a page of them: `total` says how many there are, and
+  // `before` asks for the changes older than the one it names. A change that
+  // is no longer kept has nothing older left, so it answers with none.
   const asked = Number(c.req.query("limit") ?? RECORD_HISTORY_PAGE);
   const limit = Number.isInteger(asked) && asked > 0 ? Math.min(asked, RECORD_HISTORY_PAGE_MAX) : RECORD_HISTORY_PAGE;
+  const before = c.req.query("before");
+  const from = before === undefined ? 0 : data.findIndex((change) => change.id === before) + 1 || data.length;
   // Agents show under the names they have now, as in Activity.
   const names = await agentNamesByPrincipal().catch(() => new Map<string, string>());
-  const changes = data.slice(0, limit).map((change) =>
+  const changes = data.slice(from, from + limit).map((change) =>
     change.by.kind === "agent" && names.has(change.by.id)
       ? { ...change, by: { ...change.by, name: names.get(change.by.id)! } }
       : change

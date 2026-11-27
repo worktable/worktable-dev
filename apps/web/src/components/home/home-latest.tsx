@@ -6,7 +6,7 @@ import { cn } from "@worktable/ui/lib/utils"
 import { DocumentFormatIcon } from "@/components/document-format-icon"
 import { ThreadParticipantAvatar } from "@/components/identity-icons"
 import { shortWhen } from "@/lib/activity-format"
-import { useActorName } from "@/lib/use-actor-name"
+import { useActorName } from "@/lib/queries"
 
 /** A person's or agent's picture, at the size its place needs. */
 export function ActorAvatar({

@@ -891,7 +891,8 @@ as Doc versions are, under the same setting: past the window, or beyond the
 newest few under a count, changes go, and a Record's newest change always
 stays, so it can say who last changed it and what that replaced. Reading a
 Record or its collection never reads history; it is read when someone opens
-it, a page of changes at a time.
+it, a page of changes at a time, with older pages asked for from the last
+change shown.
 
 History is bounded however it is written. A value over 64 KiB is not kept:
 its change says only that it was too large. One change stays within 256 KiB:
@@ -952,7 +953,6 @@ an undo would put back.
   history setting and each history's own size do. At the total limit a change
   is written without being kept.
 - A value over 64 KiB can't be seen or put back from history.
-- Nothing in the app shows a Record's history yet.
 - Agents read a Record's history, and archive a Record instead of deleting
   it, on the preview surface only: `worktable_records_query` with `recordId`
   and `history`, `worktable_records_update` with `archived`.

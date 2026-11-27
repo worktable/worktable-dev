@@ -1,4 +1,5 @@
 import type {
+  RecordChange,
   RecordCollectionProjectionHealth,
   RecordCollectionReconcileResult,
   RecordCollectionSchema,
@@ -60,6 +61,17 @@ export function queryRecords(spaceId: string, collectionId: string, query: Recor
     body: JSON.stringify(query),
     ...options,
   })
+}
+
+/**
+ * A page of a record's kept changes, newest first, and how many there are.
+ * `before` asks for the changes older than the one it names.
+ */
+export function readRecordHistory(spaceId: string, collectionId: string, recordId: string, before?: string) {
+  const query = before ? `?before=${encodeURIComponent(before)}` : ""
+  return fetchJSON<{ changes: RecordChange[]; total: number }>(
+    `/api/spaces/${spaceId}/records/${collectionId}/${encodeURIComponent(recordId)}/history${query}`
+  )
 }
 
 export function readRecord(spaceId: string, collectionId: string, recordId: string) {

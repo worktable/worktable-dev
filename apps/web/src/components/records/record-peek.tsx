@@ -43,6 +43,7 @@ import { documentsQueryOptions } from "@/lib/documents-queries"
 import { copyText } from "@/lib/clipboard"
 import { toast } from "@worktable/ui/components/sonner"
 import { FieldValue, type ExpandedRecords } from "./field-value"
+import { RecordHistory } from "./record-history"
 import { Popover, PopoverTrigger } from "@worktable/ui/components/popover"
 import { DocumentPicker, JsonEditor, MultiSelectEditor, RelationPicker, SelectEditor, TextishEditor, BooleanEditor, FieldEditorScope, FieldPopoverContent, fieldSurfaceClass, fieldSurfaceRestingClass } from "./field-editor"
 
@@ -214,6 +215,7 @@ export function RecordDetailBody({
   onClose: () => void
 }) {
   const [moreOpen, setMoreOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const scrollRef = useScrollFade<HTMLDivElement>()
   const sections = recordDetailSections(schema, record)
   const archived = Boolean(record.archive)
@@ -224,7 +226,8 @@ export function RecordDetailBody({
   const writtenByHtmlDoc = [record.createdBy, record.updatedBy].some((actor) => actor?.startsWith("widget:"))
   const { data: documents } = useQuery({
     ...documentsQueryOptions(spaceId),
-    enabled: writtenByHtmlDoc,
+    // An open history may name a page an earlier change was made through.
+    enabled: writtenByHtmlDoc || historyOpen,
     refetchOnMount: (query) => query.state.isInvalidated,
   })
   const actors = { agents: agentData?.agents, documents }
@@ -325,6 +328,20 @@ export function RecordDetailBody({
         </div>
         <ProvenanceRow label="Created" by={recordActorName(record.createdBy, actors)} at={record.createdAt} />
         <ProvenanceRow label="Updated" by={recordActorName(record.updatedBy ?? record.createdBy, actors)} at={record.updatedAt} />
+        {/* What changed, and what it replaced: read when it is opened. */}
+        <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
+          <CollapsibleTrigger className="-mx-1.5 flex h-7 w-[calc(100%+0.75rem)] items-center justify-between gap-3 rounded-md px-1.5 text-left text-foreground/80 outline-none transition-colors hover:bg-surface-hover focus-visible:ring-3 focus-visible:ring-ring/50">
+            History
+            <ChevronDown className={cn("size-3.5 text-muted-foreground transition-transform", historyOpen && "rotate-180")} />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border-t border-border/60 pt-2">
+              {historyOpen && (
+                <RecordHistory spaceId={spaceId} schema={schema} record={record} expanded={expanded} documents={documents} />
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </CardContent>
     </Card>
   )

@@ -248,6 +248,23 @@ describe("record history", () => {
     )
     expect(page.json.changes).toHaveLength(2)
     expect(page.json.total).toBe(kept.length)
+    // The next page is the changes older than the last one of this page,
+    // through to the oldest; a change no longer kept has none older.
+    const older = await request<{ changes: RecordChange[] }>(
+      "GET",
+      `${queue}/big/history?limit=500&before=${page.json.changes[1]!.id}`
+    )
+    expect(older.json.changes.map((change) => change.id)).toEqual(
+      kept.slice(2).map((change) => change.id)
+    )
+    expect(
+      (
+        await request<{ changes: RecordChange[] }>(
+          "GET",
+          `${queue}/big/history?before=rch_gone`
+        )
+      ).json.changes
+    ).toEqual([])
 
     // Nothing a change holds escapes the bound. A reason far too long is
     // clipped, and a change to more fields than fit says only that; neither

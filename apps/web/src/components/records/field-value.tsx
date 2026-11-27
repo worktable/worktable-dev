@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import type { RecordFile, ResolvedDocumentReference } from "@worktable/types"
 import type { RecordFieldColumn, RowHeight } from "@/lib/records"
-import { isSafeHttpUrl, optionColorClass, recordTitle, relationIds } from "@/lib/records"
+import { formatRecordDate, formatRecordNumber, isSafeHttpUrl, optionColorClass, recordTitle, relationIds } from "@/lib/records"
 import { documentReferencesQueryOptions } from "@/lib/docs-queries"
 import { FileTypeIcon } from "@/components/document-format-icon"
 import { useRecordCollectionSchema } from "@/lib/queries"
@@ -75,7 +75,7 @@ export function FieldValue({
         </span>
       )
     case "number": {
-      const text = typeof value === "number" ? formatNumber(value) : String(value)
+      const text = typeof value === "number" ? formatRecordNumber(value) : String(value)
       return (
         <span className="font-mono text-[13px] tabular-nums">
           {text}
@@ -85,7 +85,7 @@ export function FieldValue({
     }
     case "date":
     case "datetime":
-      return <span className="whitespace-nowrap text-muted-foreground">{formatDate(String(value), column.type === "datetime")}</span>
+      return <span className="whitespace-nowrap text-muted-foreground">{formatRecordDate(String(value), column.type === "datetime")}</span>
     case "url": {
       const href = String(value)
       // Record data is agent- and file-authored: only http(s) may render as a
@@ -354,25 +354,6 @@ function RelationChip({
   )
 }
 
-function formatNumber(value: number): string {
-  return Number.isInteger(value) ? value.toLocaleString() : value.toLocaleString(undefined, { maximumFractionDigits: 4 })
-}
-
-function formatDate(value: string, withTime: boolean): string {
-  // Date-only strings must parse as LOCAL dates: new Date("2026-07-11") is
-  // UTC midnight, which renders as the previous day west of UTC.
-  const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  const date = dateOnly
-    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
-    : new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
-    ...(withTime ? { hour: "numeric", minute: "2-digit" } : {}),
-  })
-}
 
 function safeStringify(value: unknown): string {
   try {

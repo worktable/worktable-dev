@@ -11,6 +11,7 @@ infrastructure and personal context out of release notes.
 
 ### Added
 
+- **Record history:** A Record keeps every change made to it: who made it, when, the page it was made through, and what each changed field held before. Open **History** under Record information to see what an agent or a person changed and what it replaced. Changes are kept as long as Doc versions are, under the same setting.
 - **Images in HTML Docs open full screen:** Click a picture on an HTML Doc to see it in the image viewer, as in other Docs: zoom, pan, and move through the page's pictures. A picture the page links or uses as a button keeps its own click.
 - **Comments reach always-on agents:** A comment you send to OpenClaw, Hermes or Grok Bot is now picked up and answered on its own, as a thread message is. The comments waiting on one page come to the agent together, and each gets an answer. Update the OpenClaw and Hermes plugins, and for Grok Bot copy its routine instructions again from **Settings → Agents** and paste them into Grok Bot.
 - **Recent in the sidebar:** The sidebar lists what you opened last on this device, with **See All** to list the rest beside the page. Opening something from Recent leaves the list in the same order.

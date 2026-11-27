@@ -9,7 +9,7 @@ import { getWidget } from "./widgets-api"
 import { SPACE_CONTENTS_GC_MS } from "./space-contents-cache"
 import { abandonableRead } from "./http"
 import { getRecordCollectionHealth, listRecordCollections, listRecords, queryRecords } from "./records-api"
-import type { FoundResult, RecordQuery } from "@worktable/types"
+import type { ActivityActor, FoundResult, RecordQuery } from "@worktable/types"
 
 /** What a search asks for. */
 export type SearchOptions = Parameters<typeof searchWorkspace>[0]
@@ -150,6 +150,35 @@ export function useSpaces() {
 
 export function useWorkspace() {
   return useQuery(workspaceQueryOptions())
+}
+
+// Who the reader is and what to call someone are read from the workspace on
+// every kind of screen, so they stay here, in the part every screen loads.
+/**
+ * Whether an activity actor is the reader. Without Teams there is one
+ * person, so every person is the reader. On a team, only the reader's own
+ * id is; if it is unknown, nobody is.
+ */
+export function useIsSelf(): (actor: Pick<ActivityActor, "id">) => boolean {
+  const { data } = useWorkspace()
+  const me = data?.person?.activityId
+  const team = Boolean(data?.teamContext)
+  return (actor) => !team || (me !== undefined && actor.id === me)
+}
+
+/**
+ * What to call an actor, by the name they have now, from the same directory
+ * the avatars use: "You" for the reader; on a team, other people go by
+ * their names.
+ */
+export function useActorName() {
+  const { data } = useWorkspace()
+  const isSelf = useIsSelf()
+  return (actor: Pick<ActivityActor, "kind" | "id" | "name">): string => {
+    const name = data?.presentations?.[actor.id]?.name ?? actor.name
+    if (actor.kind === "person") return isSelf(actor) ? "You" : (name ?? "Someone")
+    return name ?? (actor.kind === "agent" ? "An agent" : "Worktable")
+  }
 }
 
 export function useSpace(spaceId: string) {

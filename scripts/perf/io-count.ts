@@ -55,6 +55,7 @@ import {
 import { gzipSync } from "node:zlib"
 import { cpus, loadavg, totalmem } from "node:os"
 import { isAbsolute, join, resolve } from "node:path"
+import { RACY_FINGERPRINT_WINDOW_MS } from "../../packages/server/src/file-fingerprint.ts"
 import { fixtureDir, readFixture, type FixtureManifest } from "./fixtures.ts"
 import {
   PERF_ROOT,
@@ -643,6 +644,13 @@ async function countingRun(options: {
       for (const endpoint of endpoints) {
         for (let index = 0; index < WARMUP; index += 1)
           await request(server.url, session.cookies, endpoint.path)
+        // A file written less than RACY_FINGERPRINT_WINDOW_MS ago has a
+        // fingerprint caches don't trust, so reads parse it again until the
+        // window passes. A warm-up that writes (the first Threads request
+        // writes the delivery file) would otherwise leave the first attempts
+        // paying that, more of them the faster the runner. Counting starts
+        // once it has passed; a request that writes every time keeps paying.
+        await Bun.sleep(RACY_FINGERPRINT_WINDOW_MS + 250)
         // Background work (a sweep, a watcher echo) can land in either
         // window; each endpoint is measured `attempts` times and the
         // attempt with the quietest idle window, then the least request

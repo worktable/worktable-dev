@@ -23,6 +23,7 @@ import {
 import { readCurrentFileSource } from "./current-file-source.ts"
 import { readRegisteredDocumentSource } from "./document-write-service.ts"
 import {
+  batchRecordActivity,
   buildRecordCollectionSchema,
   checkRecordDataWithSchema,
   createRecord,
@@ -477,31 +478,34 @@ export async function importIntoRecords(options: {
   let created = 0
   let skipped = 0
   let failed = 0
-  for (const row of rows) {
-    const result = await createRecord(spaceId, collectionId, {
-      ...(row.recordId ? { id: row.recordId } : {}),
-      data: row.data,
-      createdBy: options.createdBy,
-      strictFields: true,
-    })
-    if (result.data && result.created) {
-      created += 1
-    } else if (result.data) {
-      skipped += 1
-      if (results.length < LISTED_MAX) {
-        results.push({
-          row: row.row,
-          recordId: result.data.id,
-          skipped: result.matchedBy ? `matches ${result.matchedBy}` : "exists",
-        })
-      }
-    } else {
-      failed += 1
-      if (results.length < LISTED_MAX) {
-        results.push({ row: row.row, error: result.error ?? "Write failed" })
+  // An import is one line in Activity, with its count.
+  await batchRecordActivity(async () => {
+    for (const row of rows) {
+      const result = await createRecord(spaceId, collectionId, {
+        ...(row.recordId ? { id: row.recordId } : {}),
+        data: row.data,
+        createdBy: options.createdBy,
+        strictFields: true,
+      })
+      if (result.data && result.created) {
+        created += 1
+      } else if (result.data) {
+        skipped += 1
+        if (results.length < LISTED_MAX) {
+          results.push({
+            row: row.row,
+            recordId: result.data.id,
+            skipped: result.matchedBy ? `matches ${result.matchedBy}` : "exists",
+          })
+        }
+      } else {
+        failed += 1
+        if (results.length < LISTED_MAX) {
+          results.push({ row: row.row, error: result.error ?? "Write failed" })
+        }
       }
     }
-  }
+  })
   const mapped = new Set(options.columns.map((column) => column.column))
   return {
     collectionId,

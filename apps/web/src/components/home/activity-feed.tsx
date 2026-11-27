@@ -265,6 +265,30 @@ function Sentence({ entry }: { entry: ActivityEntry }) {
           {who} removed {records(entry.count)} from {what}
         </>
       )
+    case "records.archived":
+      return (
+        <>
+          {who} archived {records(entry.count)} in {what}
+        </>
+      )
+    case "records.restored":
+      return (
+        <>
+          {who} restored {records(entry.count)} in {what}
+        </>
+      )
+    case "collection.added":
+      return (
+        <>
+          {who} added the collection {what}
+        </>
+      )
+    case "collection.changed":
+      return (
+        <>
+          {who} changed the fields of {what}
+        </>
+      )
   }
 }
 

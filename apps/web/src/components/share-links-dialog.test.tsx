@@ -179,9 +179,9 @@ test("live data offers to remove a collection deleted since the link was saved",
   expect(text(html)).toContain("This collection is gone.Remove")
 })
 
-test("tells the sharer how many collections the tool reads that visitors won't see", () => {
+test("tells the sharer how many collections the page reads that visitors won't see", () => {
   const one = text(renderToStaticMarkup(<UnsharedRecordsNote count={1} />))
-  expect(one).toBe("Visitors won’t see 1 collection this tool reads.")
+  expect(one).toBe("Visitors won’t see 1 collection this page reads.")
   const several = text(
     renderToStaticMarkup(
       <UnsharedRecordsNote
@@ -190,7 +190,7 @@ test("tells the sharer how many collections the tool reads that visitors won't s
       />
     )
   )
-  expect(several).toBe("Visitors won’t see 3 collections this tool reads.Show")
+  expect(several).toBe("Visitors won’t see 3 collections this page reads.Show")
 })
 
 test("counts what visitors won't see under the link and the owner policy", () => {

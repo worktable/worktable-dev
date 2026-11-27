@@ -20,6 +20,7 @@ import {
   RemovedSkillSchema,
   SearchResultsWithThreadsSchema,
   SkillListingSchema,
+  SpaceOrientationFields,
 } from "./output-schemas.ts"
 import type { McpSurface } from "./surface.ts"
 import {
@@ -65,6 +66,8 @@ export interface CatalogTool {
    * place of a merged one. Results already carry them.
    */
   outputFields?: Record<string, z.ZodType>
+  /** Fields its operations declare that this tool's results never carry. */
+  omitOutputFields?: readonly string[]
 }
 
 /** A call whose arguments don't describe one thing to do. */
@@ -1000,11 +1003,25 @@ export const CATALOG_TOOLS: readonly CatalogTool[] = TOOLS
 const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
   // Storage: orientation says when the Worktable is close to its limit,
   // and a file's history says when older versions were removed there.
+  // Orientation: a Space answers at the same size whatever it holds. Its
+  // files come from the file list, so there is no index to ask for.
   worktable_state: (tool) => ({
     ...tool,
-    description: `${tool.description} When the Worktable is close to its storage limit, it says so.`,
+    description:
+      "Orient to the workspace or a Space. Read its pinned docs first; they explain where to start. With spaceId: the Space's pins, its folders with how many files each holds, and what changed last; list the files themselves with worktable_files_read. It also lists the skills in your team's Library that apply to you: Docs a person approved for agents to follow. When the Worktable is close to its storage limit, it says so.",
+    inputSchema: z.strictObject(without(tool.inputSchema.shape, "index")),
+    runs: [["worktable_discover", "state"]],
+    route: (args) => step("worktable_discover", "state", without(args, "index")),
+    omitOutputFields: ["docs", "documents", "startHere"],
     outputFields: {
       ...tool.outputFields,
+      // Present with spaceId; the workspace's own answer has none of them.
+      ...Object.fromEntries(
+        Object.entries(SpaceOrientationFields).map(([key, field]) => [
+          key,
+          field.description ? field.optional().describe(field.description) : field.optional(),
+        ])
+      ),
       storage: z
         .object({
           usedBytes: z.number().int().nonnegative(),
@@ -1022,14 +1039,14 @@ const PREVIEW_CHANGES: Record<string, (tool: CatalogTool) => CatalogTool> = {
   worktable_files_read: (tool) => ({
     ...tool,
     description:
-      "Read one file by path, or list a Space's files when path is omitted: Docs, HTML Docs and drawings included, filtered by format, folder, glob or lifetime. A path is the file's whole name, extension included. Set source for its content: an image comes as an image you can see; a text, code, table or PDF file as contents, a page of its lines at a time (offset and limit, nextOffset for the next page), whatever its size, a PDF with each page marked and an outline of where each starts; other files as base64, or over 1 MiB only as a link where supported. Set versions for its history, or from for a text diff. Over a direct, Cloud or Worktable Link connection, a file read also gives downloadUrl, a link to its bytes that works for 10 minutes.",
+      "Read one file by path, or list a Space's files when path is omitted: Docs, HTML Docs and drawings included, filtered by format, folder, glob or lifetime. A path is as the list gives it: a file's whole name with its extension, and a Doc, HTML Doc or drawing without one. Set source for its content: an image comes as an image you can see; a text, code, table or PDF file as contents, a page of its lines at a time (offset and limit, nextOffset for the next page), whatever its size, a PDF with each page marked and an outline of where each starts; other files as base64, or over 1 MiB only as a link where supported. Set versions for its history, or from for a text diff. Over a direct, Cloud or Worktable Link connection, a file read also gives downloadUrl, a link to its bytes that works for 10 minutes.",
     inputSchema: z.strictObject({
       ...tool.inputSchema.shape,
       offset: contentsOffset!,
       // One limit pages both: files when listing, lines with source. Each
       // operation's own schema still applies its maximum after routing.
       limit: contentsLimit!.describe(
-        `Page size: files when listing (default 200, up to 1000); with source, lines of the file's contents (default ${CONTENTS_DEFAULT_LINES}, up to ${CONTENTS_MAX_LINES}; a page also stops at ${CONTENTS_PAGE_MAX_BYTES / 1024} KiB of text).`
+        `Page size: files when listing (default 100, up to 1000); with source, lines of the file's contents (default ${CONTENTS_DEFAULT_LINES}, up to ${CONTENTS_MAX_LINES}; a page also stops at ${CONTENTS_PAGE_MAX_BYTES / 1024} KiB of text).`
       ),
     }),
     route: (args) => {
@@ -1216,14 +1233,23 @@ export interface RoutedCall {
 }
 
 /**
- * A call's arguments with the one slip agents make most put right, before
- * they are checked against the listed inputs: State, pins and the file tools
- * call a Doc's path `path`, so agents send that to the Doc tools, which call
- * it `docPath`.
+ * A call's arguments with what agents commonly send put right, before they
+ * are checked against the listed inputs. State, pins and the file tools call
+ * a Doc's path `path`, so agents send that to the Doc tools, which call it
+ * `docPath`.
  */
-export function forgivenArguments(name: string, args: unknown): unknown {
-  if (name !== "worktable_docs_read" && name !== "worktable_docs_write") return args
+export function forgivenArguments(
+  name: string,
+  args: unknown,
+  surface: McpSurface = "released"
+): unknown {
   if (!args || typeof args !== "object" || Array.isArray(args)) return args
+  // The preview surface has no index to ask for: a Space answers with its
+  // pins and folders either way, so an agent used to asking still gets them.
+  if (name === "worktable_state" && surface === "preview" && "index" in args) {
+    return without(args as Record<string, unknown>, "index")
+  }
+  if (name !== "worktable_docs_read" && name !== "worktable_docs_write") return args
   const { path, ...rest } = args as Record<string, unknown>
   if (typeof path !== "string" || "docPath" in rest) return args
   return { ...rest, docPath: path }
@@ -1322,10 +1348,12 @@ export function catalogOutputSchema(tool: CatalogTool): z.ZodObject {
     (operation) =>
       PUBLIC_OPERATION_OUTPUT_VARIANTS[operation] as readonly z.ZodObject[]
   )
-  if (variants.length === 1) return variants[0]!.extend(tool.outputFields ?? {})
+  const omitted = new Set(tool.omitOutputFields ?? [])
+  if (variants.length === 1 && omitted.size === 0) return variants[0]!.extend(tool.outputFields ?? {})
   const fields = new Map<string, z.ZodType[]>()
   for (const variant of variants) {
     for (const [key, field] of Object.entries(variant.shape)) {
+      if (omitted.has(key)) continue
       const known = fields.get(key) ?? []
       if (!known.includes(field as z.ZodType)) known.push(field as z.ZodType)
       fields.set(key, known)

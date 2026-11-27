@@ -378,6 +378,53 @@ const SpaceDetailSchema = z.looseObject({
   documents: z.array(PortableDocumentListItemSchema).optional(),
 })
 
+/** Preview: a Space as an agent is told of it, the same size for any Space. */
+export const SpaceOrientationFields = {
+  space: z
+    .looseObject({
+      id: PortableCanonicalIdSchema,
+      name: z.string(),
+      description: z.string().optional(),
+    })
+    .describe("With spaceId: the Space."),
+  pins: z
+    .array(ResolvedStartHerePinSchema)
+    .optional()
+    .describe("Pinned docs; read these first. Only pins whose doc is still there."),
+  items: z.number().int().nonnegative().describe("With spaceId: how many files the Space holds."),
+  folders: z
+    .array(
+      z.looseObject({
+        path: z.string(),
+        items: z.number().int().positive(),
+        changedAt: z.string().optional(),
+      })
+    )
+    .describe(
+      "With spaceId: the Space's top-level folders, most recently changed first, each with how many files it holds. List one with worktable_files_read pathPrefix."
+    ),
+  moreFolders: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("How many top-level folders there are beyond those listed."),
+  recent: z
+    .array(
+      z.looseObject({
+        path: z.string(),
+        title: z.string().optional(),
+        changedAt: z.string(),
+      })
+    )
+    .describe("With spaceId: the ten files changed most recently, newest first."),
+}
+
+const SpaceOrientationSchema = z.looseObject({
+  ...SpaceOrientationFields,
+  hint: z.string(),
+})
+
 /** Preview: one skill from a library that applies to the caller. */
 export const SkillListingSchema = z.looseObject({
   name: z.string(),
@@ -1896,6 +1943,8 @@ const ThreadSearchOutputSchema = z.looseObject({
 })
 
 const HELD_OPERATION_OUTPUT_VARIANTS: Partial<Record<OperationId, readonly z.ZodObject[]>> = {
+  // A Space at a size any agent's app accepts, on the preview surface.
+  "workspace.state": [SpaceOrientationSchema],
   // Ranked search with threads, on the preview surface.
   "workspace.search": [ThreadSearchOutputSchema],
   // A page of a file's contents, on the preview surface.

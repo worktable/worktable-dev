@@ -347,3 +347,81 @@ describe("listed tools through MCP", () => {
     expect(JSON.stringify(invalid.content)).toContain("waitSeconds")
   })
 })
+
+describe("the preview tools", () => {
+  let root = ""
+  let client: Client | null = null
+
+  async function call(name: string, args: Record<string, unknown>) {
+    const result = await client!.callTool({ name, arguments: args })
+    if (result.isError) {
+      throw new Error(`${name} failed: ${JSON.stringify(result.content)}`)
+    }
+    return result.structuredContent as Record<string, unknown>
+  }
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "worktable-mcp-preview-"))
+    setWorkspaceRootOverride(root)
+    ensureWorkspaceManifest()
+    invalidateSearchIndex()
+    const server = createWorktableMcpServer({
+      version: "test",
+      scopes: ["*"],
+      urlOrigin: "http://127.0.0.1:7480",
+      surface: "preview",
+    })
+    client = new Client({ name: "catalog-preview-test", version: "1" })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
+    await client.listTools()
+  })
+
+  afterEach(async () => {
+    await client?.close()
+    client = null
+    setWorkspaceRootOverride(null)
+    invalidateSearchIndex()
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it("tell an agent about a Space without listing its files", async () => {
+    const { spaceId } = await call("worktable_spaces_write", { name: "Plans" })
+    for (const docPath of ["start-here", "plans/q1", "plans/q2", "research/interviews/anna"]) {
+      await call("worktable_docs_write", { spaceId, docPath, content: `# ${docPath}\n\n## One\n\n## Two`, lifetime: "durable" })
+    }
+    await call("worktable_spaces_write", { spaceId, pins: [{ path: "start-here", note: "Read first" }, { path: "plans/q1" }] })
+    await call("worktable_files_update", { spaceId, path: "plans/q1", archived: true })
+
+    expect(((await call("worktable_state", {})).spaces as unknown[]).length).toBe(1)
+    const told = await call("worktable_state", { spaceId })
+    expect(told.space).toEqual({ id: spaceId, name: "Plans" })
+    // Pins are said once, and only those whose doc is still there.
+    expect((told.pins as Array<{ path: string }>).map((pin) => pin.path)).toEqual(["start-here"])
+    expect(told.items).toBe(3)
+    expect((told.folders as Array<{ path: string; items: number }>).map(({ path, items }) => [path, items]).sort()).toEqual([
+      ["plans", 1],
+      ["research", 1],
+    ])
+    expect((told.recent as unknown[]).length).toBe(3)
+    expect(told.hint).toContain("worktable_files_read")
+    for (const gone of ["docs", "documents", "startHere", "index"]) expect(told).not.toHaveProperty(gone)
+
+    // There is no index to ask for; an agent used to asking gets the same answer.
+    const { tools } = await client!.listTools()
+    const state = tools.find((listed) => listed.name === "worktable_state")!
+    expect(state.inputSchema.properties ?? {}).not.toHaveProperty("index")
+    expect(state.outputSchema?.properties ?? {}).not.toHaveProperty("documents")
+    expect(await call("worktable_state", { spaceId, index: true })).toMatchObject({ items: 3 })
+
+    // The list is where the files are: a row says what a file is picked by.
+    const listed = await call("worktable_files_read", { spaceId })
+    const rows = listed.documents as Array<Record<string, unknown>>
+    expect(rows.map((row) => row.path).sort()).toEqual(["plans/q2", "research/interviews/anna", "start-here"])
+    for (const row of rows) {
+      expect(row).toHaveProperty("title")
+      expect(row).not.toHaveProperty("folderOperations")
+      expect(row).not.toHaveProperty("createdAt")
+    }
+  })
+})

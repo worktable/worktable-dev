@@ -443,11 +443,12 @@ describe("released tool surface", () => {
     // Waiting in preview: the thread list leaves archived threads out unless
     // asked, a render takes a PDF's page, a file read gives a text file's
     // contents a page at a time, exact search reaches files' text, and
-    // runtimes may claim comments and answer them. Orientation also says when
-    // storage is nearly full, and a file's versions when older ones were
-    // removed at the limit; those two tools are otherwise the same. Every
-    // other tool is listed the same on both.
+    // runtimes may claim comments and answer them. Orientation answers for a
+    // Space at one size, with no index, and says when storage is nearly
+    // full; a file's versions say when older ones were removed at the limit.
+    // Every other tool is listed the same on both.
     const waiting = [
+      "worktable_state",
       "worktable_threads_read",
       "worktable_files_render",
       "worktable_files_read",

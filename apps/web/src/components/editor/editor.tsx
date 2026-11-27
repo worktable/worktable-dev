@@ -757,6 +757,7 @@ function EditorHeaderSelectionComment({
 }) {
   const editor = useBlockNoteEditor()
   const [shown, setShown] = useState(false)
+  if (paused && shown) setShown(false)
   // Snapshot the selected block & quote: tapping a header button on mobile can
   // collapse the DOM selection before click fires.
   const selected = useRef<AnnotationCreateRequest | null>(null)
@@ -839,7 +840,10 @@ function EditorHeaderSelectionComment({
   useHeaderContextualAction(headerAction)
 
   useEffect(() => {
-    if (paused) return
+    if (paused) {
+      selected.current = null
+      return
+    }
     let timer = 0
     let releaseTimer = 0
     let activating = false
@@ -880,6 +884,10 @@ function EditorHeaderSelectionComment({
         activating = false
         sync()
       }, 150)
+    }
+
+    if (coarsePointer() && readSelection()) {
+      timer = window.setTimeout(sync, 300)
     }
 
     const unsubscribe = editor.onSelectionChange(later)

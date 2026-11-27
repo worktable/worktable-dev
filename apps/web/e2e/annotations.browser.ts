@@ -174,6 +174,7 @@ for (const mobile of [true, false]) {
         },
       ])
       await expect(composer).not.toBeVisible()
+      if (mobile) await expect(headerComment).toHaveCount(0)
       // On a phone the next comment is a tap away; the panel stays shut.
       await expect(
         page

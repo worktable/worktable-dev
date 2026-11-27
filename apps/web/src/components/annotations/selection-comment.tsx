@@ -47,6 +47,7 @@ export function SelectionComment({
   paused?: boolean
 }) {
   const [shown, setShown] = useState<Shown>(null)
+  if (paused && shown !== null) setShown(null)
   // The selection as last seen: a tap can clear it before the click lands.
   const selected = useRef<Range | null>(null)
 
@@ -78,7 +79,10 @@ export function SelectionComment({
   useHeaderContextualAction(headerAction)
 
   useEffect(() => {
-    if (paused) return
+    if (paused) {
+      selected.current = null
+      return
+    }
     let timer = 0
     let releaseTimer = 0
     let pressed = false
@@ -157,6 +161,9 @@ export function SelectionComment({
         selected.current = read()!.cloneRange()
         commentFromKey()
       }
+    }
+    if (read()) {
+      timer = window.setTimeout(place, coarsePointer() ? 300 : 120)
     }
     document.addEventListener("selectionchange", later)
     document.addEventListener("pointerdown", down, true)

@@ -47,7 +47,6 @@ infrastructure and personal context out of release notes.
 ### Fixed
 
 - **Forms in HTML Docs:** A form's Save button on an HTML Doc does what the page says, in Worktable and in previews. Before, pressing it did nothing, and pages agents built with an add or edit form never saved. A form still can't send anything outside the page.
-- **HTML Doc changes in Activity:** When an agent or a person changes an HTML Doc, its code, its access or its name, Activity says who edited it, as it does for other Docs. Before, only creating one showed.
 - **HTML Doc changes in Activity:** When an agent or a person changes an HTML Doc, its code, its access or its name, Activity says who edited it, as it does for other Docs. Before, only creating one showed. Links Worktable fixes after a move no longer show as an edit by whoever moved the file.
 - **Calls agents often get wrong:** An agent's call is no longer refused when it names a Doc with `path` in the Doc tools, starts a path with a slash, asks a search by meaning for `maxResults`, or lists comments with `includeTargetContext`.
 - **Everything in Pending can be reached:** Pending lists everything waiting on you. Before, only the newest ten showed, so older requests could not be opened from Home.

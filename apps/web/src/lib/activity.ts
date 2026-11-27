@@ -2,7 +2,9 @@ import {
   infiniteQueryOptions,
   queryOptions,
   useInfiniteQuery,
+  useMutation,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query"
 import type {
   ActivityActor,
@@ -100,5 +102,43 @@ export function usePending(spaceId?: string) {
       ),
     staleTime: 10_000,
     refetchInterval: pollUnlessLive(spaceId),
+  })
+}
+
+/**
+ * Mark something that waits on the reader as done without answering it. The
+ * row leaves at once and comes back if the server refuses.
+ */
+export function useMarkPendingDone() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      fetchJSON<{ ok: true }>("/api/pending/done", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      }),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: activityQueryKeys.pending })
+      const before = queryClient.getQueriesData<PendingResult>({
+        queryKey: activityQueryKeys.pending,
+      })
+      queryClient.setQueriesData<PendingResult>(
+        { queryKey: activityQueryKeys.pending },
+        (current) => {
+          if (!current) return current
+          const items = current.items.filter((item) => item.id !== id)
+          return { items, total: items.length }
+        }
+      )
+      return { before }
+    },
+    onError: (_error, _id, context) => {
+      for (const [key, data] of context?.before ?? []) {
+        queryClient.setQueryData(key, data)
+      }
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: activityQueryKeys.pending }),
   })
 }

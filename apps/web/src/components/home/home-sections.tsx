@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import {
+  Check,
   CircleAlert,
   Library as LibraryIcon,
   MessageSquareText,
@@ -8,10 +9,12 @@ import { useState } from "react"
 import { HelpIcon, TipCard } from "@/components/help/help"
 import type { PendingItem } from "@worktable/types"
 import { COMMENT_HASH_PREFIX } from "@worktable/types/constants"
+import { toast } from "@worktable/ui/components/sonner"
 import { cn } from "@worktable/ui/lib/utils"
 import { ThreadLink } from "@/components/home/activity-feed"
+import { Tip } from "@/components/home/home-cards"
 import { ActorAvatar } from "@/components/home/home-latest"
-import { usePending } from "@/lib/activity"
+import { useMarkPendingDone, usePending } from "@/lib/activity"
 import { shortWhen } from "@/lib/activity-format"
 import { useActorName } from "@/lib/use-actor-name"
 import { useSpaces } from "@/lib/queries"
@@ -42,9 +45,12 @@ const PENDING_ROWS = 3
 function PendingRow({
   item,
   spaceName,
+  onDone,
 }: {
   item: PendingItem
   spaceName?: string
+  /** Lets the item go without answering it. */
+  onDone: (id: string) => void
 }) {
   const nameOf = useActorName()
   const from =
@@ -85,8 +91,15 @@ function PendingRow({
       : item.kind === "skillProposal"
         ? LibraryIcon
         : MessageSquareText
-  const className =
-    "group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3.5 gap-y-px rounded-xl px-2.5 py-3 transition-colors hover:bg-surface-hover"
+  // A request can be let go without an answer; the other kinds end where
+  // they are acted on.
+  const canMarkDone =
+    item.kind === "threadRequest" || item.kind === "commentRequest"
+  const className = cn(
+    "group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3.5 gap-y-px rounded-xl px-2.5 py-3 transition-colors hover:bg-surface-hover",
+    // Where nothing hovers, Done always shows, so the row keeps room for it.
+    canMarkDone && "[@media(hover:none)]:pr-12"
+  )
   const children = (
     <>
       {from ? (
@@ -109,7 +122,7 @@ function PendingRow({
       <span className="line-clamp-2 min-w-0 text-[0.9375rem] leading-6 font-medium text-foreground @lg/page:line-clamp-none @lg/page:truncate">
         {title}
       </span>
-      <span className="shrink-0 self-start pt-1 text-xs text-muted-foreground tabular-nums @lg/page:row-span-2">
+      <span className="shrink-0 self-start pt-1 text-xs text-muted-foreground tabular-nums transition-opacity group-hover/row:opacity-0 group-has-[:focus-visible]/row:opacity-0 @lg/page:row-span-2">
         {shortWhen(item.at)}
       </span>
       <span className="col-span-2 col-start-2 flex min-w-0 items-center gap-1.5 text-[0.8125rem] leading-5 text-muted-foreground @lg/page:col-span-1">
@@ -138,28 +151,48 @@ function PendingRow({
       </Link>
     )
   }
-  return item.kind === "threadRequest" || item.kind === "deliveryFailed" ? (
-    <ThreadLink
-      spaceId={item.spaceId}
-      threadId={item.threadId}
-      messageId={item.kind === "threadRequest" ? item.messageId : undefined}
-      className={className}
-    >
-      {children}
-    </ThreadLink>
-  ) : (
-    <Link
-      to="/spaces/$spaceId/documents/$"
-      params={{ spaceId: item.spaceId, _splat: item.docPath }}
-      hash={
-        item.kind === "commentRequest"
-          ? `${COMMENT_HASH_PREFIX}${item.annotationId}`
-          : "visitors"
-      }
-      className={className}
-    >
-      {children}
-    </Link>
+  const link =
+    item.kind === "threadRequest" || item.kind === "deliveryFailed" ? (
+      <ThreadLink
+        spaceId={item.spaceId}
+        threadId={item.threadId}
+        messageId={item.kind === "threadRequest" ? item.messageId : undefined}
+        className={className}
+      >
+        {children}
+      </ThreadLink>
+    ) : (
+      <Link
+        to="/spaces/$spaceId/documents/$"
+        params={{ spaceId: item.spaceId, _splat: item.docPath }}
+        hash={
+          item.kind === "commentRequest"
+            ? `${COMMENT_HASH_PREFIX}${item.annotationId}`
+            : "visitors"
+        }
+        className={className}
+      >
+        {children}
+      </Link>
+    )
+  if (!canMarkDone) return link
+  return (
+    <div className="group/row relative rounded-xl transition-colors hover:bg-surface-hover">
+      {link}
+      {/* Shown on hover where a pointer can hover, and always elsewhere. */}
+      <span className="absolute top-1/2 right-2.5 flex -translate-y-1/2 transition-opacity group-hover/row:opacity-100 has-[:focus-visible]:opacity-100 [@media(hover:hover)]:opacity-0">
+        <Tip label="Done">
+          <button
+            type="button"
+            aria-label="Done"
+            onClick={() => onDone(item.id)}
+            className="flex size-7 cursor-pointer items-center justify-center rounded-md border border-card-border bg-card text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Check className="size-3.5" />
+          </button>
+        </Tip>
+      </span>
+    </div>
   )
 }
 
@@ -169,6 +202,11 @@ const lowerFirst = (text: string) =>
 /** Shown when something is waiting on the reader, or when that is unknown. */
 export function PendingSection({ spaceId }: { spaceId?: string }) {
   const pending = usePending(spaceId)
+  const markDone = useMarkPendingDone()
+  const done = (id: string) =>
+    markDone.mutate(id, {
+      onError: () => toast.error("Couldn’t save. Try again."),
+    })
   const { data: spaces } = useSpaces()
   const [showAll, setShowAll] = useState(false)
   const names = new Map((spaces ?? []).map((space) => [space.id, space.name]))
@@ -215,6 +253,7 @@ export function PendingSection({ spaceId }: { spaceId?: string }) {
             <PendingRow
               key={item.id}
               item={item}
+              onDone={done}
               spaceName={
                 spaceId || !item.spaceId ? undefined : names.get(item.spaceId)
               }

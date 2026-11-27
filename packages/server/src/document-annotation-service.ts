@@ -21,7 +21,7 @@ import type {
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import { noteCommentChanged, type CommentPlace } from "./pending-list.ts"
 import type { PassageAuthor } from "./passage-author.ts"
-import { addRequests, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
+import { addRequests, requestsAfterDone, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import {
   readDocumentAnnotationsV2,
@@ -682,6 +682,29 @@ export async function replyDocumentAnnotation(options: {
     })
   }
   return { annotation: result.annotation, replyId: result.replyId }
+}
+
+/** A recipient lets go of what a comment asked them, without replying. */
+export async function dismissDocumentAnnotationRequests(options: {
+  spaceId: string
+  annotationId: string
+  participantId: string
+}): Promise<void> {
+  await requireV2AnnotationWrites()
+  await withDocPathLock(options.spaceId, async () => {
+    const found = await findAnnotation(options.spaceId, options.annotationId)
+    const annotation: DocumentAnnotationV2 = {
+      ...found.annotation,
+      requests: requestsAfterDone(
+        found.annotation.requests ?? [],
+        options.participantId,
+        new Date().toISOString()
+      ),
+    }
+    found.owner.annotations[found.index] = annotation
+    await writeOwner(options.spaceId, found.owner)
+    noteChanged(options.spaceId, found.owner, annotation)
+  })
 }
 
 export async function resolveDocumentAnnotation(options: {

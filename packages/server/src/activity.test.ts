@@ -461,6 +461,67 @@ describe("workspace activity", () => {
     )
   })
 
+  it("lets the reader mark a request done without answering it", async () => {
+    const owner = ownerIdentity()
+    const ownerParticipant = (
+      await resolveParticipant(owner, { name: "Owner" })
+    ).participant
+    await resolveParticipant(codex, { name: "Codex", defaultSpaceId: "company" })
+    const location = { kind: "space", spaceId: "company" } as const
+    const asked = await postThreadMessage(codex, {
+      location,
+      to: "Owner",
+      body: "Which invitation variant should we ship?",
+      idempotencyKey: "ask-owner",
+      responseIdentityId: defaultConversationIdentityId(ownerParticipant.id),
+      waitSeconds: 0,
+    })
+    await writeDocAt("notes/plan")
+    await agentTool("worktable_annotations_write", {
+      action: "create",
+      spaceId: "company",
+      target: { type: "doc", docPath: "notes/plan" },
+      category: "comment",
+      body: "Is this still the plan?",
+      to: [ownerParticipant.id],
+    })
+    const waiting = (await request<PendingResult>("/api/pending")).items
+    expect(waiting.map((item) => item.kind).sort()).toEqual([
+      "commentRequest",
+      "threadRequest",
+    ])
+
+    // An agent's own requests end with its reply, so it has nothing to mark.
+    const refused = await app(codex).fetch(
+      new Request("http://localhost/api/pending/done", {
+        method: "POST",
+        body: JSON.stringify({ id: waiting[0]!.id }),
+        headers: { "Content-Type": "application/json" },
+      })
+    )
+    expect(refused.status).toBe(403)
+
+    for (const item of waiting) {
+      await request("/api/pending/done", {
+        method: "POST",
+        body: { id: item.id },
+      })
+    }
+    expect((await request<PendingResult>("/api/pending")).items).toEqual([])
+    // Whoever asked sees it was let go: nothing answered it.
+    const stored = await readThread(location, asked.threadId)
+    expect(stored.messages[0]?.responseRequest?.status).toBe("withdrawn")
+    const comments = await request<{
+      annotations: Array<{
+        thread: unknown[]
+        requests?: Array<{ status: string }>
+      }>
+    }>("/api/spaces/company/annotations")
+    expect(comments.annotations).toMatchObject([
+      { thread: [], requests: [{ status: "withdrawn" }] },
+    ])
+  })
+
   it("lists everything that waits on the reader, however much", async () => {
     const ownerParticipant = (
       await resolveParticipant(ownerIdentity(), { name: "Owner" })

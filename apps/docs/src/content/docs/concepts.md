@@ -134,6 +134,9 @@ A thread shows once, however many of its messages ask you, and leaves when
 you reply in it. Each row opens at its place: the thread at the message that
 asked, the Doc on the comment.
 
+**Done** on a request lets it go without an answer. It stops waiting on you,
+and the thread or comment shows it is no longer waiting.
+
 See [Find content](/guides/organize-and-find/#find-content).
 
 ### Library

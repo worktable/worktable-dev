@@ -67,7 +67,7 @@ const tipClass =
   "pointer-events-none absolute z-20 flex flex-col gap-0.5 rounded-md bg-foreground px-2.5 py-1.5 text-xs leading-4 whitespace-nowrap text-background"
 
 /** Shows `label` over its child while the pointer is on it. */
-function Tip({
+export function Tip({
   label,
   align = "center",
   children,

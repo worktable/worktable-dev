@@ -17,7 +17,9 @@ import { pendingFor } from "./pending-list.ts"
 import { canAccessSpace } from "./team-policy.ts"
 import { isPerson, pendingSkillProposals } from "./skill-libraries.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
+import { dismissAnnotationRequests } from "./annotation-store.ts"
 import {
+  dismissThreadRequests,
   listPendingThreadWork,
   type ViewerDeliveryFailure,
   type ViewerThreadRequest,
@@ -146,6 +148,44 @@ async function commentRequests(
       },
     ]
   })
+}
+
+/** Why an item could not be marked done. */
+export type PendingDoneRefusal = "not-found" | "not-allowed"
+
+/**
+ * The reader marks something that waits on them as done without answering
+ * it. It stops waiting on them; whoever asked sees that it was let go.
+ */
+export async function markPendingDone(
+  identity: TokenIdentity,
+  id: string
+): Promise<PendingDoneRefusal | null> {
+  // Only a person lets a request go this way: an agent's requests carry
+  // deliveries and holds that end with its reply.
+  if (identity.principal.type !== "human") return "not-allowed"
+  const item = (await listPending(identity)).items.find(
+    (candidate) => candidate.id === id
+  )
+  if (!item) return "not-found"
+  if (item.kind === "threadRequest") {
+    if (!hasScope(identity.scopes, "threads:write")) return "not-allowed"
+    await dismissThreadRequests(identity, {
+      location: item.spaceId
+        ? { kind: "space", spaceId: item.spaceId }
+        : { kind: "worktable" },
+      threadId: item.threadId,
+    })
+    return null
+  }
+  if (item.kind === "commentRequest") {
+    if (!hasScope(identity.scopes, "annotations:write")) return "not-allowed"
+    const reader = (await resolveParticipant(identity)).participant
+    await dismissAnnotationRequests(item.spaceId, item.annotationId, reader.id)
+    return null
+  }
+  // The other kinds end by acting on them where they are.
+  return "not-allowed"
 }
 
 function failedDeliveries(failures: ViewerDeliveryFailure[]): PendingItem[] {

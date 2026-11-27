@@ -211,6 +211,16 @@ for (const mobile of [true, false]) {
         window.getSelection()!.addRange(range)
       })
       const comment = page.getByRole("button", { name: "Comment", exact: true })
+      if (mobile) {
+        // Under the selection, the side the system's Copy menu leaves free,
+        // and above where Android's Touch to Search bar covers the screen.
+        const selected = await page.evaluate(
+          () => window.getSelection()!.getRangeAt(0).getBoundingClientRect().bottom
+        )
+        const box = (await comment.boundingBox())!
+        expect(box.y).toBeGreaterThan(selected + 24)
+        expect(box.y + box.height).toBeLessThan(844 - 100)
+      }
       if (mobile) await comment.tap()
       else await comment.click()
       const composer = page.getByRole("dialog", { name: "Add Comment" })

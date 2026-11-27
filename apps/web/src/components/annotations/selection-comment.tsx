@@ -1,4 +1,10 @@
-import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react"
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type RefObject,
+} from "react"
 import { createPortal } from "react-dom"
 import { MessageSquarePlus } from "lucide-react"
 import type { PassageSelector } from "@worktable/types"
@@ -11,20 +17,44 @@ export interface SelectedPassage {
   selector: PassageSelector
 }
 
-type Shown =
-  | { kind: "float"; top: number; left: number }
-  | { kind: "bar" }
-  | null
+type Shown = { top: number; left: number; touch: boolean } | null
 
 const coarsePointer = () => window.matchMedia("(pointer: coarse)").matches
 
 /** Room the floating button needs above a line before it goes below it. */
 const ABOVE = 48
 
+// On a touch screen the system draws its own things around a selection.
+/** The drag handle under the end of a selection. */
+const HANDLE = 32
+/** The system's Copy menu: above the selection, or below it with no room. */
+const MENU = 64
+/** The bottom of the screen, where Chrome on Android shows Touch to Search. */
+const BOTTOM = 112
+/** The touch button's height. */
+const PILL = 48
+const EDGE = 8
+
+/**
+ * Where the touch button goes: under the selection, the side its Copy menu
+ * leaves free. When the selection ends too low, at the top of the screen.
+ */
+function touchTop(bounds: DOMRect, last: DOMRect): number {
+  const height = window.innerHeight
+  const menuBelow = bounds.top < MENU
+  const below = last.bottom + HANDLE + (menuBelow ? MENU : 0)
+  if (below + PILL <= height - BOTTOM) return below
+  // The menu sits just above the selection, or isn't above it at all.
+  if (menuBelow || bounds.top - MENU >= EDGE + PILL + EDGE) return EDGE
+  // A selection from near the top to near the bottom: just above Chrome's bar.
+  return height - BOTTOM - PILL
+}
+
 /**
  * A Comment button for text selected in a read-only Doc. With a mouse it
- * floats at the end of the selection; on a touch screen it sits at the
- * bottom, clear of the system's own selection menu. Mod+Alt+M does the same.
+ * floats above the end of the selection; on a touch screen it sits under the
+ * selection, clear of the system's selection menu and drag handles and of
+ * Android's Touch to Search bar. Mod+Alt+M does the same.
  */
 export function SelectionComment({
   rootRef,
@@ -71,22 +101,31 @@ export function SelectionComment({
         setShown(null)
         return
       }
+      const rects = range.getClientRects()
+      const bounds = range.getBoundingClientRect()
+      const line = rects[rects.length - 1] ?? bounds
+      // Half the button's width and a gutter, so it stays on screen.
+      const half = coarsePointer() ? 84 : 64
+      const left = Math.min(
+        Math.max(line.right, half),
+        window.innerWidth - half
+      )
       if (coarsePointer()) {
-        setShown({ kind: "bar" })
+        setShown({ top: touchTop(bounds, line), left, touch: true })
         return
       }
-      const rects = range.getClientRects()
-      const line = rects[rects.length - 1] ?? range.getBoundingClientRect()
       setShown({
-        kind: "float",
         top: line.top >= ABOVE ? line.top - ABOVE + 4 : line.bottom + 8,
-        left: Math.min(Math.max(line.right, 64), window.innerWidth - 64),
+        left,
+        touch: false,
       })
     }
     const later = () => {
       window.clearTimeout(timer)
-      if (!read()) place()
-      else timer = window.setTimeout(place, coarsePointer() ? 300 : 120)
+      if (!read()) return place()
+      // Out of the way of the handles while they move.
+      if (coarsePointer()) setShown(null)
+      timer = window.setTimeout(place, coarsePointer() ? 300 : 120)
     }
     const down = (event: PointerEvent) => {
       if (event.pointerType === "mouse") pressed = true
@@ -129,22 +168,23 @@ export function SelectionComment({
   return createPortal(
     <div
       className={cn(
-        "overlay-floating fixed z-40 rounded-lg bg-popover p-1 print:hidden",
-        shown.kind === "bar"
-          ? "bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 rounded-full"
-          : "-translate-x-1/2"
+        "overlay-floating fixed z-40 -translate-x-1/2 rounded-lg bg-popover p-1 print:hidden",
+        shown.touch && "rounded-full"
       )}
-      style={
-        shown.kind === "float" ? { top: shown.top, left: shown.left } : undefined
-      }
+      style={{
+        top: shown.touch
+          ? `max(${shown.top}px, calc(env(safe-area-inset-top) + ${EDGE}px))`
+          : shown.top,
+        left: shown.left,
+      }}
       // Keep the selection: pressing the button must not clear it first.
       onPointerDown={(event) => event.preventDefault()}
       onMouseDown={(event) => event.preventDefault()}
     >
       <Button
-        size={shown.kind === "bar" ? "default" : "sm"}
+        size={shown.touch ? "default" : "sm"}
         variant="ghost"
-        className={shown.kind === "bar" ? "rounded-full px-5" : undefined}
+        className={shown.touch ? "rounded-full px-5" : undefined}
         onClick={comment}
       >
         <MessageSquarePlus />

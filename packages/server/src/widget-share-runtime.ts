@@ -88,7 +88,35 @@ const state={
     await request('/link/state','PUT',{state:overlay});return next;
   })
 };
-const ui={getTheme:()=>document.documentElement.getAttribute('data-theme'),getViewport:()=>({width:innerWidth,height:innerHeight}),notify:message=>window.dispatchEvent(new CustomEvent('worktable:notice',{detail:{message:String(message)}})),getDiagnostics:()=>[],reportDiagnostic:()=>{}};
+// A page's notice shows to the visitor as a short message at the bottom of
+// the page, drawn in its own shadow root so the page's styles leave it be.
+// One shows at a time; the theme's colors reach it through the host.
+let noticeHost=null,noticeBox=null,noticeTimer=0;
+function showNotice(text,tone){
+  if(!noticeHost){
+    noticeHost=document.createElement('div');
+    noticeHost.setAttribute('data-worktable-notice','');
+    noticeHost.style.cssText='all:initial;position:fixed;left:0;right:0;bottom:16px;z-index:2147483647;display:flex;justify-content:center;pointer-events:none';
+    const root=noticeHost.attachShadow({mode:'open'});
+    const style=document.createElement('style');
+    style.textContent='div{box-sizing:border-box;max-width:min(420px,calc(100vw - 32px));padding:10px 14px;border-radius:10px;border:1px solid var(--border,rgba(127,127,127,.3));background:var(--popover,#fff);color:var(--popover-foreground,var(--foreground,#111));font:500 14px/1.4 var(--font-sans,system-ui,sans-serif);box-shadow:0 6px 24px rgba(0,0,0,.18);overflow-wrap:anywhere}div[data-tone=error]{border-color:var(--destructive,#d33)}div[data-tone=warning]{border-color:var(--warning,#c80)}';
+    noticeBox=document.createElement('div');
+    noticeBox.setAttribute('role','status');
+    noticeBox.setAttribute('aria-live','polite');
+    root.append(style,noticeBox);
+  }
+  if(!noticeHost.isConnected)document.documentElement.appendChild(noticeHost);
+  noticeBox.textContent=text;
+  noticeBox.setAttribute('data-tone',tone);
+  clearTimeout(noticeTimer);
+  noticeTimer=setTimeout(()=>noticeHost.remove(),tone==='error'?6000:4000);
+}
+function noticeTone(options){const tone=options&&(options.tone||options.level||options.type);return tone==='error'||tone==='warning'||tone==='success'?tone:'info'}
+const ui={getTheme:()=>document.documentElement.getAttribute('data-theme'),getViewport:()=>({width:innerWidth,height:innerHeight}),notify:(message,options)=>{
+  const text=String(message==null?'':message).trim().slice(0,200);
+  window.dispatchEvent(new CustomEvent('worktable:notice',{detail:{message:text}}));
+  if(text)showNotice(text,noticeTone(options));
+},getDiagnostics:()=>[],reportDiagnostic:()=>{}};
 window.worktable={version:cfg.runtimeVersion,records,state,ui,navigation:{openDocument:()=>Promise.reject(fail('NOT_AVAILABLE','This link cannot open other documents.'))},diagnostics:{list:ui.getDiagnostics,report:ui.reportDiagnostic},toast:ui.notify};
 window.agentdash=window.worktable;
 // Gestures inside an opaque frame never bubble to the outer page.

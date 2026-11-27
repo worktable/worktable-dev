@@ -155,7 +155,7 @@ ${theme}Available APIs:
 - worktable.state.set(key, value) or worktable.state.set(patch)
 - worktable.state.update(async current => nextState)
 - worktable.navigation.openDocument(path)
-- worktable.ui.notify(message, options?)
+- worktable.ui.notify(message, options?): a short message to whoever has the page open; options.tone is success, warning or error
 - worktable.ui.getTheme()
 - worktable.ui.getViewport()
 - worktable.diagnostics.report({ level, code, message, hint, detail })
@@ -723,8 +723,15 @@ const navigation={
     return body.target;
   },
 };
+// A page's notice shows to whoever has it open, as a short message from
+// Worktable. Pages name its kind as tone, level or type.
+function noticeTone(options){const tone=options&&(options.tone||options.level||options.type);return tone==='error'||tone==='warning'||tone==='success'?tone:'info'}
 const ui={
-  notify:(message,options)=>{emitDiagnostic(options&&options.level||'info','widget_notice',String(message),undefined,options||null)},
+  notify:(message,options)=>{
+    const text=String(message==null?'':message).trim().slice(0,200);
+    emitDiagnostic('info','widget_notice',text,undefined,options||null);
+    if(text)postToParent({type:'worktable.ui.notify',widgetId:cfg.widgetId,spaceId:cfg.spaceId,navigationToken:navigationToken,message:text,tone:noticeTone(options)},'*');
+  },
   getDiagnostics:()=>diagnostics.slice(),
   reportDiagnostic:(diagnostic)=>emitDiagnostic(diagnostic&&diagnostic.level||'warning',diagnostic&&diagnostic.code||'widget_report',diagnostic&&diagnostic.message||'Widget reported a diagnostic',diagnostic&&diagnostic.hint,diagnostic&&diagnostic.detail),
   getTheme:()=>document.documentElement.getAttribute('data-theme')||'dark',

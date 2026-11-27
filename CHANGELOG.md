@@ -46,6 +46,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Messages from HTML Docs:** When an HTML Doc says something, such as "Saved" or "Could not save that", you see it as a short message in Worktable, and a visitor sees it on a share link. Before, most of these never showed, and the rest appeared as a runtime warning.
 - **Forms in HTML Docs:** A form's Save button on an HTML Doc does what the page says, in Worktable and in previews. Before, pressing it did nothing, and pages agents built with an add or edit form never saved. A form still can't send anything outside the page.
 - **Calls agents often get wrong:** An agent's call is no longer refused when it names a Doc with `path` in the Doc tools, starts a path with a slash, asks a search by meaning for `maxResults`, or lists comments with `includeTargetContext`.
 - **Everything in Pending can be reached:** Pending lists everything waiting on you. Before, only the newest ten showed, so older requests could not be opened from Home.

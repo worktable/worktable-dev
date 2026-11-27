@@ -13,7 +13,10 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
       document.querySelector('#records').textContent = records[0].data.name;
       document.querySelector('button').addEventListener('click', async () => {
         try { await worktable.records.create('deals', {name:'attempt'}); }
-        catch(error) { document.querySelector('#write').textContent = error.code; }
+        catch(error) {
+          document.querySelector('#write').textContent = error.code;
+          worktable.ui.notify('Could not save that.', {tone:'error'});
+        }
       });
       document.querySelector('#subscribe').onclick=()=>{
         worktable.records.subscribe('deals',{limit:1},rows=>document.querySelector('#subscription').textContent=rows[0].data.name);
@@ -94,6 +97,8 @@ test("a live share SDK starts first in an opaque frame and uses only the visitor
   ).toBe(false)
   await frame.getByRole("button", { name: "Attempt write" }).click()
   await expect(frame.locator("#write")).toHaveText("LINK_READ_ONLY")
+  // The page's own message reaches the visitor.
+  await expect(frame.getByRole("status")).toHaveText("Could not save that.")
   // A trusted click still works after a long press, without a recent
   // pointerdown or keydown. Synthetic authored clicks above stay rejected.
   await frame.getByRole("link", { name: "External page" }).click({ delay: 2000 })

@@ -500,6 +500,8 @@ function WidgetDetailPage({
         body?: string | null
         collection?: string
         navigationToken?: string
+        message?: unknown
+        tone?: unknown
       }
       // Every bridge message carries the token the runtime announced. A page
       // the frame navigated to can't know it, even if it kept the old page
@@ -574,6 +576,11 @@ function WidgetDetailPage({
       if (data?.type === "worktable.image.open") {
         if (data.spaceId === spaceId && data.widgetId === widgetId)
           onFrameImages(data)
+        return
+      }
+      if (data?.type === "worktable.ui.notify") {
+        if (data.spaceId === spaceId && data.widgetId === widgetId)
+          showPageNotice(data.message, data.tone)
         return
       }
       // Track the widget's record subscriptions so the parent's space socket can
@@ -1385,6 +1392,21 @@ function ArchivedWidgetBanner({
       </div>
     </div>
   )
+}
+
+/**
+ * A page's own short message, as one of the app's toasts. The same words
+ * shown again replace the one on screen instead of stacking.
+ */
+function showPageNotice(message: unknown, tone: unknown) {
+  if (typeof message !== "string") return
+  const text = message.trim().slice(0, 200)
+  if (!text) return
+  const options = { id: `page-notice:${text}` }
+  if (tone === "error") toast.error(text, options)
+  else if (tone === "warning") toast.warning(text, options)
+  else if (tone === "success") toast.success(text, options)
+  else toast(text, options)
 }
 
 function NetworkRequestBanner({

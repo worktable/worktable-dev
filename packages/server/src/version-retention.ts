@@ -43,6 +43,7 @@ import {
   withVersionKeyLock,
 } from "./version-store.ts";
 import { logDocument, logError } from "./debug-log.ts";
+import { pruneRecordHistories } from "./record-history.ts";
 import { noteStorageChange } from "./storage-usage.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -663,6 +664,21 @@ export async function runRetentionSweep(
       console.warn(
         `[version-retention] failed to prune V2 generations for ${spaceId}/${documentId}:`,
         logError(error),
+      );
+    }
+  }
+
+  // Records keep their changes as long as Docs keep their versions.
+  if (getRetentionPolicyGeneration() === launchGeneration) {
+    const records = await pruneRecordHistories(
+      p,
+      () => getRetentionPolicyGeneration() === launchGeneration,
+    );
+    if (records.changesRemoved > 0) {
+      result.bytesFreed += records.bytesFreed;
+      console.log(
+        `[version-retention] pruned ${records.changesRemoved} change(s) across ` +
+          `${records.recordsTouched} record(s) (policy: ${describePolicy(p)})`,
       );
     }
   }

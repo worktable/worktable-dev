@@ -914,6 +914,27 @@ async function classifyVersion(
     }
     return { ...entry, kind: "file", ...(await classification) }
   }
+  // A Record's history is one file, already held to the retention policy as
+  // it is written and swept. It is its own group, so any policy that keeps
+  // history keeps it whole.
+  if (
+    entry.kind === "file" &&
+    entry.path.endsWith(".jsonl") &&
+    parts.length === 5 &&
+    parts[0] === "versions" &&
+    parts[2] === "records"
+  ) {
+    return {
+      ...entry,
+      kind: "file",
+      group: entry.path,
+      unit: entry.path,
+      id: basename(entry.path, ".jsonl"),
+      timestamp: 0,
+      meaningful: false,
+      classified: true,
+    }
+  }
   const id = basename(entry.path, ".json")
   let timestamp = versionIdTimestamp(id)
   let meaningful = false

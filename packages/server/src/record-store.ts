@@ -7,10 +7,11 @@ import { assertSpaceAccess } from "./team-policy.ts";
 import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { reserveStorage } from "./storage-limit.ts";
 import { dirname, join } from "node:path";
-import { CanonicalIdSchema, isReservedRecordFieldKey, normalizeRecordFieldType, recordTitleFieldKey, TITLE_FIELD_TYPES, parseDocumentReference, RecordCollectionSchemaSchema, RecordFileSchema, RecordQuerySchema, requiresSchemaV2, WidgetIdSchema, type RecordCollectionSchema, type RecordCollectionSummary, type RecordDiagnostic, type RecordFile, type RecordQuery, type RecordQueryResult } from "@worktable/types";
+import { CanonicalIdSchema, isReservedRecordFieldKey, normalizeRecordFieldType, recordTitleFieldKey, TITLE_FIELD_TYPES, parseDocumentReference, RecordCollectionSchemaSchema, RecordFileSchema, RecordQuerySchema, requiresSchemaV2, WidgetIdSchema, type RecordChange, type RecordCollectionSchema, type RecordCollectionSummary, type RecordDiagnostic, type RecordFile, type RecordQuery, type RecordQueryResult } from "@worktable/types";
 import { readDocAliases, resolveDocAliasIn } from "./doc-aliases.ts";
 import { compareFieldValues, compareForOrder, fieldValue, isMissing, recordMatchesSearch, RecordQueryShapeError, referencedCollections, runQueryV2 } from "./record-query.ts";
 import { notifyRecordChanged } from "./record-events.ts";
+import { forgetRecordHistory, noteRecordChange, readRecordHistory } from "./record-history.ts";
 import { recordIndex, recordIndexEnabled } from "./record-index.ts";
 import { atomicWriteText, deduplicateSlug, ensureSpaceDirectories, getSpacesBaseDir, slugify, withStoreWriteLock } from "./store.ts";
 import { parseCanonicalYaml, stringifyCanonicalYaml } from "./yaml.ts";
@@ -1014,6 +1015,16 @@ export async function readRecord(spaceId: string, collectionId: string, recordId
   }
 }
 
+/** A record's kept changes, newest first: who changed what, and what it replaced. */
+export async function readRecordChanges(spaceId: string, collectionId: string, recordId: string): Promise<{ data: RecordChange[] | null; error: string | null }> {
+  assertSpaceAccess(spaceId, "read");
+  if (!isCanonicalId(spaceId)) return { data: null, error: invalidIdError("space", spaceId) };
+  if (!isCanonicalId(collectionId)) return { data: null, error: invalidIdError("collection", collectionId) };
+  if (!isCanonicalId(recordId)) return { data: null, error: invalidIdError("record", recordId) };
+  if (!existsSync(recordPath(spaceId, collectionId, recordId))) return { data: null, error: `Record not found: ${recordId}` };
+  return { data: await readRecordHistory(spaceId, collectionId, recordId), error: null };
+}
+
 // Validate + persist a record WITHOUT acquiring the per-path write lock. Callers
 // that already hold a lock across a read-modify-write (updateRecord) use this to
 // avoid deadlocking the non-reentrant lock; writeRecord wraps it with the lock.
@@ -1132,6 +1143,7 @@ export async function createRecord(spaceId: string, collectionId: string, input:
   if (result.data && result.created) {
     noteRecordActivity(spaceId, collectionId, "records.added");
     captureRecordSaved(null, result.data);
+    await noteRecordChange(spaceId, { kind: "added", before: null, after: result.data, call: currentRecordCall() });
   }
   return result;
 }
@@ -1145,7 +1157,18 @@ interface RecordActivityCount {
   count: number;
 }
 
-const recordActivityBatch = new AsyncLocalStorage<Map<string, RecordActivityCount>>();
+interface RecordCall {
+  /** One id for every record the call changes, kept with each change. */
+  id: string;
+  counts: Map<string, RecordActivityCount>;
+}
+
+const recordActivityBatch = new AsyncLocalStorage<RecordCall>();
+
+/** The id of the call changing many records at once, when there is one. */
+function currentRecordCall(): string | undefined {
+  return recordActivityBatch.getStore()?.id;
+}
 
 /** Run a call that changes many records, noting it in Activity once per
  *  collection and kind of change with its count, not once per record. What
@@ -1153,8 +1176,9 @@ const recordActivityBatch = new AsyncLocalStorage<Map<string, RecordActivityCoun
 export async function batchRecordActivity<T>(work: () => Promise<T>): Promise<T> {
   if (recordActivityBatch.getStore()) return work();
   const counts = new Map<string, RecordActivityCount>();
+  const call = { id: `call_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`, counts };
   try {
-    return await recordActivityBatch.run(counts, work);
+    return await recordActivityBatch.run(call, work);
   } finally {
     for (const { spaceId, collectionId, action, count } of counts.values()) {
       recordActivity({ spaceId, action, target: { kind: "collection", collectionId }, count });
@@ -1168,7 +1192,7 @@ function noteRecordActivity(
   collectionId: string,
   action: RecordActivityAction
 ): void {
-  const batch = recordActivityBatch.getStore();
+  const batch = recordActivityBatch.getStore()?.counts;
   if (batch) {
     const key = `${spaceId}\0${collectionId}\0${action}`;
     const noted = batch.get(key);
@@ -1281,7 +1305,11 @@ async function updateRecordInner(spaceId: string, collectionId: string, recordId
     const metadata = patch.metadata ? { ...existing.metadata, ...patch.metadata } : existing.metadata;
     const record = buildRecordFile({ id: recordId, collectionId, data: { ...existing.data, ...(patch.data ?? {}) }, metadata, createdBy: patch.updatedBy, existing });
     const written = await writeRecordInner(spaceId, record, { onlyKeys: touched, strictFields: patch.strictFields, existing });
-    if (written.data && !written.unchanged) captureRecordSaved(existing, written.data);
+    if (written.data && !written.unchanged) {
+      captureRecordSaved(existing, written.data);
+      // Under the record's lock, so its changes are kept in the order made.
+      await noteRecordChange(spaceId, { kind: "changed", before: existing, after: written.data, call: currentRecordCall() });
+    }
     return written;
   }));
 }
@@ -1404,6 +1432,13 @@ export async function setRecordArchive(
     // Archiving an archived record, or restoring a live one, is no news.
     if (written.data && Boolean(existing.archive) !== Boolean(archive)) {
       noteRecordActivity(spaceId, collectionId, archive ? "records.archived" : "records.restored");
+      await noteRecordChange(spaceId, {
+        kind: archive ? "archived" : "restored",
+        before: existing,
+        after: written.data,
+        call: currentRecordCall(),
+        ...(archive?.reason ? { reason: archive.reason } : {}),
+      });
     }
     return written;
   });
@@ -1484,6 +1519,8 @@ async function deleteRecordInner(spaceId: string, collectionId: string, recordId
   await withStoreWriteLock(recordPath(spaceId, collectionId, recordId), async () => {
     await rm(recordPath(spaceId, collectionId, recordId), { force: true });
     notifyRecordChanged({ kind: "delete", spaceId, collectionId, recordId });
+    // A deleted record is gone at once, and its history with it.
+    await forgetRecordHistory(spaceId, collectionId, recordId);
   });
   return { error: null };
 }

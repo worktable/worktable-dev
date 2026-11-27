@@ -2,7 +2,8 @@ import { requireScope, restWriteActor } from "../auth.ts";
 import { Hono } from "hono";
 import { z } from "zod";
 import { readSpace } from "../store.ts";
-import { buildRecordCollectionSchema, createRecord, deleteRecord, getRecordDiagnostics, listIntegrityWarnings, listRecordCollections, listRecords, queryRecords, readRecord, readRecordCollectionSchema, RecordQueryError, setRecordArchive, updateRecord, writeRecordCollectionSchema } from "../record-store.ts";
+import { agentNamesByPrincipal } from "../agent-connection-store.ts";
+import { buildRecordCollectionSchema, createRecord, deleteRecord, getRecordDiagnostics, listIntegrityWarnings, listRecordCollections, listRecords, queryRecords, readRecord, readRecordChanges, readRecordCollectionSchema, RecordQueryError, setRecordArchive, updateRecord, writeRecordCollectionSchema } from "../record-store.ts";
 import { recordIndex, recordIndexEnabled } from "../record-index.ts";
 import { noteRecordMutated } from "../search-index.ts";
 import { wsManager } from "../ws.ts";
@@ -232,6 +233,24 @@ recordsRouter.get("/:collectionId/:recordId", requireScope("records:read"), asyn
   const { data, error } = await readRecord(spaceId, collectionId, recordId);
   if (error || !data) return c.json({ error: error ?? "Record not found", code: "NOT_FOUND" }, 404);
   return c.json({ record: data });
+});
+
+// A record's kept changes, newest first. Asked for when a person opens its
+// history, never with the record or its collection.
+recordsRouter.get("/:collectionId/:recordId/history", requireScope("records:read"), async (c) => {
+  const spaceId = c.req.param("spaceId") ?? "";
+  const collectionId = c.req.param("collectionId") ?? "";
+  const recordId = c.req.param("recordId") ?? "";
+  const { data, error } = await readRecordChanges(spaceId, collectionId, recordId);
+  if (error || !data) return c.json({ error: error ?? "Record not found", code: "NOT_FOUND" }, 404);
+  // Agents show under the names they have now, as in Activity.
+  const names = await agentNamesByPrincipal().catch(() => new Map<string, string>());
+  const changes = data.map((change) =>
+    change.by.kind === "agent" && names.has(change.by.id)
+      ? { ...change, by: { ...change.by, name: names.get(change.by.id)! } }
+      : change
+  );
+  return c.json({ changes });
 });
 
 recordsRouter.patch("/:collectionId/:recordId", requireScope("records:write"), async (c) => {

@@ -1,6 +1,6 @@
 import { resolve } from "node:path"
 import { CanonicalIdSchema } from "@worktable/types"
-import { recordActivity } from "./activity-log.ts"
+import { noteDocsDeleted } from "./document-activity.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import { DOCUMENT_DELETE_ADAPTER_IDS } from "./document-delete-adapter.ts"
 import {
@@ -306,18 +306,7 @@ export async function deleteDocumentFolder(
       )
     }
     const paths = outcome.deleted.map((entry) => entry.path)
-    if (paths.length > 0) {
-      // A Doc deleted with what is under it, or a plain folder of Docs.
-      const isDoc = doc !== undefined && paths.includes(doc.path)
-      recordActivity({
-        spaceId,
-        action: "doc.deleted",
-        target: isDoc
-          ? { kind: "doc", path: doc.path, title: doc.title }
-          : { kind: "doc", path, folder: true },
-        count: paths.length,
-      })
-    }
+    noteDocsDeleted(spaceId, path, paths, doc)
     return { ok: true, path, paths }
   }
   const underNamespaceLocks = () =>

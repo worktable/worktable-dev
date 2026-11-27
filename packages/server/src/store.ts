@@ -4370,7 +4370,15 @@ export async function deleteDoc(
   docPath: string
 ): Promise<DeleteDocResult> {
   try {
-    return await deleteDocObserved(spaceId, docPath)
+    const result = await deleteDocObserved(spaceId, docPath)
+    if (!result.error && !result.notFound) {
+      // Named by its path alone: looking its title up first would read the
+      // Space's documents ahead of a delete whose steps are ordered with care.
+      const path = sanitizeDocPath(docPath)
+      const { noteDocsDeleted } = await import("./document-activity.ts")
+      noteDocsDeleted(spaceId, path, [path], { path })
+    }
+    return result
   } catch (error) {
     const { DocumentInventorySpaceNotFoundError } =
       await import("./document-inventory.ts")

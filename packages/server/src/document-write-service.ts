@@ -3,6 +3,8 @@ import { assertSpaceAccess } from "./team-policy.ts";
 import { getWorkspaceCollaborationEpoch } from "./collaboration-epoch.ts"
 import { noteDocumentEdited, recordActivity } from "./activity-log.ts"
 import {
+  noteDocsDeleted,
+  noteDocsMoved,
   noteDocumentActivity,
   noteDocumentCreated,
 } from "./document-activity.ts"
@@ -2657,14 +2659,8 @@ export async function moveRegisteredDocument(options: {
     spaceId: options.spaceId,
   })
   // A folder move noted itself, with what moved under the Doc.
-  if (!withFolder && result.from !== to) {
-    recordActivity({
-      spaceId: options.spaceId,
-      action: "doc.moved",
-      target: { kind: "doc", path: to },
-      from: result.from,
-      to,
-    })
+  if (!withFolder) {
+    noteDocsMoved(options.spaceId, result.from, to, [{ from: result.from, to }])
   }
   // A folder move rewrote its links already; an exact one does it here,
   // outside the lock, because rewriting writes the Docs that hold them.
@@ -3029,7 +3025,7 @@ async function deleteRegisteredDocumentExactly(options: {
   assertSpaceAccess(options.spaceId, "edit");
   const registry = options.registry ?? createBuiltinDocumentFormatRegistry()
   // Read before it goes: Activity names a deleted Doc by its title.
-  const title = (await documentAt(options.spaceId, options.path))?.title
+  const doc = await documentAt(options.spaceId, options.path)
   // A Doc open for editing has a live room. The delete lets its editors go
   // and retires its collaboration state, so no one keeps editing, or is
   // served, the deleted Doc; a refused delete leaves the room as it was.
@@ -3085,11 +3081,12 @@ async function deleteRegisteredDocumentExactly(options: {
     type: "documentCorpus",
     spaceId: options.spaceId,
   })
-  recordActivity({
-    spaceId: options.spaceId,
-    action: "doc.deleted",
-    target: { kind: "doc", path: result.path, ...(title ? { title } : {}) },
-  })
+  noteDocsDeleted(
+    options.spaceId,
+    result.path,
+    [result.path],
+    { path: result.path, ...(doc ? { title: doc.title } : {}) }
+  )
   return result
 }
 

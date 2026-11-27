@@ -439,6 +439,29 @@ describe("workspace activity", () => {
         .filter((entry) => entry.action === "doc.deleted")
         .map((entry) => ({ ...entry.target, docs: entry.count ?? 1 }))[0]
     ).toMatchObject({ path: "plans/launch", title: "Pulse", docs: 2 })
+
+    // The Doc tools rename and delete by another route, and say so too.
+    await writeDocAt("draft")
+    await agentTool("worktable_docs_write", {
+      action: "rename",
+      spaceId: "company",
+      oldPath: "draft",
+      newPath: "final",
+    })
+    await agentTool("worktable_delete", {
+      action: "doc",
+      spaceId: "company",
+      docPath: "final",
+    })
+    const last = await request<ActivityPage>("/api/activity?spaceId=company")
+    expect(
+      last.entries
+        .slice(0, 2)
+        .map((entry) => [entry.action, entry.from ?? null, entry.target])
+    ).toMatchObject([
+      ["doc.deleted", null, { path: "final" }],
+      ["doc.moved", "draft", { path: "final" }],
+    ])
   })
 
   it("says what happened to records: one line a call, and nothing when nothing changed", async () => {

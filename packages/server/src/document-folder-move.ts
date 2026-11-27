@@ -1,8 +1,7 @@
 import { readdir, rmdir } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { CanonicalIdSchema } from "@worktable/types"
-import { recordActivity } from "./activity-log.ts"
-import { noteDocumentActivity } from "./document-activity.ts"
+import { noteDocsMoved, noteDocumentActivity } from "./document-activity.ts"
 import { buildDocumentCatalog, type DocumentCatalog } from "./document-catalog.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import { hasScope } from "./token-store.ts"
@@ -447,25 +446,7 @@ export async function moveDocumentFolder(
       )
     }
     const renamed = outcome.renamed.map(({ from, to }) => ({ from, to }))
-    if (renamed.length > 0) {
-      // A Doc moved with what is under it, or a plain folder of Docs.
-      // Paths are matched as the catalog compares them: the request's letter
-      // case need not be the stored Doc's.
-      const fromKey = analyzeDocumentPath(fromPrefix).comparisonKey
-      const self = renamed.find(
-        (entry) => analyzeDocumentPath(entry.from).comparisonKey === fromKey
-      )
-      recordActivity({
-        spaceId,
-        action: "doc.moved",
-        target: self
-          ? { kind: "doc", path: self.to }
-          : { kind: "doc", path: toPrefix, folder: true },
-        from: self?.from ?? fromPrefix,
-        to: self?.to ?? toPrefix,
-        count: renamed.length,
-      })
-    }
+    noteDocsMoved(spaceId, fromPrefix, toPrefix, renamed)
     return {
       ok: true,
       from: fromPrefix,

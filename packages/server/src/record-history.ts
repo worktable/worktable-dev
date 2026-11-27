@@ -14,7 +14,9 @@
 //
 // Writing is best effort, as Activity is: by the time a change is noted the
 // Record is already written, so a failure here is logged and never fails or
-// undoes that write. A line cut short by a crash is skipped when read.
+// undoes that write. Each change is appended as a line break followed by its
+// line, so a line a crash cut short ends there: it is skipped when read and
+// never joins the change after it.
 //
 // History is kept as long as Doc versions are (settings-store.ts retention):
 // `pruneRecordHistories` runs with the retention sweep. The newest change of
@@ -126,8 +128,13 @@ async function readChanges(path: string): Promise<RecordChange[]> {
   }
 }
 
+/** One change as it is appended: the line break first (see the header). */
+function line(change: RecordChange): string {
+  return `\n${JSON.stringify(change)}`
+}
+
 function serialize(changes: readonly RecordChange[]): string {
-  return changes.map((change) => `${JSON.stringify(change)}\n`).join("")
+  return changes.map(line).join("")
 }
 
 export interface RecordChangeNote {
@@ -176,7 +183,7 @@ export async function noteRecordChange(
   try {
     await withHistoryLock(path, async () => {
       await mkdir(dirname(path), { recursive: true })
-      await appendFile(path, `${JSON.stringify(change)}\n`)
+      await appendFile(path, line(change))
       // Keeping the newest few per item prunes as it writes, as Docs do.
       const policy = getServerSettings().history.retention
       if (policy.mode === "count") {
@@ -275,7 +282,9 @@ export async function pruneRecordHistories(
         try {
           await withHistoryLock(path, async () => {
             const text = await readFile(path, "utf8").catch(() => null)
-            if (text === null) return
+            // The wait for the lock and the read both take time: a policy
+            // relaxed meanwhile must not lose changes to the stricter one.
+            if (text === null || !stillCurrent()) return
             const changes = parseChanges(text)
             const exists = existsSync(
               join(getSpacesDir(), spaceId, "records", collectionId, `${recordId}.yaml`)

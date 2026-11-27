@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import type { RecordChange } from "@worktable/types"
 import { Hono } from "hono"
 import { existsSync } from "node:fs"
-import { mkdtemp, rm } from "node:fs/promises"
+import { appendFile, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { drainActivity, runAsActivityActor } from "./activity-log.ts"
@@ -168,12 +168,21 @@ describe("record history", () => {
     ])
     expect(changes[2]?.by).toMatchObject({ id: agent.id, name: "Codex" })
 
+    // A crash can cut a line short. It costs that line, never the next change.
+    const path = recordHistoryPath("outreach", "queue", "reply-1")!
+    await appendFile(path, '\n{"id":"cut sho')
+    await request("PATCH", `${queue}/reply-1`, { data: { status: "posted" } })
+    const afterCrash = await history("reply-1")
+    expect(afterCrash).toHaveLength(changes.length + 1)
+    expect(afterCrash[0]?.fields).toEqual({
+      status: { before: "pending", after: "posted" },
+    })
+
     // History is the record's: no record, no history, and a deleted record
     // takes its history with it.
     expect(
       (await request("GET", `${queue}/no-such-record/history`)).status
     ).toBe(404)
-    const path = recordHistoryPath("outreach", "queue", "reply-1")!
     expect(existsSync(path)).toBe(true)
     await request("DELETE", `${queue}/reply-1`)
     expect(existsSync(path)).toBe(false)
@@ -220,6 +229,17 @@ describe("record history", () => {
     // record that is gone left behind goes.
     await rm(join(root, "spaces", "outreach", "records", "queue", "b.yaml"))
     const later = Date.now() + 40 * DAY_MS
+    // A sweep whose policy changes under it removes nothing more.
+    let asked = 0
+    expect(
+      (
+        await pruneRecordHistories(
+          { mode: "age", maxAgeDays: 30 },
+          () => (asked += 1) === 1,
+          later
+        )
+      ).changesRemoved
+    ).toBe(0)
     const pruned = await pruneRecordHistories(
       { mode: "age", maxAgeDays: 30 },
       () => true,

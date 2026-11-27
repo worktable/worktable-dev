@@ -25,8 +25,6 @@ import {
 import { hasScope, type TokenIdentity } from "./token-store.ts"
 import { pendingVisitorComments } from "./visitor-comment-pending.ts"
 
-const PENDING_LIMIT = 10
-
 /** Everything waiting on the reader, or only what belongs to one Space. */
 export async function listPending(
   identity: TokenIdentity,
@@ -61,34 +59,43 @@ export async function listPending(
   ]
     .filter((item) => !spaceId || item.spaceId === spaceId)
     .sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id))
-  // Skill proposals come after the rows Home shows, so they never push one
-  // out, and Home counts them on their own.
-  return {
-    items: [
-      ...all.slice(0, PENDING_LIMIT),
-      ...skills.sort((a, b) => b.at.localeCompare(a.at)),
-    ],
-    total: all.length,
-  }
+  // Skill proposals come after the rest, so one never pushes a request down.
+  const items = [...all, ...skills.sort((a, b) => b.at.localeCompare(a.at))]
+  return { items, total: items.length }
 }
 
+/**
+ * One item per thread, however many of its messages ask the reader: it is
+ * dated by the newest ask and opens at the oldest one still waiting.
+ */
 function threadRequests(requests: ViewerThreadRequest[]): PendingItem[] {
-  return requests.map((request) => ({
-    kind: "threadRequest",
-    id: `thread:${request.threadId}:${request.messageId}`,
-    at: request.createdAt,
-    spaceId:
-      request.location.kind === "space" ? request.location.spaceId : null,
-    threadId: request.threadId,
-    threadTitle: request.threadTitle,
-    messageId: request.messageId,
-    from: {
-      kind: request.author.kind === "human" ? "person" : request.author.kind,
-      id: request.author.id,
-      name: request.author.name,
-    },
-    excerpt: request.excerpt,
-  }))
+  const byThread = new Map<string, ViewerThreadRequest[]>()
+  for (const request of requests) {
+    const asks = byThread.get(request.threadId)
+    if (asks) asks.push(request)
+    else byThread.set(request.threadId, [request])
+  }
+  return [...byThread.values()].map((asks) => {
+    asks.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    const oldest = asks[0]!
+    const newest = asks[asks.length - 1]!
+    return {
+      kind: "threadRequest",
+      id: `thread:${newest.threadId}`,
+      at: newest.createdAt,
+      spaceId:
+        newest.location.kind === "space" ? newest.location.spaceId : null,
+      threadId: newest.threadId,
+      threadTitle: newest.threadTitle,
+      messageId: oldest.messageId,
+      from: {
+        kind: newest.author.kind === "human" ? "person" : newest.author.kind,
+        id: newest.author.id,
+        name: newest.author.name,
+      },
+      excerpt: newest.excerpt,
+    }
+  })
 }
 
 /** Comments sent to the reader. */

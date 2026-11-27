@@ -495,6 +495,10 @@ function ThreadConversation({
               visibleActivities.length > 0 ? visibleActivities : NO_ACTIVITIES
             }
             groupedWithPrevious={groupedWithPrevious}
+            followsReplyTarget={
+              message.inReplyTo !== undefined &&
+              message.inReplyTo === previous?.id
+            }
             onReply={reply}
             onRespond={respond}
             onAssign={assign}
@@ -576,6 +580,7 @@ const ThreadMessageRow = memo(function ThreadMessageRow({
   implicitResponseIdentityId,
   activities,
   groupedWithPrevious,
+  followsReplyTarget,
   onReply,
   onRespond,
   onAssign,
@@ -592,6 +597,8 @@ const ThreadMessageRow = memo(function ThreadMessageRow({
   implicitResponseIdentityId?: string
   activities: ThreadActivity[]
   groupedWithPrevious: boolean
+  /** The message it replies to is the one right above, so quoting it adds nothing. */
+  followsReplyTarget: boolean
   onReply: (messageId: string) => void
   onRespond: (messageId: string) => void
   onAssign: (messageId: string, identityId: string | null) => void
@@ -734,7 +741,7 @@ const ThreadMessageRow = memo(function ThreadMessageRow({
           className={own ? "max-w-full" : "w-full max-w-full"}
         >
           <BubbleContent className={own ? "px-3.5 py-2.5" : "w-full"}>
-            {message.inReplyTo ? (
+            {message.inReplyTo && !followsReplyTarget ? (
               <ReplyContext
                 targetId={message.inReplyTo}
                 target={replyTarget}

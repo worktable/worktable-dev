@@ -112,12 +112,15 @@ export type PendingItem =
       reason?: "sharer" | "spike"
     }
   | {
+      /** A thread that asks the reader, once however many messages ask. */
       kind: "threadRequest"
       id: string
+      /** When it last asked. */
       at: string
       spaceId: string | null
       threadId: string
       threadTitle: string
+      /** The oldest message still waiting on the reader. */
       messageId: string
       from: ActivityActor
       excerpt: string
@@ -162,9 +165,9 @@ export type PendingItem =
     }
 
 export interface PendingResult {
-  /** The newest items, at most ten. */
+  /** Everything that waits, newest first, with skill proposals last. */
   items: PendingItem[]
-  /** How many items wait in all, including those past the first ten. */
+  /** How many items wait in all. */
   total: number
 }
 

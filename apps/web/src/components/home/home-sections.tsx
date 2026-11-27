@@ -11,6 +11,7 @@ import { cn } from "@worktable/ui/lib/utils"
 import { ThreadLink } from "@/components/home/activity-feed"
 import { ActorAvatar } from "@/components/home/home-latest"
 import { usePending } from "@/lib/activity"
+import { commentHash } from "@/hooks/use-visitor-comments-panel"
 import { shortWhen } from "@/lib/activity-format"
 import { useActorName } from "@/lib/use-actor-name"
 import { useSpaces } from "@/lib/queries"
@@ -141,6 +142,7 @@ function PendingRow({
     <ThreadLink
       spaceId={item.spaceId}
       threadId={item.threadId}
+      messageId={item.kind === "threadRequest" ? item.messageId : undefined}
       className={className}
     >
       {children}
@@ -149,7 +151,11 @@ function PendingRow({
     <Link
       to="/spaces/$spaceId/documents/$"
       params={{ spaceId: item.spaceId, _splat: item.docPath }}
-      hash={item.kind === "commentRequest" ? undefined : "visitors"}
+      hash={
+        item.kind === "commentRequest"
+          ? commentHash(item.annotationId)
+          : "visitors"
+      }
       className={className}
     >
       {children}

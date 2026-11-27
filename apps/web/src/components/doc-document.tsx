@@ -905,12 +905,6 @@ function MarkdownDocPage({
   const queryClient = useQueryClient()
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
-  useVisitorCommentsPanel(
-    page?.sharing?.visitorComments,
-    setAnnotationsOpen,
-    setVersionsOpen,
-    annotationsOpen
-  )
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const versionQuery = useVersionSnapshot(
     "doc",
@@ -926,6 +920,13 @@ function MarkdownDocPage({
   })
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
+  )
+  useVisitorCommentsPanel(
+    page?.sharing?.visitorComments,
+    setAnnotationsOpen,
+    setVersionsOpen,
+    annotationsOpen,
+    setActiveAnnotationId
   )
   // The selected comment belongs to the open panel: closing it lets go.
   if (!annotationsOpen && activeAnnotationId !== null)
@@ -1542,12 +1543,6 @@ function BlockNoteDocPage({
   const [collabDoc, setCollabDoc] = useState<Y.Doc | null>(null)
   const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
-  useVisitorCommentsPanel(
-    page?.sharing?.visitorComments,
-    setAnnotationsOpen,
-    setVersionsOpen,
-    annotationsOpen
-  )
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const versionQuery = useVersionSnapshot(
     "doc",
@@ -1563,6 +1558,13 @@ function BlockNoteDocPage({
   })
   const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(
     null
+  )
+  useVisitorCommentsPanel(
+    page?.sharing?.visitorComments,
+    setAnnotationsOpen,
+    setVersionsOpen,
+    annotationsOpen,
+    setActiveAnnotationId
   )
   // The selected comment belongs to the open panel: closing it lets go.
   if (!annotationsOpen && activeAnnotationId !== null)

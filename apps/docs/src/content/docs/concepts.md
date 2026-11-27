@@ -130,6 +130,10 @@ you, a comment sent to you, a message that didn't get through, a visitor
 comment you can answer, or a Library change an agent suggested. Space Home
 shows the same for one Space.
 
+A thread shows once, however many of its messages ask you, and leaves when
+you reply in it. Each row opens at its place: the thread at the message that
+asked, the Doc on the comment.
+
 See [Find content](/guides/organize-and-find/#find-content).
 
 ### Library

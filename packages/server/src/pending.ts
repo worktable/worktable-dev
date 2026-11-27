@@ -10,14 +10,21 @@
 // Each source is read only when the reader has the scope that would let them
 // open it.
 
-import type { PendingItem, PendingResult, SpaceFile } from "@worktable/types"
+import type {
+  Annotation,
+  PendingItem,
+  PendingResult,
+  SpaceFile,
+} from "@worktable/types"
 import { readDocumentIdentities } from "./document-query.ts"
 import { resolveParticipant } from "./participant-store.ts"
 import { pendingFor } from "./pending-list.ts"
 import { canAccessSpace } from "./team-policy.ts"
 import { isPerson, pendingSkillProposals } from "./skill-libraries.ts"
 import { getSpaceArchiveInfo, listSpaces } from "./store.ts"
+import { dismissAnnotationRequests } from "./annotation-store.ts"
 import {
+  dismissThreadRequests,
   listPendingThreadWork,
   type ViewerDeliveryFailure,
   type ViewerThreadRequest,
@@ -146,6 +153,72 @@ async function commentRequests(
       },
     ]
   })
+}
+
+/** What marking an item done did, or why it could not be done. */
+export type PendingDoneResult =
+  | { refused: "not-found" | "not-allowed" }
+  /** The comment as it now is, for whoever has its Doc open. */
+  | {
+      refused?: undefined
+      comment?: {
+        spaceId: string
+        annotationId: string
+        /** Absent when only the common API can show the comment. */
+        annotation: Annotation | null
+      }
+    }
+
+/**
+ * The reader marks something that waits on them as done without answering
+ * it. It stops waiting on them; whoever asked sees that it was let go.
+ */
+export async function markPendingDone(
+  identity: TokenIdentity,
+  id: string,
+  /** The Space whose list showed it; an archived Space lists only there. */
+  spaceId?: string
+): Promise<PendingDoneResult> {
+  // Only a person lets a request go this way: an agent's requests carry
+  // deliveries and holds that end with its reply.
+  if (identity.principal.type !== "human") return { refused: "not-allowed" }
+  const item = (await listPending(identity, spaceId)).items.find(
+    (candidate) => candidate.id === id
+  )
+  if (!item) return { refused: "not-found" }
+  if (item.kind === "threadRequest") {
+    if (!hasScope(identity.scopes, "threads:write")) {
+      return { refused: "not-allowed" }
+    }
+    await dismissThreadRequests(identity, {
+      location: item.spaceId
+        ? { kind: "space", spaceId: item.spaceId }
+        : { kind: "worktable" },
+      threadId: item.threadId,
+    })
+    return {}
+  }
+  if (item.kind === "commentRequest") {
+    if (!hasScope(identity.scopes, "annotations:write")) {
+      return { refused: "not-allowed" }
+    }
+    const reader = (await resolveParticipant(identity)).participant
+    const annotation = await dismissAnnotationRequests(
+      item.spaceId,
+      item.docPath,
+      item.annotationId,
+      reader.id
+    )
+    return {
+      comment: {
+        spaceId: item.spaceId,
+        annotationId: item.annotationId,
+        annotation,
+      },
+    }
+  }
+  // The other kinds end by acting on them where they are.
+  return { refused: "not-allowed" }
 }
 
 function failedDeliveries(failures: ViewerDeliveryFailure[]): PendingItem[] {

@@ -99,3 +99,19 @@ export function requestsAfterReply(
     personText,
   })
 }
+
+/**
+ * Requests after a recipient lets theirs go without replying: they stop
+ * waiting on that recipient and wait on everyone else as before.
+ */
+export function requestsAfterDone(
+  requests: readonly AnnotationRequest[],
+  participantId: string,
+  now: string
+): AnnotationRequest[] {
+  return requests.map((existing) =>
+    existing.status === "open" && existing.to.id === participantId
+      ? { ...existing, status: "withdrawn" as const, closedAt: now }
+      : existing
+  )
+}

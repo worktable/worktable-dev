@@ -21,7 +21,7 @@ import type {
 import { mapWithConcurrency } from "./bounded-concurrency.ts"
 import { noteCommentChanged, type CommentPlace } from "./pending-list.ts"
 import type { PassageAuthor } from "./passage-author.ts"
-import { addRequests, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
+import { addRequests, requestsAfterDone, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import {
   readDocumentAnnotationsV2,
@@ -682,6 +682,45 @@ export async function replyDocumentAnnotation(options: {
     })
   }
   return { annotation: result.annotation, replyId: result.replyId }
+}
+
+/**
+ * A recipient lets go of what a comment asked them, without replying. The
+ * comment is found on its own document, so nothing else in the Space is read.
+ * Returns it in the original shape, or null when only the common API shows it.
+ */
+export async function dismissDocumentAnnotationRequestsV2(options: {
+  spaceId: string
+  path: string
+  annotationId: string
+  participantId: string
+}): Promise<Annotation | null> {
+  await requireV2AnnotationWrites()
+  return useDurableDocument(options.spaceId, options.path, async (document) => {
+    const owner = await ownerForDocument(options.spaceId, document)
+    const index = owner.annotations.findIndex(
+      (candidate) => candidate.id === options.annotationId
+    )
+    const found = owner.annotations[index]
+    if (!found)
+      throw new DocumentAnnotationError(
+        "not-found",
+        "A comment is no longer on this document"
+      )
+    const annotation: DocumentAnnotationV2 = {
+      ...found,
+      requests: requestsAfterDone(
+        found.requests ?? [],
+        options.participantId,
+        new Date().toISOString()
+      ),
+    }
+    owner.annotations[index] = annotation
+    await writeOwner(options.spaceId, owner)
+    noteChanged(options.spaceId, owner, annotation)
+    // A comment the original shape cannot show is let go all the same.
+    return legacyAnnotation(owner, annotation)
+  })
 }
 
 export async function resolveDocumentAnnotation(options: {

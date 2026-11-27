@@ -2,7 +2,9 @@ import {
   infiniteQueryOptions,
   queryOptions,
   useInfiniteQuery,
+  useMutation,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query"
 import type {
   ActivityActor,
@@ -100,5 +102,64 @@ export function usePending(spaceId?: string) {
       ),
     staleTime: 10_000,
     refetchInterval: pollUnlessLive(spaceId),
+  })
+}
+
+const pendingDoneKey = ["pending", "done"] as const
+
+/**
+ * Mark something that waits on the reader as done without answering it. The
+ * row leaves at once and comes back if the server refuses. `spaceId` is the
+ * Space whose list showed it.
+ */
+export function useMarkPendingDone(spaceId?: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationKey: pendingDoneKey,
+    mutationFn: (id: string) =>
+      fetchJSON<{ ok: true }>("/api/pending/done", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ...(spaceId ? { spaceId } : {}) }),
+      }),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: activityQueryKeys.pending })
+      // Each list that shows the row, and where the row sat in it.
+      const removed = queryClient
+        .getQueriesData<PendingResult>({ queryKey: activityQueryKeys.pending })
+        .flatMap(([key, data]) => {
+          const index = data?.items.findIndex((item) => item.id === id) ?? -1
+          return index < 0 ? [] : [{ key, index, item: data!.items[index]! }]
+        })
+      for (const { key } of removed) {
+        queryClient.setQueryData<PendingResult>(key, (current) => {
+          if (!current) return current
+          const items = current.items.filter((item) => item.id !== id)
+          return { items, total: items.length }
+        })
+      }
+      return { removed }
+    },
+    // Only this row returns: another row marked done meanwhile stays gone.
+    onError: (_error, id, context) => {
+      for (const { key, index, item } of context?.removed ?? []) {
+        queryClient.setQueryData<PendingResult>(key, (current) => {
+          if (!current || current.items.some((other) => other.id === id)) {
+            return current
+          }
+          const items = [...current.items]
+          items.splice(Math.min(index, items.length), 0, item)
+          return { items, total: items.length }
+        })
+      }
+    },
+    // Read the lists again once nothing else is on its way, so a list read
+    // in between does not bring back a row that is still being marked done.
+    onSettled: () => {
+      if (queryClient.isMutating({ mutationKey: pendingDoneKey }) > 1) return
+      return queryClient.invalidateQueries({
+        queryKey: activityQueryKeys.pending,
+      })
+    },
   })
 }

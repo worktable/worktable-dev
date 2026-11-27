@@ -1,8 +1,9 @@
 import { Hono } from "hono"
 import { readActivityAgents, readActivityFeed } from "../activity-feed.ts"
 import { requireScope } from "../auth.ts"
-import { listPending } from "../pending.ts"
+import { listPending, markPendingDone } from "../pending.ts"
 import { visitorCommentReader } from "../visitor-comment-access.ts"
+import { wsManager } from "../ws.ts"
 
 export const activityRouter = new Hono()
 
@@ -60,3 +61,36 @@ pendingRouter.get("/", async (c) =>
     )
   )
 )
+
+// POST /api/pending/done: the reader lets go of something that waits on them
+// without answering it.
+pendingRouter.post("/done", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    id?: unknown
+    spaceId?: unknown
+  } | null
+  if (typeof body?.id !== "string" || !body.id) {
+    return c.json({ error: "id is required", code: "VALIDATION_ERROR" }, 400)
+  }
+  const done = await markPendingDone(
+    c.get("identity"),
+    body.id,
+    typeof body.spaceId === "string" && body.spaceId ? body.spaceId : undefined
+  )
+  if (done.refused === "not-found") {
+    return c.json({ error: "Nothing waits under that id", code: "NOT_FOUND" }, 404)
+  }
+  if (done.refused) {
+    return c.json({ error: "This can't be marked done", code: "FORBIDDEN" }, 403)
+  }
+  // A thread tells its viewers itself; a comment's Doc may be open elsewhere.
+  if (done.comment) {
+    const { spaceId, annotationId, annotation } = done.comment
+    wsManager.broadcast(spaceId, {
+      type: "annotation_update",
+      spaceId,
+      data: { annotationId, ...(annotation ? { annotation } : {}), event: "updated" },
+    })
+  }
+  return c.json({ ok: true })
+})

@@ -35,6 +35,7 @@ import {
   createLegacyCompatibleAnnotationV2,
   DocumentAnnotationError,
   listLegacyCompatibleAnnotationsV2,
+  dismissDocumentAnnotationRequestsV2,
   readLegacyCompatibleAnnotationV2,
   replyLegacyCompatibleAnnotationV2,
   resolveLegacyCompatibleAnnotationV2,
@@ -43,7 +44,7 @@ import {
 } from "./document-annotation-service.ts"
 import { readWorkspaceStorageLayoutAt } from "./workspace-storage-v2.ts"
 import { BoundedFileReadError } from "./bounded-file.ts"
-import { addRequests, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
+import { addRequests, requestsAfterDone, requestsAfterReply, type CommentReplier } from "./annotation-requests.ts"
 import {
   noteCommentChanged,
   noteCommentsMoved,
@@ -606,6 +607,29 @@ export async function replyAnnotation(spaceId: string, annotationId: string, bod
     }
   }
   return result
+}
+
+/**
+ * A recipient lets go of what a comment asked them, without replying. The
+ * comment itself is unchanged, so it says nothing new to anyone else. `path`
+ * is its Doc or HTML Doc, which is where it is looked for.
+ */
+export async function dismissAnnotationRequests(spaceId: string, path: string, annotationId: string, participantId: string): Promise<Annotation | null> {
+  assertSpaceAccess(spaceId, commentAccess());
+  if (await usesDocumentDataV2()) {
+    return dismissDocumentAnnotationRequestsV2({ spaceId, path, annotationId, participantId })
+  }
+  return withAnnotationStoreLock(spaceId, async () => {
+    const found = await findAnnotation(spaceId, annotationId);
+    const annotation: Annotation = {
+      ...found.annotation,
+      requests: requestsAfterDone(found.annotation.requests ?? [], participantId, new Date().toISOString()),
+    };
+    found.file.annotations[found.index] = annotation;
+    await writeAnnotationFile(spaceId, found.key, found.file);
+    noteLegacyComment(spaceId, annotation);
+    return annotation;
+  }, commentAccess())
 }
 
 export async function resolveAnnotation(spaceId: string, annotationId: string, reason?: string, resolvedBy = "worktable"): Promise<Annotation> {

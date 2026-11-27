@@ -67,6 +67,7 @@ import {
 import {
   appendThreadMessage,
   assignThreadMessage,
+  withdrawThreadRequests,
   createThread,
   findThreadAppendRetry,
   findThreadCreationRetry,
@@ -1518,6 +1519,19 @@ export async function assignResponseRequest(
     )
   )
   return updated
+}
+
+/** The reader lets go of what a thread asked them, without replying. */
+export async function dismissThreadRequests(
+  identity: ThreadIdentity,
+  input: { location: ThreadLocation; threadId: string }
+): Promise<void> {
+  const { actor } = await threadForManagement(
+    identity,
+    input.location,
+    input.threadId
+  )
+  await withdrawThreadRequests(input.location, input.threadId, actor.id)
 }
 
 export async function waitForThreadReply(

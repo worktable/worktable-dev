@@ -1145,6 +1145,19 @@ export async function createThread(
   }, location))
 }
 
+/** A message whose request stops waiting; it keeps who it was meant for. */
+function withRequestWithdrawn(
+  message: ThreadMessage,
+  identityId: string,
+  now: string
+): ThreadMessage {
+  return {
+    ...message,
+    creationIntent: messageCreationIntent(message),
+    responseRequest: { identityId, status: "withdrawn", resolvedAt: now },
+  }
+}
+
 export async function appendThreadMessage(
   locationInput: ThreadLocation | string,
   threadId: string,
@@ -1268,15 +1281,7 @@ export async function appendThreadMessage(
       ) {
         return candidate
       }
-      return {
-        ...candidate,
-        creationIntent: messageCreationIntent(candidate),
-        responseRequest: {
-          identityId: request.identityId,
-          status: "withdrawn" as const,
-          resolvedAt: now,
-        },
-      }
+      return withRequestWithdrawn(candidate, request.identityId, now)
     })
     const next: Thread = {
       ...thread,
@@ -1590,6 +1595,36 @@ export async function assignThreadMessage(
   }
   const updated = await persistThreadMutation(location, threadId, mutate)
   return { thread: updated, replacedIdentityId }
+}
+
+/**
+ * A member lets go of everything a thread asked them, without replying: the
+ * requests stop waiting.
+ */
+export async function withdrawThreadRequests(
+  location: ThreadLocation | string,
+  threadId: string,
+  memberId: string
+): Promise<Thread> {
+  return persistThreadMutation(location, threadId, (thread, now) => {
+    const identityIds = new Set(
+      thread.identities.flatMap((identity) =>
+        identity.memberId === memberId ? [identity.id] : []
+      )
+    )
+    let changed = false
+    const messages = thread.messages.map((candidate) => {
+      const request = candidate.responseRequest
+      if (request?.status !== "open" || !identityIds.has(request.identityId)) {
+        return candidate
+      }
+      changed = true
+      return withRequestWithdrawn(candidate, request.identityId, now)
+    })
+    return changed
+      ? { ...thread, messages, revision: thread.revision + 1, updatedAt: now }
+      : thread
+  })
 }
 
 function summarizeThread(thread: Thread): ThreadSummary {

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useLocation, useNavigate } from "@tanstack/react-router"
 import type { DocumentSharingSummary } from "@worktable/types"
-import { COMMENT_HASH } from "@/lib/comment-hash"
+import { COMMENT_HASH_PREFIX } from "@worktable/types/constants"
 
 /**
  * Pending and notices open Visitors, Home's Try Next opens Comments, and a
@@ -38,13 +38,13 @@ export function useVisitorCommentsPanel(
       before.documentId === documentId &&
       (location.hash === "visitors" ||
         location.hash === "comments" ||
-        location.hash.startsWith(COMMENT_HASH))
+        location.hash.startsWith(COMMENT_HASH_PREFIX))
     )
       void navigate({ hash: "", replace: true, resetScroll: false })
   }, [commentsOpen, documentId, location.hash, location.pathname, navigate])
   useEffect(() => {
-    const comment = location.hash.startsWith(COMMENT_HASH)
-      ? location.hash.slice(COMMENT_HASH.length)
+    const comment = location.hash.startsWith(COMMENT_HASH_PREFIX)
+      ? location.hash.slice(COMMENT_HASH_PREFIX.length)
       : ""
     const wanted =
       comment !== "" ||

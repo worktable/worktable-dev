@@ -7,11 +7,11 @@ import {
 import { useState } from "react"
 import { HelpIcon, TipCard } from "@/components/help/help"
 import type { PendingItem } from "@worktable/types"
+import { COMMENT_HASH_PREFIX } from "@worktable/types/constants"
 import { cn } from "@worktable/ui/lib/utils"
 import { ThreadLink } from "@/components/home/activity-feed"
 import { ActorAvatar } from "@/components/home/home-latest"
 import { usePending } from "@/lib/activity"
-import { commentHash } from "@/lib/comment-hash"
 import { shortWhen } from "@/lib/activity-format"
 import { useActorName } from "@/lib/use-actor-name"
 import { useSpaces } from "@/lib/queries"
@@ -153,7 +153,7 @@ function PendingRow({
       params={{ spaceId: item.spaceId, _splat: item.docPath }}
       hash={
         item.kind === "commentRequest"
-          ? commentHash(item.annotationId)
+          ? `${COMMENT_HASH_PREFIX}${item.annotationId}`
           : "visitors"
       }
       className={className}

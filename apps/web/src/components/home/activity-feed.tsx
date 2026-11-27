@@ -11,7 +11,6 @@ import { cn } from "@worktable/ui/lib/utils"
 import { useScrollFade } from "@/hooks/use-scroll-fade"
 import { useActivity } from "@/lib/activity"
 import { clockTime, groupByDay } from "@/lib/activity-format"
-import { countMessageOpening } from "@/lib/message-openings"
 import { useActorName } from "@/lib/use-actor-name"
 import { useSpaces } from "@/lib/queries"
 import { useQuery } from "@tanstack/react-query"
@@ -118,14 +117,11 @@ export function ThreadLink({
   children: ReactNode
 }) {
   const message = messageId ? { message: messageId } : {}
-  // Shows the message again when the same link is chosen again.
-  const onClick = messageId ? countMessageOpening : undefined
   return spaceId ? (
     <Link
       to="/spaces/$spaceId/threads/$"
       params={{ spaceId, _splat: threadId }}
       search={message}
-      onClick={onClick}
       className={className}
     >
       {children}
@@ -135,7 +131,6 @@ export function ThreadLink({
       to="/threads/$"
       params={{ _splat: `worktable/${threadId}` }}
       search={{ location: "all", ...message }}
-      onClick={onClick}
       className={className}
     >
       {children}

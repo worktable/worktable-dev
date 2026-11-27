@@ -37,7 +37,10 @@ Ask it to save research, organize records, or build a tool in Worktable.
 [Inspect the installer](install.sh) · [Installation guide](https://docs.worktable.dev/start/install/) · [First task](https://docs.worktable.dev/start/first-space/)
 
 **Cloud:** [Worktable Cloud](https://www.worktable.cloud) manages hosting for you.
-For other setups, see [self-hosting](https://docs.worktable.dev/guides/remote-access/).
+
+**Remote access:** [Worktable Link](https://docs.worktable.dev/guides/remote-access/#worktable-link)
+is the preferred way to reach a local Worktable from ChatGPT, Claude and other
+AI apps. For a server of your own, see [self-hosting](https://docs.worktable.dev/guides/remote-access/#reachable-mode).
 
 ## What to make
 

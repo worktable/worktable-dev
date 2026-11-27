@@ -622,6 +622,10 @@ function printBanner(): void {
  * client-specific config on the agent machine and verifies it, instead of
  * asking the user to translate a snippet into each agent's config format.
  */
+/** Where Worktable Link stands among the ways to reach a Worktable remotely. */
+const WORKTABLE_LINK_HINT =
+  "ChatGPT, Claude and other AI apps: Worktable Link is the preferred way to reach this Worktable remotely (Settings -> Remote)."
+
 function printRemoteConnectHint(): void {
   console.log()
   console.log(style.bold("Connect a remote agent:"))
@@ -633,6 +637,8 @@ function printRemoteConnectHint(): void {
   console.log(
     `  ${style.dim("or open Settings -> Agents in the web app for the same flow with live status.")}`
   )
+  console.log()
+  console.log(`  ${style.dim(WORKTABLE_LINK_HINT)}`)
   console.log()
 }
 
@@ -3659,6 +3665,9 @@ async function commandSetup(opts: SetupOptions): Promise<void> {
           "Yes  Bind to all interfaces (0.0.0.0) so other machines and remote agents",
           "     can connect. Requires an owner password, mints an MCP token, and you",
           "     supply the HTTPS tunnel.",
+          "",
+          WORKTABLE_LINK_HINT,
+          "It works with either choice.",
         ].join("\n"),
         "Reachability"
       )

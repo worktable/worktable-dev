@@ -243,7 +243,7 @@ export function LiveDataPanel({
             />
           ))}
           {grant.state === "team-read" ? (
-            <p>Visitors can see what your team saved in this tool.</p>
+            <p>Visitors can see what your team saved on this page.</p>
           ) : null}
           {access.issues.length > 0 ? (
             <Callout>

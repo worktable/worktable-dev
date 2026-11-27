@@ -608,7 +608,7 @@ export function ShareLinksDialog({
               )
                 ? " and its password"
                 : ""
-            } can ${target.kind === "html" ? "use this tool" : "view this document"}`}
+            } can ${target.kind === "html" ? "use this page" : "view this document"}`}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -1071,7 +1071,7 @@ export function UnsharedRecordsNote({
       <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <span>
           Visitors won’t see {count}{" "}
-          {count === 1 ? "collection" : "collections"} this tool reads.
+          {count === 1 ? "collection" : "collections"} this page reads.
         </span>
         {action ? (
           <Button

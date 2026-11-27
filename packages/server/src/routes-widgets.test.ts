@@ -284,7 +284,7 @@ describe("widget REST routes", () => {
       },
     } as ConstructorParameters<typeof JSDOM>[1]);
 
-    await expect((dom.window as unknown as { worktable: { records: { delete: (collectionId: string, recordId: string) => Promise<unknown> } } }).worktable.records.delete("tasks", "example-task")).rejects.toThrow("Widget lacks delete permission");
+    await expect((dom.window as unknown as { worktable: { records: { delete: (collectionId: string, recordId: string) => Promise<unknown> } } }).worktable.records.delete("tasks", "example-task")).rejects.toThrow("This HTML doc has no delete access to Records in tasks");
     const diagnostics = (dom.window as unknown as { __worktableDiagnostics: Array<{ code: string; hint?: string; detail?: { missingPermission?: string } }> }).__worktableDiagnostics;
     expect(diagnostics.some((diagnostic) => diagnostic.code === "missing_widget_permission" && diagnostic.hint?.includes("permissions.records.tasks.delete") && diagnostic.detail?.missingPermission === "permissions.records.tasks.delete")).toBe(true);
   });

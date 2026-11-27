@@ -551,6 +551,7 @@ function RestoreVersionButton({
       >
         <p className="text-sm text-muted-foreground">
           Your current version will be saved first, so you can return to it.
+          {kind === "doc" ? null : " Records it changed stay as they are."}
         </p>
       </ConfirmDialog>
       <ConfirmDialog

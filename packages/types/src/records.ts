@@ -145,6 +145,8 @@ export const RecordChangeSchema = z.object({
   metadata: z.record(z.string(), RecordValueChangeSchema).optional(),
   /** The reason given with an archive. */
   reason: z.string().optional(),
+  /** So many fields changed that which ones could not be kept. */
+  detailTooLarge: z.boolean().optional(),
 });
 
 export type RecordValueChange = z.infer<typeof RecordValueChangeSchema>;

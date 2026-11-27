@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import type { RecordChange } from "@worktable/types"
 import { Hono } from "hono"
 import { existsSync } from "node:fs"
-import { appendFile, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { drainActivity, runAsActivityActor } from "./activity-log.ts"
@@ -240,15 +249,75 @@ describe("record history", () => {
     expect(page.json.changes).toHaveLength(2)
     expect(page.json.total).toBe(kept.length)
 
+    // Nothing a change holds escapes the bound. A reason far too long is
+    // clipped, and a change to more fields than fit says only that; neither
+    // costs the changes kept before it.
+    const before = (await history("big")).length
+    await request("POST", `${queue}/big/archive`, {
+      reason: "r".repeat(1_400_000),
+    })
+    await request("POST", `${queue}/big/restore`)
+    const manyFields = Object.fromEntries(
+      Array.from({ length: 6000 }, (_, index) => [
+        `field_${String(index).padStart(4, "0")}_${"k".repeat(48)}`,
+        index,
+      ])
+    )
+    await runAsActivityActor(agent, () =>
+      updateRecord("outreach", "queue", "big", {
+        data: manyFields,
+        updatedBy: agent.id,
+      })
+    )
+    const bounded = await history("big")
+    expect(bounded[0]).toMatchObject({ kind: "changed", detailTooLarge: true })
+    expect(bounded[0]?.fields).toBeUndefined()
+    expect(bounded[2]?.kind).toBe("archived")
+    expect(bounded[2]?.reason).toHaveLength(2048)
+    expect((await stat(path)).size).toBeLessThanOrEqual(MAX_HISTORY_BYTES)
+    // The history was full, so the oldest made room; none of the rest went.
+    expect(bounded.length).toBeGreaterThanOrEqual(before - 1)
+
     // A history something outside Worktable left far larger still reads,
     // from its newest end.
     const junk = `\n${JSON.stringify({ junk: "y".repeat(1024) })}`
     await writeFile(path, junk.repeat(4096))
+    // The sweep rewrites a history only from all of it, so it leaves this.
+    const oversized = (await stat(path)).size
+    await pruneRecordHistories(
+      { mode: "age", maxAgeDays: 30 },
+      () => true,
+      Date.now() + 40 * DAY_MS
+    )
+    expect((await stat(path)).size).toBe(oversized)
     await write("after the junk")
     expect((await history("big"))[0]?.fields?.final_text?.after).toBe(
       "after the junk"
     )
     expect((await stat(path)).size).toBeLessThanOrEqual(MAX_HISTORY_BYTES)
+
+    // History is written inside the workspace folder and nowhere else: with
+    // a link where a collection's history folder would be, the Record is
+    // written, no change is kept, and nothing lands where the link points.
+    const outside = await mkdtemp(join(tmpdir(), "worktable-record-history-out-"))
+    try {
+      await request("POST", "/api/spaces/outreach/records", {
+        id: "linked",
+        name: "Linked",
+        fields: { title: { type: "string" } },
+      })
+      await mkdir(join(root, "versions", "outreach", "records"), { recursive: true })
+      await symlink(outside, join(root, "versions", "outreach", "records", "linked"))
+      const made = await createRecord("outreach", "linked", {
+        id: "one",
+        data: { title: "One" },
+      })
+      expect(made.created).toBe(true)
+      expect(await readdir(outside)).toEqual([])
+      expect((await readRecordChanges("outreach", "linked", "one")).data).toEqual([])
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
   })
 
   it("marks the records one call changed, and holds history to the retention policy", async () => {

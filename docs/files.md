@@ -894,9 +894,14 @@ Record or its collection never reads history; it is read when someone opens
 it, a page of changes at a time.
 
 History is bounded however it is written. A value over 64 KiB is not kept:
-its change says only that it was too large. One change stays within 256 KiB,
-its largest values going first, and a Record's history within 1 MiB, its
-oldest changes going first, so a read never loads more than that. Each change
+its change says only that it was too large. One change stays within 256 KiB:
+its largest values go first, then, when the names of its fields alone are too
+much, which fields changed; an archive's reason is kept to 2,048 characters.
+A Record's history stays within 1 MiB, its oldest changes going first, so a
+read never loads more than that, and a history is only ever rewritten from
+changes that were read whole. No part of a history's path may be a link:
+history is written inside the workspace folder and nowhere else, and a change
+that would follow a link is not kept. Each change
 is admitted under the storage limit as history (rule 14); one that would pass
 the total limit is not kept, and the Record's write stands.
 
@@ -925,8 +930,10 @@ an undo would put back.
 - `record-history.test.ts` "stays bounded: a value too large is not kept, and
   a history loses its oldest changes first": a history filled by large values
   stays within its size and keeps the newest, a read returns a page with the
-  total, and a history left far larger from outside still reads from its
-  newest end.
+  total, a reason far too long and a change to more fields than fit cost no
+  earlier change, a history left far larger from outside still reads from its
+  newest end and is left alone by the sweep, and a link in place of a
+  collection's history folder keeps no change and writes nothing outside.
 - `storage-limit.test.ts` "keeps no Record change that would pass the total
   limit, and still writes the Record".
 - `workspace-transfer-v2.test.ts` "carries every Record's history whole under

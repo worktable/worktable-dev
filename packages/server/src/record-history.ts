@@ -42,7 +42,11 @@ import {
 import { actorFromAttribution } from "./activity-log.ts"
 import { atomicWriteText } from "./atomic-file.ts"
 import { logError } from "./debug-log.ts"
-import { getServerSettings, type RetentionPolicy } from "./settings-store.ts"
+import {
+  getRetentionPolicyGeneration,
+  getServerSettings,
+  type RetentionPolicy,
+} from "./settings-store.ts"
 import { noteStorageChange } from "./storage-usage.ts"
 import { getSpacesDir, getVersionsDir } from "./workspace.ts"
 
@@ -184,11 +188,17 @@ export async function noteRecordChange(
     await withHistoryLock(path, async () => {
       await mkdir(dirname(path), { recursive: true })
       await appendFile(path, line(change))
-      // Keeping the newest few per item prunes as it writes, as Docs do.
+      // Keeping the newest few per item prunes as it writes, as Docs do. The
+      // read takes time: a policy relaxed meanwhile must not lose changes to
+      // the stricter one.
+      const generation = getRetentionPolicyGeneration()
       const policy = getServerSettings().history.retention
       if (policy.mode === "count") {
         const kept = await readChanges(path)
-        if (kept.length > policy.maxPerDoc) {
+        if (
+          kept.length > policy.maxPerDoc &&
+          getRetentionPolicyGeneration() === generation
+        ) {
           await atomicWriteText(path, serialize(kept.slice(-policy.maxPerDoc)))
         }
       }

@@ -16,6 +16,10 @@ import {
   updateRecord,
 } from "./record-store.ts"
 import { recordsRouter } from "./routes/records.ts"
+import {
+  invalidateServerSettingsCache,
+  updateServerSettings,
+} from "./settings-store.ts"
 import { spacesRouter } from "./routes/spaces.ts"
 import type { RequestPrincipal } from "./token-store.ts"
 import { ensureWorkspaceManifest, setWorkspaceRootOverride } from "./workspace.ts"
@@ -81,6 +85,7 @@ beforeEach(async () => {
   appDir = await mkdtemp(join(tmpdir(), "worktable-record-history-app-"))
   setWorkspaceRootOverride(root)
   setAppDirOverride(appDir)
+  invalidateServerSettingsCache()
   ensureWorkspaceManifest()
   await request("POST", "/api/spaces", { name: "Outreach" })
   await request("POST", "/api/spaces/outreach/records", {
@@ -98,6 +103,7 @@ afterEach(async () => {
   await drainActivity()
   setWorkspaceRootOverride(null)
   setAppDirOverride(null)
+  invalidateServerSettingsCache()
   await Promise.all([
     rm(root, { recursive: true, force: true }),
     rm(appDir, { recursive: true, force: true }),
@@ -208,6 +214,10 @@ describe("record history", () => {
     expect(a[0]?.call).toBeTruthy()
     expect(b[0]?.call).toBe(a[0]?.call)
 
+    // Keeping the newest two per item prunes as changes are written.
+    await updateServerSettings({
+      history: { retention: { mode: "count", maxPerDoc: 2 } },
+    })
     for (const status of ["approved", "posted", "seen"]) {
       await asAgent(() =>
         updateRecord("outreach", "queue", "a", {
@@ -219,11 +229,13 @@ describe("record history", () => {
     // A change made alone names no call.
     expect((await read("a"))[0]?.call).toBeUndefined()
 
-    // Keeping the newest two per item.
-    await pruneRecordHistories({ mode: "count", maxPerDoc: 2 })
     expect((await read("a")).map((change) => change.fields?.status?.after)).toEqual(
       ["seen", "posted"]
     )
+    // The sweep under the same policy finds nothing more to remove.
+    expect(
+      (await pruneRecordHistories({ mode: "count", maxPerDoc: 2 })).changesRemoved
+    ).toBe(0)
 
     // Past the window, a record keeps how it came to be as it is, and what a
     // record that is gone left behind goes.

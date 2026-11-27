@@ -10,7 +10,7 @@
 // Rename-stable links are provided by the portable aliases recorded here;
 // document content itself remains untouched.
 
-import { noteDocumentActivity } from "./document-activity.ts"
+import { noteDocsMoved, noteDocumentActivity } from "./document-activity.ts"
 import {
   docExists,
   docStat,
@@ -112,7 +112,19 @@ const FOLDER_APPEARED: RenameOutcome = {
   error: "The Doc's folder changed during the move. Try again.",
 }
 
+/** Rename one Doc, and say so in Activity. */
 async function renameOneDoc(
+  spaceId: string,
+  from: string,
+  to: string,
+  alone: boolean
+): Promise<RenameOutcome> {
+  const outcome = await renameOneDocUnnoted(spaceId, from, to, alone)
+  if (!outcome.error) noteDocsMoved(spaceId, from, to, outcome.renamed)
+  return outcome
+}
+
+async function renameOneDocUnnoted(
   spaceId: string,
   from: string,
   to: string,
@@ -282,7 +294,10 @@ export async function renameDocsByPrefixAndSync(
     )
   )
   // Outside the locks: rewriting links writes the Docs that hold them.
-  if (!outcome.error) await rewriteLinksAfterMove(spaceId, outcome.renamed)
+  if (!outcome.error) {
+    await rewriteLinksAfterMove(spaceId, outcome.renamed)
+    noteDocsMoved(spaceId, from, to, outcome.renamed)
+  }
   return outcome
 }
 

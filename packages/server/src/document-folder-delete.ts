@@ -1,5 +1,6 @@
 import { resolve } from "node:path"
 import { CanonicalIdSchema } from "@worktable/types"
+import { noteDocsDeleted } from "./document-activity.ts"
 import { buildDocumentCatalog } from "./document-catalog.ts"
 import { DOCUMENT_DELETE_ADAPTER_IDS } from "./document-delete-adapter.ts"
 import {
@@ -21,6 +22,7 @@ import {
   documentPathKeyIsAtOrBelow,
   documentPathKeyIsBelow,
 } from "./document-path.ts"
+import { documentAt } from "./document-query.ts"
 import { documentStorageProfiles } from "./document-storage-profile.ts"
 import { removeEmptiedFolders } from "./document-folder-move.ts"
 import { withDocGenerationLocks } from "./doc-generation-lock.ts"
@@ -208,6 +210,8 @@ export async function deleteDocumentFolder(
   options: { keep?: readonly string[] } = {}
 ): Promise<DeleteDocumentFolderResult> {
   const keep = new Set(options.keep ?? [])
+  // Read before anything goes: Activity names a deleted Doc by its title.
+  const doc = await documentAt(spaceId, path)
   let planned: PlannedDocumentFolderDelete[] | DeleteDocumentFolderResult
   try {
     planned = await planDocumentFolderDelete(spaceId, path, keep)
@@ -301,7 +305,9 @@ export async function deleteDocumentFolder(
         )
       )
     }
-    return { ok: true, path, paths: outcome.deleted.map((entry) => entry.path) }
+    const paths = outcome.deleted.map((entry) => entry.path)
+    noteDocsDeleted(spaceId, path, paths, doc)
+    return { ok: true, path, paths }
   }
   const underNamespaceLocks = () =>
     withDocPathLock(spaceId, () =>

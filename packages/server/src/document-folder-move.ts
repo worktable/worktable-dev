@@ -1,7 +1,7 @@
 import { readdir, rmdir } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { CanonicalIdSchema } from "@worktable/types"
-import { noteDocumentActivity } from "./document-activity.ts"
+import { noteDocsMoved, noteDocumentActivity } from "./document-activity.ts"
 import { buildDocumentCatalog, type DocumentCatalog } from "./document-catalog.ts"
 import { readDocumentCatalogSnapshot } from "./document-query.ts"
 import { hasScope } from "./token-store.ts"
@@ -445,11 +445,13 @@ export async function moveDocumentFolder(
         )
       )
     }
+    const renamed = outcome.renamed.map(({ from, to }) => ({ from, to }))
+    noteDocsMoved(spaceId, fromPrefix, toPrefix, renamed)
     return {
       ok: true,
       from: fromPrefix,
       to: toPrefix,
-      renamed: outcome.renamed.map(({ from, to }) => ({ from, to })),
+      renamed,
     } satisfies MoveDocumentFolderResult
   }
   const underDocumentLock = () =>

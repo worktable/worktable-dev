@@ -362,6 +362,108 @@ describe("workspace activity", () => {
     ).toBe(true)
   })
 
+  it("says when a doc moves or is deleted, and stops opening what is gone", async () => {
+    const files = (action: string, args: Record<string, unknown>) =>
+      agentTool("worktable_documents_write", {
+        action,
+        spaceId: "company",
+        ...args,
+      })
+    // A Doc moves with the Doc under it; another is renamed where it is.
+    await writeDocAt("notes/plan")
+    await writeDocAt("notes/plan/risks")
+    await writeDocAt("memo")
+    await files("move", { path: "notes/plan", to: "plans/launch" })
+    await files("move", { path: "memo", to: "note" })
+    // A path names a Doc whatever its letter case.
+    await agentTool("worktable_delete", {
+      action: "document",
+      spaceId: "company",
+      path: "Note",
+    })
+
+    const page = await request<ActivityPage>("/api/activity?spaceId=company")
+    const moves = page.entries.filter((entry) => entry.action === "doc.moved")
+    expect(
+      moves.map((entry) => ({
+        from: entry.from,
+        to: entry.to,
+        docs: entry.count ?? 1,
+      }))
+    ).toEqual([
+      { from: "memo", to: "note", docs: 1 },
+      { from: "notes/plan", to: "plans/launch", docs: 2 },
+    ])
+
+    // The delete names the Doc as it was called, and neither it nor the
+    // Doc's earlier lines open anything.
+    const gone = page.entries.filter(
+      (entry) => entry.target.kind === "doc" && entry.target.missing
+    )
+    expect(gone.map((entry) => entry.action).sort()).toEqual([
+      "doc.created",
+      "doc.deleted",
+      "doc.moved",
+    ])
+    expect(
+      gone.find((entry) => entry.action === "doc.deleted")?.target
+    ).toMatchObject({ path: "note", title: "Pulse" })
+    // A Doc that moved still opens, where it is now.
+    expect(
+      page.entries.find(
+        (entry) =>
+          entry.action === "doc.created" &&
+          entry.target.kind === "doc" &&
+          entry.target.path === "plans/launch"
+      )?.target
+    ).toMatchObject({ title: "Pulse" })
+    expect(
+      page.entries.some(
+        (entry) =>
+          entry.target.kind === "doc" &&
+          entry.target.path.startsWith("plans/") &&
+          entry.target.missing
+      )
+    ).toBe(false)
+
+    // Deleted with the Doc under it: one line, named for the Doc, not a
+    // folder of Docs.
+    await agentTool("worktable_delete", {
+      action: "document",
+      spaceId: "company",
+      path: "Plans/Launch",
+    })
+    const after = await request<ActivityPage>("/api/activity?spaceId=company")
+    expect(
+      after.entries
+        .filter((entry) => entry.action === "doc.deleted")
+        .map((entry) => ({ ...entry.target, docs: entry.count ?? 1 }))[0]
+    ).toMatchObject({ path: "plans/launch", title: "Pulse", docs: 2 })
+
+    // The Doc tools rename and delete by another route, and say so too.
+    await writeDocAt("draft")
+    await agentTool("worktable_docs_write", {
+      action: "rename",
+      spaceId: "company",
+      oldPath: "draft",
+      newPath: "final",
+    })
+    await agentTool("worktable_delete", {
+      action: "doc",
+      spaceId: "company",
+      docPath: "final",
+    })
+    const last = await request<ActivityPage>("/api/activity?spaceId=company")
+    expect(
+      last.entries
+        .slice(0, 2)
+        .map((entry) => [entry.action, entry.from ?? null, entry.target])
+    ).toMatchObject([
+      ["doc.deleted", null, { path: "final" }],
+      ["doc.moved", "draft", { path: "final" }],
+    ])
+  })
+
   it("says what happened to records: one line a call, and nothing when nothing changed", async () => {
     const queue = (action: string, args: Record<string, unknown>) =>
       agentTool("worktable_records_write", {

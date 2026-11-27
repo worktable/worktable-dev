@@ -139,11 +139,15 @@ async function withCurrentNames(
           ? { ...entry.actor, name: agentNames.get(entry.actor.id)! }
           : entry.actor
       const target = entry.target
+      // A folder has no page of its own: it keeps the path it was noted at.
+      if (target.kind === "doc" && target.folder) return { ...entry, actor }
       if (target.kind === "doc" && entry.spaceId) {
         const byPath = documents.get(entry.spaceId)
-        let current = byPath?.get(target.path)
+        // A deleted Doc is gone, whatever now sits at its path.
+        const deleted = entry.action === "doc.deleted"
+        let current = deleted ? undefined : byPath?.get(target.path)
         let path = target.path
-        if (!current) {
+        if (!current && !deleted) {
           const moved = await movedPath(entry.spaceId, target.path)
           if (moved) {
             path = moved
@@ -163,9 +167,10 @@ async function withCurrentNames(
           target: {
             ...target,
             path,
+            // Nothing to open: the line keeps its words and loses its link.
             ...(current
               ? { title: current.title, formatId: current.formatId }
-              : {}),
+              : { missing: true }),
           },
         }
       }

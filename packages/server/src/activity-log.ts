@@ -230,7 +230,9 @@ export function recordActivity(input: ActivityInput): void {
 
 /**
  * Note a content change. Machine normalization (no person, agent, or folder
- * edit behind it) is not activity anyone needs to read about.
+ * edit behind it) is not activity anyone needs to read about. Neither is a
+ * change Worktable makes itself, such as fixing links after a move: it can
+ * run inside someone's request, and would otherwise be credited to them.
  */
 export function noteDocumentEdited(
   spaceId: string,
@@ -238,6 +240,7 @@ export function noteDocumentEdited(
   updatedBy?: string,
   source?: string
 ): void {
+  if ([updatedBy, source].some((value) => value === "system" || value?.startsWith("system:"))) return
   const actor = actorFromAttribution(updatedBy, source)
   if (actor.kind === "system" && actor.id !== "filesystem") return
   recordActivity({

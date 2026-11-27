@@ -166,7 +166,7 @@ async function ensureWidgetAccess(spaceId: string, widgetId: string, collectionI
   const { data: widget, error } = await readWidget(spaceId, widgetId);
   if (error || !widget) return { widget: null, response: new Response(JSON.stringify({ error: error ?? "Widget not found", code: "NOT_FOUND" }), { status: 404, headers: { "Content-Type": "application/json" } }) };
   if (!canWidgetRecord(widget, collectionId, action)) return { widget: null, response: new Response(JSON.stringify({
-    error: `Widget lacks ${action} permission for ${collectionId}`,
+    error: `This HTML doc has no ${action} access to Records in ${collectionId}`,
     code: "FORBIDDEN",
     missingPermission: `permissions.records.${collectionId}.${action}`,
     suggestedPermissions: { records: { [collectionId]: { [action]: true } } },
@@ -505,7 +505,7 @@ async function handleRecordsQuery(c: Context, spaceId: string, widgetId: string,
     const target = await deniedWidgetQueryCollection(spaceId, access.widget!.permissions, collectionId, body ?? {});
     if (target) {
         return c.json({
-          error: `Widget lacks read permission for ${target} (reached via expand/backlinks/relation path)`,
+          error: `This HTML doc has no read access to Records in ${target}, which this query reaches`,
           code: "FORBIDDEN",
           missingPermission: `permissions.records.${target}.read`,
           suggestedPermissions: { records: { [target]: { read: true } } },

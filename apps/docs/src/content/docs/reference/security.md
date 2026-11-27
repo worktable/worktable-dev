@@ -98,14 +98,16 @@ HTML Docs support JavaScript. In the web app and Desktop they run inside a
 sandboxed iframe with an opaque origin, separate from the app's origin. They
 cannot read the parent page, its cookies, browser storage or session credentials.
 The server also applies a sandbox policy when a document's content URL is opened
-directly. Forms, popups, downloads and navigation of the parent page are blocked.
+directly. Form submissions, popups, downloads and navigation of the parent page
+are blocked.
 
 A content security policy blocks external scripts, styles, images and embedded
 pages. Fonts are limited to embedded data and Worktable's font assets. By default,
 direct data requests are limited to the Worktable server, whose authentication
 rejects the frame's opaque origin. The document's network permission additionally
-allows HTTPS and WebSocket connections. An authorized agent can currently grant
-that permission without a separate human approval.
+allows HTTPS and WebSocket connections. Only a person signed in to Worktable can
+turn it on. An agent can ask for it, and every change an agent makes to the
+document's code or permissions turns it off until a person allows it again.
 
 Records and document state use a narrow message bridge. It accepts requests from
 the active document frame only, and stops when that frame leaves the document.

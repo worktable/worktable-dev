@@ -172,7 +172,7 @@ Narrative Doc writes validate Mermaid automatically. HTML cannot reliably expose
 
 const HTML_GUIDE_SHARE_LINKS = `## Share links
 
-Someone can share an HTML Doc by link with people outside the team, including its live data. Visitors run the same HTML with the same SDK, read-only: records create, update and delete reject with LINK_READ_ONLY, state writes last only for that visitor's browser tab, and openDocument is unavailable. Visitors can read only the collections and fields the link grants, so handle a rejected query the way you handle a missing permission. Write one tool for members and visitors; don't detect visitors or build a separate version.`
+Someone can share an HTML Doc by link with people outside the team, including its live data. Visitors run the same HTML with the same SDK, read-only: records create, update and delete reject with LINK_READ_ONLY, state writes last only for that visitor's browser tab, and openDocument is unavailable. On a link the page can't fetch anything, even with network permission. Visitors can read only the collections and fields the link grants, so handle a rejected query the way you handle a missing permission. Write one tool for members and visitors; don't detect visitors or build a separate version.`
 
 // Agents change part of a page with edits, so the guide doesn't ask for a
 // complete page on every write.
@@ -188,7 +188,7 @@ Generated HTML is often one long line. worktable_search with exact finds text in
 
 With a shell, a large page can move outside the call. worktable_html_read gives a downloadUrl for the source it read. worktable_html_write with upload gives a one-time link that takes a page with curl -T and saves it as the call would have; to replace a page that way, pass htmlId and expectedRevision. A link the page was refused through is used up: ask for a new one.
 
-Name, description and permissions change without html. Every agent change to the page or its permissions turns network access off until a person allows it again.`
+Name, description and permissions change without html. Every agent change to the page's html or permissions turns network access off until a person allows it again; a new name or description doesn't.`
 
 /** Space images in HTML Docs (html-space-images.ts). */
 export const HTML_GUIDE_SPACE_IMAGES = `## Images from the Space

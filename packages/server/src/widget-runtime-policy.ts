@@ -59,7 +59,7 @@ export async function deniedWidgetQueryCollection(
 export class WidgetRecordAccessError extends Error {
   readonly collectionId: string
   constructor(collectionId: string) {
-    super(`Widget lacks read permission for ${collectionId}`)
+    super(`This HTML doc has no read access to Records in ${collectionId}`)
     this.collectionId = collectionId
     this.name = "WidgetRecordAccessError"
   }

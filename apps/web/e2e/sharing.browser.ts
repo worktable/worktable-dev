@@ -511,7 +511,7 @@ test("shares a page that reads no Records with no live data to choose", async ({
   await shareButton.click()
   const dialog = page.getByRole("dialog", { name: "Share “Status card”" })
   await expect(
-    dialog.getByText("Anyone with the link can use this tool")
+    dialog.getByText("Anyone with the link can use this page")
   ).toBeVisible()
   // The page runs for visitors as it is; live data is only its Records.
   await expect(dialog.getByRole("button", { name: /^Live data/ })).toHaveCount(
@@ -543,7 +543,7 @@ test("tells the sharer when visitors won't see the Records a tool reads", async 
   await share.click()
   const dialog = page.getByRole("dialog", { name: "Share “Status card”" })
   const note = dialog.getByText(
-    "Visitors won’t see 2 collections this tool reads."
+    "Visitors won’t see 2 collections this page reads."
   )
   await expect(note).toBeVisible()
   // Show turns live data on for the link about to be made.

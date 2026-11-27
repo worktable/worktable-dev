@@ -1487,7 +1487,7 @@ function WidgetDiagnostics({
         <Icon className="mt-0.5 size-4 shrink-0" />
         <span className="min-w-0 flex-1">
           <span className="block font-medium">
-            HTML doc runtime noticed{" "}
+            This HTML doc ran into{" "}
             {errorCount > 0
               ? `${errorCount} error${errorCount === 1 ? "" : "s"}`
               : `${warningCount} warning${warningCount === 1 ? "" : "s"}`}

@@ -54,6 +54,6 @@ At 20 attendees and $40 equipment cost, the base total should remain $380 and
 the contingency total should be $418. Compare versions in the document's
 history if needed.
 
-To track actual purchases later, add [records](/guides/records/). For a public
-link, note that [shared HTML](/guides/sharing/) does not run interactive
-scripts.
+To track actual purchases later, add [records](/guides/records/). A
+[public link](/guides/sharing/) runs the tool for readers, who can't change
+records.

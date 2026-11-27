@@ -53,6 +53,7 @@ infrastructure and personal context out of release notes.
 - **Pending opens at the place:** A comment sent to you opens its Doc on that comment, and a thread opens at the message that asked, not at its newest message.
 - **Replies in threads:** A reply that sits right under the message it answers no longer repeats that message above itself.
 - **Pending tip on Home:** The tip about Pending sits under its heading instead of covering the greeting.
+- **HTML Doc help pages:** The guides now say what HTML Docs do: only a person can turn on network access, a share link runs the page for its readers, and restoring a version brings back the page's permissions but leaves Records as they are. Restoring an HTML Doc says so too, and Share calls an HTML Doc a page rather than a tool.
 - **Older agent connections:** An agent connected with an earlier default access now reads Docs and gets the Library's skills. Before, it saw no skills, and Settings showed it without read access.
 - **Security updates:** Libraries with published security fixes are updated, among them the web server, pasting into the editor, reading image sizes, the agent connector and the checks on agents' tool calls.
 - **Desktop security updates:** The Mac app's libraries with published security fixes are updated, among them its secure connections and the code that unpacks updates.

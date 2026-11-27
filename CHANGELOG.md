@@ -42,6 +42,7 @@ infrastructure and personal context out of release notes.
 
 ### Fixed
 
+- **Calls agents often get wrong:** An agent's call is no longer refused when it names a Doc with `path` in the Doc tools, starts a path with a slash, asks a search by meaning for `maxResults`, or lists comments with `includeTargetContext`.
 - **Everything in Pending can be reached:** Pending lists everything waiting on you. Before, only the newest ten showed, so older requests could not be opened from Home.
 - **Pending opens at the place:** A comment sent to you opens its Doc on that comment, and a thread opens at the message that asked, not at its newest message.
 - **Replies in threads:** A reply that sits right under the message it answers no longer repeats that message above itself.

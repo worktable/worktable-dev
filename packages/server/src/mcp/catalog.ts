@@ -277,7 +277,7 @@ const TOOLS: CatalogTool[] = [
     description:
       "Search workspace content by meaning, with fuzzy matching and relevance ranking, optionally scoped to a Space or folder. Returns matching items with their sources. Set exact to find exact text, or a regex with regex, line by line in Docs and HTML Docs instead.",
     annotations: READ,
-    inputSchema: flatInput(["query"], [search, without(grep, "pattern", "spaceId", "pathPrefix", "includeArchived")], {
+    inputSchema: flatInput(["query"], [without(search, "maxResults"), without(grep, "pattern", "spaceId", "pathPrefix", "includeArchived")], {
       exact: z
         .boolean()
         .describe(
@@ -293,7 +293,8 @@ const TOOLS: CatalogTool[] = [
         const { query, ...rest } = without(args, "exact")
         return step("worktable_docs_read", "grep", { pattern: query, ...rest })
       }
-      return step("worktable_discover", "search", without(args, "exact"))
+      // What only an exact search uses says nothing about a search by meaning.
+      return step("worktable_discover", "search", without(args, "exact", "regex", "caseSensitive", "context"))
     },
   },
   {
@@ -734,7 +735,8 @@ const TOOLS: CatalogTool[] = [
     route: (args) =>
       args.annotationId !== undefined
         ? step("worktable_annotations_read", "read", args)
-        : step("worktable_annotations_read", "list", args),
+        : // A list has no one target to give context for.
+          step("worktable_annotations_read", "list", without(args, "includeTargetContext")),
   },
   {
     name: "worktable_annotations_write",
@@ -1214,6 +1216,61 @@ export interface RoutedCall {
 }
 
 /**
+ * A call's arguments with the one slip agents make most put right, before
+ * they are checked against the listed inputs: State, pins and the file tools
+ * call a Doc's path `path`, so agents send that to the Doc tools, which call
+ * it `docPath`.
+ */
+export function forgivenArguments(name: string, args: unknown): unknown {
+  if (name !== "worktable_docs_read" && name !== "worktable_docs_write") return args
+  if (!args || typeof args !== "object" || Array.isArray(args)) return args
+  const { path, ...rest } = args as Record<string, unknown>
+  if (typeof path !== "string" || "docPath" in rest) return args
+  return { ...rest, docPath: path }
+}
+
+/** Arguments that name a file or folder by its path within a Space. */
+const PATH_ARGUMENTS = ["docPath", "path", "newPath", "pathPrefix", "importPath", "htmlId"]
+
+/** A path as agents often write it, with the leading slash their links have. */
+function withoutLeadingSlash<T>(value: T): T {
+  return typeof value === "string" && /^\/[^/]/.test(value) ? (value.slice(1) as T) : value
+}
+
+function pinWithoutLeadingSlash(pin: unknown): unknown {
+  return pin && typeof pin === "object" && !Array.isArray(pin) && "path" in pin
+    ? { ...pin, path: withoutLeadingSlash((pin as { path: unknown }).path) }
+    : pin
+}
+
+/**
+ * Paths are relative to their Space. Links in Docs start with a slash, so
+ * agents write paths that way too: every tool takes one leading slash off.
+ */
+function spaceRelativePaths(
+  tool: CatalogTool,
+  args: Record<string, unknown>
+): Record<string, unknown> {
+  const result = { ...args }
+  for (const key of PATH_ARGUMENTS) {
+    if (key in result) result[key] = withoutLeadingSlash(result[key])
+  }
+  // An HTML Doc's id is its path when one is given.
+  if (tool.name === "worktable_html_write" && "id" in result) {
+    result.id = withoutLeadingSlash(result.id)
+  }
+  if (Array.isArray(result.keep)) result.keep = result.keep.map(withoutLeadingSlash)
+  for (const key of ["pins", "startHere"]) {
+    if (Array.isArray(result[key])) result[key] = (result[key] as unknown[]).map(pinWithoutLeadingSlash)
+  }
+  const target = result.target
+  if (target && typeof target === "object" && !Array.isArray(target) && "docPath" in target) {
+    result.target = { ...target, docPath: withoutLeadingSlash((target as { docPath: unknown }).docPath) }
+  }
+  return result
+}
+
+/**
  * The operations a call runs. Throws ToolArgumentError with a message for the
  * caller when its arguments don't fit.
  */
@@ -1221,8 +1278,11 @@ export function routeCatalogCall(
   tool: CatalogTool,
   rawArgs: Record<string, unknown>
 ): RoutedCall {
-  const args = Object.fromEntries(
-    Object.entries(rawArgs).filter(([, value]) => value !== undefined)
+  const args = spaceRelativePaths(
+    tool,
+    Object.fromEntries(
+      Object.entries(rawArgs).filter(([, value]) => value !== undefined)
+    )
   )
   const steps = [tool.route(args)].flat()
   let file: Record<string, unknown> | undefined

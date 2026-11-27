@@ -118,6 +118,8 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
     setChosen(id ? { userId, id } : null)
   // A choice made here wins over the stored one, so a paused or locked link
   // can move to another subscription.
+  // With none, Cloud starts the account's free plan for this device.
+  const noWorktables = subscriptions.data?.worktables.length === 0
   const selectedSubscription =
     subscriptionId ??
     query.data?.billingWorkspaceId ??
@@ -244,13 +246,13 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
   )
   const linkDisabled =
     !data.account.user ||
-    (!data.enabled && !selectedSubscription) ||
+    (!data.enabled && !selectedSubscription && !noWorktables) ||
     toggle.isPending ||
     disconnect.isPending ||
     data.state === "unlinking"
   const linkTooltip = !data.account.user
     ? "Sign in to Worktable Cloud to enable this connection."
-    : !data.enabled && !selectedSubscription
+    : !data.enabled && !selectedSubscription && !noWorktables
       ? "Choose a Worktable for this device."
       : disconnect.isPending || data.state === "unlinking"
         ? "Unlinking this device…"
@@ -307,7 +309,7 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
               account to your member account.
             </p>
           )}
-          {data.account.user && !data.mcpUrl && (
+          {data.account.user && !data.mcpUrl && !noWorktables && (
             <div className="flex flex-col gap-2">
               <label
                 htmlFor="link-subscription"
@@ -344,11 +346,6 @@ export function CloudSection({ active: enabled }: { active?: boolean } = {}) {
                 >
                   Retry
                 </Button>
-              )}
-              {subscriptions.data?.worktables.length === 0 && (
-                <ExternalButton href={data.cloudOrigin}>
-                  Create a Cloud Worktable
-                </ExternalButton>
               )}
             </div>
           )}

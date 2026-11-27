@@ -35,7 +35,7 @@ import {
   createLegacyCompatibleAnnotationV2,
   DocumentAnnotationError,
   listLegacyCompatibleAnnotationsV2,
-  dismissDocumentAnnotationRequests,
+  dismissDocumentAnnotationRequestsV2,
   readLegacyCompatibleAnnotationV2,
   replyLegacyCompatibleAnnotationV2,
   resolveLegacyCompatibleAnnotationV2,
@@ -611,14 +611,13 @@ export async function replyAnnotation(spaceId: string, annotationId: string, bod
 
 /**
  * A recipient lets go of what a comment asked them, without replying. The
- * comment itself is unchanged, so it says nothing new to anyone else.
+ * comment itself is unchanged, so it says nothing new to anyone else. `path`
+ * is its Doc or HTML Doc, which is where it is looked for.
  */
-export async function dismissAnnotationRequests(spaceId: string, annotationId: string, participantId: string): Promise<Annotation> {
+export async function dismissAnnotationRequests(spaceId: string, path: string, annotationId: string, participantId: string): Promise<Annotation> {
   assertSpaceAccess(spaceId, commentAccess());
   if (await usesDocumentDataV2()) {
-    await readLegacyCompatibleAnnotationV2(spaceId, annotationId)
-    await dismissDocumentAnnotationRequests({ spaceId, annotationId, participantId })
-    return readLegacyCompatibleAnnotationV2(spaceId, annotationId)
+    return dismissDocumentAnnotationRequestsV2({ spaceId, path, annotationId, participantId })
   }
   return withAnnotationStoreLock(spaceId, async () => {
     const found = await findAnnotation(spaceId, annotationId);

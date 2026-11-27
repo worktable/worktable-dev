@@ -684,26 +684,43 @@ export async function replyDocumentAnnotation(options: {
   return { annotation: result.annotation, replyId: result.replyId }
 }
 
-/** A recipient lets go of what a comment asked them, without replying. */
-export async function dismissDocumentAnnotationRequests(options: {
+/**
+ * A recipient lets go of what a comment asked them, without replying. The
+ * comment is found on its own document, so nothing else in the Space is read.
+ */
+export async function dismissDocumentAnnotationRequestsV2(options: {
   spaceId: string
+  path: string
   annotationId: string
   participantId: string
-}): Promise<void> {
+}): Promise<Annotation> {
   await requireV2AnnotationWrites()
-  await withDocPathLock(options.spaceId, async () => {
-    const found = await findAnnotation(options.spaceId, options.annotationId)
+  return useDurableDocument(options.spaceId, options.path, async (document) => {
+    const owner = await ownerForDocument(options.spaceId, document)
+    const index = owner.annotations.findIndex(
+      (candidate) => candidate.id === options.annotationId
+    )
+    const found = owner.annotations[index]
+    if (!found)
+      throw new DocumentAnnotationError(
+        "not-found",
+        "A comment is no longer on this document"
+      )
     const annotation: DocumentAnnotationV2 = {
-      ...found.annotation,
+      ...found,
       requests: requestsAfterDone(
-        found.annotation.requests ?? [],
+        found.requests ?? [],
         options.participantId,
         new Date().toISOString()
       ),
     }
-    found.owner.annotations[found.index] = annotation
-    await writeOwner(options.spaceId, found.owner)
-    noteChanged(options.spaceId, found.owner, annotation)
+    owner.annotations[index] = annotation
+    await writeOwner(options.spaceId, owner)
+    noteChanged(options.spaceId, owner, annotation)
+    const projected = legacyAnnotation(owner, annotation)
+    if (!projected)
+      throw new Error("Annotation selector requires the common API")
+    return projected
   })
 }
 

@@ -3,6 +3,7 @@ import { readActivityAgents, readActivityFeed } from "../activity-feed.ts"
 import { requireScope } from "../auth.ts"
 import { listPending, markPendingDone } from "../pending.ts"
 import { visitorCommentReader } from "../visitor-comment-access.ts"
+import { wsManager } from "../ws.ts"
 
 export const activityRouter = new Hono()
 
@@ -68,12 +69,21 @@ pendingRouter.post("/done", async (c) => {
   if (typeof body?.id !== "string" || !body.id) {
     return c.json({ error: "id is required", code: "VALIDATION_ERROR" }, 400)
   }
-  const refused = await markPendingDone(c.get("identity"), body.id)
-  if (refused === "not-found") {
+  const done = await markPendingDone(c.get("identity"), body.id)
+  if (done.refused === "not-found") {
     return c.json({ error: "Nothing waits under that id", code: "NOT_FOUND" }, 404)
   }
-  if (refused) {
+  if (done.refused) {
     return c.json({ error: "This can't be marked done", code: "FORBIDDEN" }, 403)
+  }
+  // A thread tells its viewers itself; a comment's Doc may be open elsewhere.
+  if (done.comment) {
+    const { spaceId, annotation } = done.comment
+    wsManager.broadcast(spaceId, {
+      type: "annotation_update",
+      spaceId,
+      data: { annotationId: annotation.id, annotation, event: "updated" },
+    })
   }
   return c.json({ ok: true })
 })

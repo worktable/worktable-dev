@@ -125,6 +125,9 @@ export async function ambientNotices(
     const target = noticeTargetFor({ ...args, ...resolvedPath(result) })
     // The comment the call opens or answers is the thing itself, not news.
     const opened = text(args.annotationId)
+    // So is the thread message the call answers. The pending list catches up
+    // with the reply after it, so it can still list the message right now.
+    const answered = text(args.responseTo)
     // Only items that could print need looking up: unopened, and new or
     // about this call. Items shown before elsewhere are only counted.
     const now = Date.now()
@@ -132,6 +135,13 @@ export async function ambientNotices(
     const candidates = entries.filter((entry) => {
       if (!inSpace(entry, target)) return false
       if (entry.source.kind === "comment" && entry.source.annotationId === opened) {
+        return false
+      }
+      if (
+        entry.source.kind === "threadRequest" &&
+        answered &&
+        entry.source.messageId === answered
+      ) {
         return false
       }
       const marks = pendingMarks(entry.itemId) ?? {}
